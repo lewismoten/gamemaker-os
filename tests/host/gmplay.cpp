@@ -2,7 +2,7 @@
 // a key script and prints the state after every tick in the Pocket Player host
 // test's line format (S lines), so the two can be compared line for line: the
 // same core, fed from the original files here and from the packed ones there.
-//   gmplay <game folder> <NAME.GAM> <script>   lines: "K <tick> <scan, +128 a release>", "R <seed>", "T <ticks>",
+//   gmplay <game folder> <NAME.GAM> <script>, or gmplay <NAME.GMP> - <script> (the .GMP's own .GAM)   lines: "K <tick> <scan, +128 a release>", "R <seed>", "T <ticks>",
 //   "A <tick>" (every key let go before that tick, as the board's session does when a level ends)
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,7 +11,12 @@
 gm::World &gp_world();
 int main(int argc, char **argv) {
   if (argc < 4) return 2;
-  if (gp_open(host_read, argv[1], argv[2]) < 0) { fprintf(stderr, "cannot read %s\n", argv[2]); return 2; }
+  static struct host_gmp pack;
+  size_t n = strlen(argv[1]);
+  bool gmp = n > 4 && (!strcmp(argv[1] + n - 4, ".GMP") || !strcmp(argv[1] + n - 4, ".gmp"));
+  if (gmp && host_gmp_open(&pack, argv[1])) { fprintf(stderr, "not a .GMP with a game: %s\n", argv[1]); return 2; }
+  const char *gam = gmp && !strcmp(argv[2], "-") ? pack.g.gam : argv[2];
+  if (gmp ? gp_open(gmp_read, &pack.g, gam) < 0 : gp_open(host_read, argv[1], gam) < 0) { fprintf(stderr, "cannot read %s\n", gam); return 2; }
   gm::World &w = gp_world();
   w.hold = false;  // the Pocket Player's host test commits a level change in the same tick
   struct Ev { int tick, key; } evs[4096];

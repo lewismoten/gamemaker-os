@@ -5,6 +5,20 @@
 #include "hostio.h"
 #include "session.h"
 int32_t gmos_host_read(void *user, const char *name, uint8_t *buf, uint32_t cap) {return host_read(user, name, buf, cap);}
+/* A .GMP for the ctypes tests: gs_start(s, gmp_read, gmos_gmp_open(path), gmos_gmp_gam(g), 0). */
+struct gmp *gmos_gmp_open(const char *path) {
+  struct host_gmp *h = calloc(1, sizeof *h);
+  if (!h || host_gmp_open(h, path)) {free(h); return 0;}
+  return &h->g;
+}
+const char *gmos_gmp_gam(const struct gmp *g) {return g->gam;}
+int gmos_gmp_pocket(const struct gmp *g) {return g->pocket;}
+int gmos_gmp_volumes(const struct gmp *g) {return (int)g->volumes;}
+void gmos_gmp_close(struct gmp *g) {
+  if (!g) return;
+  struct host_gmp *h = (struct host_gmp *)g->user;
+  host_gmp_close(h); free(h);
+}
 struct gs_session *gmos_session_new(void) {return calloc(1, sizeof(struct gs_session));}
 void gmos_session_say(struct gs_session *s, void (*say)(const char *)) {s->say = say;}
 int gmos_session_phase(const struct gs_session *s) {return s->phase;}
