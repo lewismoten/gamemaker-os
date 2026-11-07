@@ -116,6 +116,13 @@ class Layout(unittest.TestCase):
         for _ in range(11): c().gm_event(C.byref(m),1,DOWN,1)
         m.message=b'Chose Game number 19'[:20];px=render(m);png(OUT/'games-list-scrolled.png',px)
         self.assertEqual((m.sel,m.top),(11,3))
+    def test_same_frame_as_the_board(self):
+        # On the Pi Zero W (kernel generation 14) GMOS was driven down twice and
+        # Enter, then quit; the kernel logged the CRC of what reached the screen.
+        m=menu(('DICE','ROLL THE DICE'),('KITSHOP',"KIT'S SHOP"),('SNDBOARD','SOUND BOARD'))
+        for _ in range(2): c().gm_event(C.byref(m),1,DOWN,1)
+        m.message=b'Chose SOUND BOARD';px=render(m);png(OUT/'games-list-board.png',px)
+        self.assertEqual(zlib.crc32(struct.pack(f'<{W*H}I',*px)),79010036)
     def test_empty(self):
         px=render(menu());png(OUT/'games-list-empty.png',px)
         self.assertTrue(rows_with(px,0xf2f4ff,100,540))
