@@ -40,6 +40,7 @@ static int game_started;
    default): the play core's picture goes straight to the screen. */
 static uint32_t mode_w = PLAT_W, mode_h = PLAT_H, mode_d = 32, switch_us;
 static int lowres = 1, lowres_on;
+static uint32_t game_w = GP_W, game_h = GP_H; /* the game's mode: 320x200, or larger with the picture centered (384x216 is exactly 1080p / 5) */
 static uint8_t shown_pal[768];
 static int set_mode(uint32_t w, uint32_t h, uint32_t d) {
   if (plat_set_mode(w, h, d, &switch_us)) return -1;
@@ -291,7 +292,7 @@ static JSValue js_play(JSContext *c, JSValueConst this, int argc, JSValueConst *
   if (plat_list(game_dir, find_gam, &f) < 0 || !f.gam[0]) return JS_ThrowRangeError(c, "no .GAM in %s", game_dir);
   session.say = say;
   if (gs_start(&session, dir_read, game_dir, f.gam, plat_clock_ns())) return JS_ThrowRangeError(c, "cannot play %s", game_dir);
-  if (lowres && !set_mode(GP_W, GP_H, 8)) {lowres_on = 1; memset(shown_pal, 0xff, sizeof shown_pal);}
+  if (lowres && !set_mode(game_w, game_h, 8)) {lowres_on = 1; memset(shown_pal, 0xff, sizeof shown_pal);}
   e->game = &session; game_started = 1; jsrt_stats.game_ticks = 0; jsrt_stats.game_play_ns = 0; jsrt_stats.game_late_max_us = jsrt_stats.game_step_max_us = 0;
   sayf("JS game %s/%s", game_dir, f.gam);
   focus_to(e); dom_changed(e);
@@ -546,9 +547,16 @@ static JSValue js_screen(JSContext *c, JSValueConst t, int n, JSValueConst *a) {
   JS_SetPropertyStr(c, o, "depth", JS_NewUint32(c, mode_d)); JS_SetPropertyStr(c, o, "switchUs", JS_NewUint32(c, switch_us));
   return o;
 }
-static JSValue js_lowres(JSContext *c, JSValueConst t, int n, JSValueConst *a) {(void)t; (void)n; lowres = JS_ToBool(c, a[0]); return JS_UNDEFINED;}
+static JSValue js_lowres(JSContext *c, JSValueConst t, int n, JSValueConst *a) {
+  (void)t; int32_t w = GP_W, h = GP_H;
+  lowres = JS_ToBool(c, a[0]);
+  if (n > 2 && (JS_ToInt32(c, &w, a[1]) || JS_ToInt32(c, &h, a[2]))) return JS_EXCEPTION;
+  if (w < (int32_t)GP_W || h < (int32_t)GP_H || w % 4 || w * h > 640 * 480) return JS_ThrowRangeError(c, "screen.gameLowres: at least 320x200, width a multiple of 4");
+  game_w = (uint32_t)w; game_h = (uint32_t)h;
+  return JS_UNDEFINED;
+}
 static const JSCFunctionListEntry native_fns[] = {
-  JS_CFUNC_DEF("setMode", 3, js_set_mode), JS_CFUNC_DEF("screen", 0, js_screen), JS_CFUNC_DEF("gameLowres", 1, js_lowres),
+  JS_CFUNC_DEF("setMode", 3, js_set_mode), JS_CFUNC_DEF("screen", 0, js_screen), JS_CFUNC_DEF("gameLowres", 3, js_lowres),
   JS_CFUNC_DEF("createElement", 1, js_create), JS_CFUNC_DEF("getElementById", 1, js_by_id),
   JS_CFUNC_DEF("querySelector", 1, js_query), JS_CFUNC_DEF("querySelectorAll", 1, js_query_all),
   JS_CFUNC_DEF("focused", 0, js_focused), JS_CFUNC_DEF("now", 0, js_now), JS_CFUNC_DEF("wakeAt", 1, js_wake_at),
@@ -659,6 +667,8 @@ int jsrt_start(const char *dir, uint32_t heap_limit) {
   JS_FreeValue(ctx, r);
   JS_SetPropertyStr(ctx, g, "Element", JS_DupValue(ctx, ector));
   JS_FreeValue(ctx, g);
+  {JSMemoryUsage u0; JS_ComputeMemoryUsage(rt, &u0);
+   sayf("JS runtime ready in %u us (engine, browser-like globals), heap %u bytes", (unsigned)((plat_clock_ns() - t) / 1000), (unsigned)u0.malloc_size);}
   char path[96]; snprintf(path, sizeof path, "%s/MAIN.JS", dir);
   char *src = (char *)io; /* JS_Eval copies what it keeps */
   int32_t n = plat_read(path, io, sizeof io - 1);
@@ -705,8 +715,9 @@ uint64_t jsrt_step(void) {
     if (r & GS_DRAW && lowres_on) { /* 320x200 indices as they are; the palette only when it changed */
       uint64_t d0 = plat_clock_ns();
       if (memcmp(shown_pal, session.pal, 768)) {memcpy(shown_pal, session.pal, 768); plat_palette(session.pal);}
-      memcpy(plat_fb(), session.px, GP_W * GP_H);
-      plat_present(0, 0, GP_W, GP_H);
+      uint32_t ox = (game_w - GP_W) / 2, oy = (game_h - GP_H) / 2;
+      for (uint32_t y = 0; y < GP_H; y++) memcpy((uint8_t *)plat_fb() + (oy + y) * game_w + ox, session.px + y * GP_W, GP_W);
+      plat_present(ox, oy, GP_W, GP_H);
       jsrt_stats.present_ns += plat_clock_ns() - d0; jsrt_stats.presents++;
     } else if (r & GS_DRAW && game_el) {struct dom_rect all = {0, 0, PLAT_W, PLAT_H}; dom_damage(&all);}
     if (r & GS_EXIT) stop_game();

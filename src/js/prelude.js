@@ -189,7 +189,9 @@
   g.fs = { readFile: N.readFile, readdir: N.readdir };
   g.sys = { exit: N.exit, stats: N.stats, memory: N.memory };
   // The screen: setMode(width, height, depth 32|16) for the page; a playing
-  // <game> uses 320x200 at 8 bpp unless screen.gameLowres(false).
+  // <game> uses 320x200 at 8 bpp unless screen.gameLowres(false), or a larger
+  // 8 bpp mode with the picture centered: screen.gameLowres(true, 384, 216)
+  // (on a 1080p screen, exactly 5x with black bars).
   g.screen = {
     setMode: N.setMode,
     gameLowres: N.gameLowres,

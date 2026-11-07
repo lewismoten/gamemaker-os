@@ -169,8 +169,9 @@ function play() {
   game.style.position = 'absolute';
   game.src = '/sd/GAMES/' + name;
   document.body.appendChild(game);
+  screen.gameLowres(true, 384, 216); // 1080p / 5: the 320x200 picture at exactly 5x on a 1080p screen
   game.play();
-  out('switch', `game 320x200x8 in ${screen.switchUs} us`);
+  out('switch', `game 384x216x8 in ${screen.switchUs} us`);
   // Keys as a player might: Enter through the title pages, then walk right.
   const keys = [[500, 28, 1], [600, 28, 0], [3000, 28, 1], [3100, 28, 0], [6000, 28, 1], [6100, 28, 0], [8000, 106, 1], [20000, 106, 0], [20500, 105, 1], [26000, 105, 0]];
   for (const [at, code, down] of keys) setTimeout(() => game.press(code, down), at);
