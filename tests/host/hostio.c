@@ -38,3 +38,6 @@ int gmos_menu_state(const struct gm_menu *m, int what) {
 void gmos_menu_message(struct gm_menu *m, const char *s) {unsigned k = 0; while (s[k] && k < GM_MESSAGE_MAX) {m->message[k] = s[k]; k++;} m->message[k] = 0;}
 void gmos_menu_pic(struct gm_menu *m, unsigned id, int pic) {m->games[id].pic = (int8_t)pic;}
 int gmos_tab_game(const struct gm_menu *m, unsigned tab, unsigned i) {const struct gm_game *g = gm_tab_game(m, tab, i); return g ? (int)(g - m->games) : -1;}
+/* sizeof(struct gm_record), for the ctypes mirror's size check. */
+#include "library.h"
+unsigned gmos_record_bytes(void) {return sizeof(struct gm_record);}
