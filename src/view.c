@@ -34,8 +34,10 @@
 #define GAP_Y 8u
 #define FOOT_Y 448u
 static uint32_t *P, S; /* the surface being drawn */
-static void dot(int32_t x, int32_t y, uint32_t c) {if (x >= 0 && y >= 0 && x < (int32_t)GM_W && y < (int32_t)GM_H) P[(uint32_t)y * S + (uint32_t)x] = c;}
+static int measuring; /* count_lines: nothing is drawn */
+static void dot(int32_t x, int32_t y, uint32_t c) {if (!measuring && x >= 0 && y >= 0 && x < (int32_t)GM_W && y < (int32_t)GM_H) P[(uint32_t)y * S + (uint32_t)x] = c;}
 static void fill(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t c) {
+  if (measuring) return;
   for (int32_t j = y < 0 ? 0 : y; j < y + h && j < (int32_t)GM_H; j++)
     for (int32_t i = x < 0 ? 0 : x; i < x + w && i < (int32_t)GM_W; i++) P[(uint32_t)j * S + (uint32_t)i] = c;
 }
@@ -133,9 +135,9 @@ static unsigned wrap(int f, int32_t x, int32_t y, int32_t w, const char *s, unsi
   return lines;
 }
 static unsigned count_lines(int f, int32_t w, const char *s, unsigned max, int32_t scale) {
-  uint32_t *keep = P; static uint32_t scratch[1]; P = scratch; /* measure without drawing: every pixel is off the surface */
-  unsigned k = wrap(f, -100000, -100000, w, s, max, 0, 0, scale);
-  P = keep; return k;
+  measuring = 1;
+  unsigned k = wrap(f, 0, 0, w, s, max, 0, 0, scale);
+  measuring = 0; return k;
 }
 static char *put(char *p, const char *s) {while (*s) *p++ = *s++; *p = 0; return p;}
 static char *num(char *p, uint32_t n) {char t[11]; int k = 0; do t[k++] = (char)('0' + n % 10); while (n /= 10); while (k) *p++ = t[--k]; *p = 0; return p;}

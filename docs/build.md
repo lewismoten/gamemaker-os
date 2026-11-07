@@ -26,6 +26,7 @@ Edition, copied unchanged with that repository's license;
 ```
 make            # build/GMOS.ELF (Arm GNU toolchain; set TOOLCHAIN to its prefix)
 make test       # host tests; renders build/host/games-*.png and play-*.png
+make test-asan  # the host tests and a fuzz pass under AddressSanitizer and UBSan
 ```
 
 The host tests build the title reader, library index, games page and drawing code
@@ -37,6 +38,18 @@ on the host as the board does. Set `GMOS_GAMES` to a folder of game folders to
 title real games as well, and `GMOS_CARD` to a card folder written by the Sandbox
 Edition's `web/scripts/gmosCard.ts` to check the frames the board logged
 (`tests/data/board-list.txt`).
+
+`make test-asan` builds the same library, `gmplay` and a fuzz driver
+(`tests/host/fuzz.c`) in `build/asan/` with AddressSanitizer and
+UndefinedBehaviorSanitizer, runs the fuzz driver (library index lines that are long,
+broken or invalid UTF-8; more games than the list holds; truncated and mutated GIFs,
+FLIs, LSTs and .GAMs through the title-screen picker; the page drawn in every
+state), then the whole host suite with the sanitizer runtime preloaded into
+Python. Any overflow or undefined behavior stops it with a report. On macOS the
+python.org Python can't load a sanitizer (hardened runtime), so
+`tools/asan_python.sh` picks an unhardened one such as Homebrew's. Options:
+`FUZZ_ROUNDS=5000` for a longer pass, and `FUZZ_GAMES="<folder> ..."` to list,
+title-picture and draw every game in folders of game folders as well.
 
 `tools/render_list.py --card <folder> [--keys tab,right,enter] --out page.png`
 renders the games page for any card folder and prints the frame's CRC-32, the

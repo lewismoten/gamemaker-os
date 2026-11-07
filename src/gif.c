@@ -26,7 +26,10 @@ static void emit(struct sink *k, uint8_t v) {
 static void lzw(const uint8_t *d, uint32_t n, uint32_t at, int min, struct sink *out, uint32_t count) {
   int clear = 1 << min, eoi = clear + 1, size = min + 1, next = clear + 2, prev = -1;
   uint32_t buf = 0, bits = 0, o = 0, left = 0; /* left: bytes left in the current sub-block */
-  for (int i = 0; i < clear; i++) {prefix[i] = -1; suffix[i] = (uint8_t)i; first[i] = (uint8_t)i;}
+  /* Every decode starts from the same table, as gif.ts's fresh arrays do: codes past
+     clear are 0 until defined, so a stream naming an undefined code decodes the same
+     whatever GIF came before (the board and the host decode in different orders). */
+  for (int i = 0; i < 4096; i++) {prefix[i] = i < clear ? -1 : 0; suffix[i] = i < clear ? (uint8_t)i : 0; first[i] = i < clear ? (uint8_t)i : 0;}
   while (o < count && !out->done) {
     while (bits < (uint32_t)size) {
       if (!left) {if (at >= n || !(left = d[at++])) return;}

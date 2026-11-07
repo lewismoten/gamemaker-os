@@ -7,6 +7,11 @@ static int compare(const char *a, const char *b, bool fold) {
   return fold ? lower((unsigned char)*a) - lower((unsigned char)*b) : (unsigned char)*a - (unsigned char)*b;
 }
 unsigned gm_menu_bytes(void) {return sizeof(struct gm_menu);}
+bool gm_dir_ok(const char *name, unsigned n) {
+  if (n < 1 || n > 8) return false;
+  for (unsigned i = 0; i < n; i++) if (!name[i] || name[i] == '/' || name[i] == '.') return false;
+  return true;
+}
 bool gm_add(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc) {
   if (m->count >= GM_MAX_GAMES) return false;
   struct gm_game *g = &m->games[m->count++];

@@ -9,7 +9,7 @@ import os, pathlib, struct, subprocess, sys, unittest, zlib
 from gmos_page import (Page, lib, png, crc, gam_of, W, H, TW, TH, NONE, MOVED, CHOSEN, QUIT, RESYNC,
                        STARTER, SANDBOX, BIZARRE, CD, OTHER, GRID, DETAILS)
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-OUT = ROOT / 'build/host'
+OUT = ROOT / os.environ.get('GMOS_HOST', 'build/host')  # make test-asan: build/asan
 DICE = ROOT / 'tests/games/DICE'
 INDEX = (ROOT / 'tests/data/library.jsl').read_text()
 def c(): return lib()
@@ -61,6 +61,9 @@ class Titles(unittest.TestCase):
                 n, t = title(f.read_bytes()[:512]); self.assertGreaterEqual(n, 0, f); print(f'{g.name}: {t}')
 
 class Library(unittest.TestCase):
+    class Rec(C.Structure): _fields_ = [('title', C.c_char * 64), ('company', C.c_char * 32), ('blurb', C.c_char * 640),  # struct gm_record
+                                        ('category', (C.c_char * 32) * 2), ('dos', C.c_char * 9), ('locator', C.c_char * 32),
+                                        ('crc', C.c_uint32), ('has_crc', C.c_int), ('year', C.c_int32), ('course', C.c_int32)]
     def test_index_fills_titles_and_tabs(self):
         p = Page(); p.add_folder(DICE); p.add('ALPHA', 'ALPHA GAME'); p.add('BETA', 'BETA', gam='BETA.GAM'); p.add('LOOSE', 'LOOSE GAME')
         self.assertEqual(p.index(INDEX), 3)                    # by CRC-32 (DICE), folder (ALPHA), DOS name (BETA); bad lines are skipped
@@ -70,9 +73,7 @@ class Library(unittest.TestCase):
         self.assertEqual(p.tab, SANDBOX)                       # the web page opens on Sandbox
         px = p.render(); png(OUT / 'games-index.png', px)
     def test_record_parser(self):
-        class Rec(C.Structure): _fields_ = [('title', C.c_char * 64), ('company', C.c_char * 32), ('blurb', C.c_char * 640),
-                                            ('category', (C.c_char * 32) * 2), ('dos', C.c_char * 9), ('locator', C.c_char * 32),
-                                            ('crc', C.c_uint32), ('has_crc', C.c_int), ('year', C.c_int32), ('course', C.c_int32)]
+        Rec = Library.Rec
         c().gm_record_parse.argtypes = [C.c_char_p, C.c_uint32, C.POINTER(Rec)]
         def parse(line):
             r = Rec(); b = line.encode(); return c().gm_record_parse(b, len(b), C.byref(r)), r
@@ -201,6 +202,36 @@ class Layout(unittest.TestCase):
     def test_empty(self):
         px = page().render(); png(OUT / 'games-list-empty.png', px)
         self.assertTrue(any(px[y * W + x] == 0xeef0f6 for y in range(195, 220) for x in range(100, 540)))
+
+class Memory(unittest.TestCase):
+    """Regression tests from the AddressSanitizer pass (make test-asan): what the C side writes fits what it is given."""
+    def test_record_mirror_is_the_c_size(self):
+        # gm_record_parse zeroes and fills sizeof(struct gm_record) bytes of the caller's record
+        self.assertEqual(C.sizeof(Library.Rec), c().gmos_record_bytes())
+    def test_menu_holds_256_games_with_the_longest_text(self):
+        long = 'W' + 'O' * 300; p = Page()
+        self.assertTrue(all(p.add('ABCDEFGHIJ', long, gam='ABCDEFGHIJKLMNOP.GAM') for _ in range(256)))
+        self.assertFalse(p.add('D', 'T'))
+        line = ('{"schema":"gmp-library","title":"%s","company":"%s","blurb":"%s","category":["sandbox"],"locator":"ABCDEFGH"}'
+                % (long, long, ('\u00e9 ' + 'O' * 900) * 4))
+        self.assertEqual(p.index(line), 1); p.finish()
+        g = C.cast(C.c_void_p(C.addressof(p.m)), C.POINTER(C.c_char * 9))
+        self.assertEqual(g.contents.value, b'ABCDEFGH')                                        # dir[9]: 8 and a NUL
+        p.render(load=False); p.key('enter'); self.assertEqual(p.view, DETAILS); p.render()
+    def test_folder_names_the_board_lists(self):
+        ok = lambda n: c().gm_dir_ok(n, len(n))
+        self.assertTrue(ok(b'DICE')); self.assertTrue(ok(b'ABCDEFGH'))
+        self.assertFalse(ok(b'')); self.assertFalse(ok(b'ABCDEFGHI')); self.assertFalse(ok(b'SHAKESPEARE-IN-SWEATPANTS')); self.assertFalse(ok(b'A.B'))
+    def test_gif_decode_does_not_depend_on_the_one_before(self):
+        # 4x1, min code size 2: clear, then code 7, never defined (gif.ts's fresh table reads it as 0), then the end
+        bad = (b'GIF89a' + struct.pack('<HH', 4, 1) + bytes([0x81, 0, 0]) + bytes(12) + b'\x2c' + struct.pack('<4H', 0, 0, 4, 1)
+               + bytes([0, 2, 2, 0x7c, 0x01, 0]) + b'\x3b')
+        def draw(d):
+            px, pal = (C.c_uint8 * 64000)(), (C.c_uint8 * 768)(); px[0] = px[1] = 99
+            self.assertEqual(c().gp_gif(d, len(d), pal, px), 0); return bytes(px[:4])
+        c().gp_gif.argtypes = [C.c_char_p, C.c_uint32, C.c_void_p, C.c_void_p]
+        first = draw(bad); draw((DICE / 'TITLE.GIF').read_bytes())                              # a min-size-8 GIF fills codes 0-255
+        self.assertEqual(draw(bad), first); self.assertEqual(first, bytes(4))
 
 class Board(unittest.TestCase):
     def test_same_frames_as_the_board(self):

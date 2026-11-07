@@ -52,4 +52,7 @@ int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value);
 const struct gm_game *gm_selected(const struct gm_menu *m);
 unsigned gm_tab_size(const struct gm_menu *m, unsigned tab);
 const struct gm_game *gm_tab_game(const struct gm_menu *m, unsigned tab, unsigned i);
+/* A folder of /sd/GAMES the list can hold: a DOS name, 1 to 8 characters (a
+   longer one would not fit the game's dir[9] or the board's path buffers). */
+bool gm_dir_ok(const char *name, unsigned n);
 unsigned gm_menu_bytes(void); /* for the host tests, which keep the menu as bytes */

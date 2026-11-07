@@ -4,9 +4,9 @@
 from each game's files, and the 640x480 frame. Used by test_gmos.py and
 tools/render_list.py."""
 import ctypes as C
-import pathlib, struct, subprocess, zlib
+import os, pathlib, struct, subprocess, zlib
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-OUT = ROOT / 'build/host'
+OUT = ROOT / os.environ.get('GMOS_HOST', 'build/host')  # make test-asan: build/asan
 W, H = 640, 480
 TW, TH = 194, 121
 NONE, MOVED, CHOSEN, QUIT, RESYNC = range(5)
@@ -19,7 +19,7 @@ _lib = None
 def lib():
     global _lib
     if _lib is None:
-        subprocess.run(['make', '-s', '-C', str(ROOT), 'host'], check=True)
+        if not os.environ.get('GMOS_HOST'): subprocess.run(['make', '-s', '-C', str(ROOT), 'host'], check=True)
         c = C.CDLL(str(OUT / 'libgmos.so'))
         c.gm_gam_title.argtypes = [C.c_char_p, C.c_uint32, C.c_char_p]
         c.gm_menu_bytes.restype = C.c_uint
@@ -37,6 +37,8 @@ def lib():
         c.gmos_menu_message.argtypes = [C.c_void_p, C.c_char_p]
         c.gmos_tab_game.argtypes = [C.c_void_p, C.c_uint, C.c_uint]
         c.gmos_menu_pic.argtypes = [C.c_void_p, C.c_uint, C.c_int]
+        c.gm_dir_ok.argtypes = [C.c_char_p, C.c_uint]; c.gm_dir_ok.restype = C.c_bool
+        c.gmos_record_bytes.restype = C.c_uint
         c.gm_crc32.argtypes = [C.c_uint32, C.c_char_p, C.c_uint32]; c.gm_crc32.restype = C.c_uint32
         _lib = c
     return _lib
