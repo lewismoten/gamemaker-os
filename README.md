@@ -6,15 +6,19 @@ It runs on [sandbox-kernel](https://github.com/lewismoten/sandbox-kernel), a sma
 
 ## Status
 
-The first program runs on the board. `GMOS.ELF` lists the games in `/sd/GAMES` (each a folder with a `.GAM` file, titled from that file), draws the list on HDMI at 640x480, moves the selection with the arrow keys and logs the game chosen with Enter; Esc or Q quits. Playing a game comes later. Input is the kernel's synthetic device for now: the development computer sends key presses over USB.
+The first program runs on the board and plays games. `GMOS.ELF` lists the games in `/sd/GAMES` (each a folder with a `.GAM` file, titled from that file) and draws the list on HDMI at 640x480. Enter plays the chosen game from its original DOS files: its title and level pictures, then the levels at PLAYGAME's 18.2 ticks a second, doubled to fill the screen. The arrow keys, Space and Enter play; Esc goes back to the list, as does the end of the game. On a Pi Zero W, Roll the Dice draws exactly the frames the host tests draw, tick for tick. There is no sound yet, the animated and text pages between levels are skipped, and input is the kernel's synthetic device for now: the development computer sends key presses over USB.
+
+The game player is the same play core as the Pocket Player in Game-Maker: Sandbox Edition, shared rather than forked: `third_party/gmcore` is a copy pinned by commit (see [docs/play.md](docs/play.md)).
 
 The first target is a Raspberry Pi Zero W v1.1 with a Waveshare 2.13 inch e-Paper HAT (V4) as a status display, connected to a computer by USB for development.
 
 ![The games list, rendered on the host from the same code; the board's screen checksum matched it](docs/games-list.png)
 
+![Roll the Dice, eighteen ticks into its level, as the host tests draw it; the board's checksum of the same frame matched](docs/play-dice.png)
+
 ## Build
 
-`GMOS.ELF` is built only against the sandbox-kernel SDK, vendored in `sdk/` at the kernel commit named in `sdk/PINNED`. `make` builds it with the Arm GNU toolchain; `make test` runs the host tests and renders the list to PNG files in `build/host/`. See [docs/build.md](docs/build.md) for installing it on a card and driving it over USB.
+`GMOS.ELF` is built only against the sandbox-kernel SDK, vendored in `sdk/` at the kernel commit named in `sdk/PINNED`, and the shared play core in `third_party/gmcore` (commit in its `PINNED`). `make` builds it with the Arm GNU toolchain; `make test` runs the host tests and renders the list and a game to PNG files in `build/host/`. See [docs/build.md](docs/build.md) for installing it on a card and driving it over USB.
 
 ## Plan
 
