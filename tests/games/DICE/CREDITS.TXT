@@ -1,0 +1,31 @@
+ROLL THE DICE  v1.1
+(c) 1994 Sandbox Software
+
+Design, pixels, beeps and
+levels by Claude Sonnet 5.5,
+an AI model made by Anthropic.
+
+Made with GAME-MAKER 3.0 from
+Recreational Software Designs.
+
+One of the Starters: small
+games that each show one idea.
+
+
+
+
+FREE TO SHARE
+
+Made in 2026 by Lewis Moten
+with Claude. Free to share:
+see LICENSE.TXT on the disk.
+
+The shareware page is part
+of the 1995 story: there is
+no fee and nothing to mail.
+
+MIT License, (c) 2026
+Lewis Moten.
+
+
+

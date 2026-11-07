@@ -4,7 +4,10 @@
 // Game-Maker: Sandbox Edition's formats/game.ts reads it; a level is a scene
 // of type 10, and its links, start and scroll limits are read the way that
 // project's Pocket Player packer (web/src/export/pocketPack.ts) turns them
-// into the core's level records. Every buffer is static: no allocator.
+// into the core's level records. An older .GAM (20 fixed 330-byte scenes,
+// names without extensions) is first converted to version 3.00 bytes the way
+// that project's parseGame and serializeGame do it, after GameClass::Load.
+// Every buffer is static: no allocator.
 #include <new>
 #include <stdlib.h>
 #include "game.h"
@@ -67,6 +70,84 @@ int levelOf(int scene) {
   for (int i = 0; i < nplay; i++)
     if (play[i] == scene) return i;
   return -2;
+}
+
+// Pre-3.00 files (OLDintegratorstruct in GRATOR.H, 330 bytes a scene): gametype u16, x, y i16,
+// desc[15], fnames[9][10] (no extensions), links[20] (fx, fy, tnum, tx, ty; tnum 20 = unused),
+// red, green, blue, ssup, ssdown, ssleft, ssright, PinChar, extra[11].
+constexpr int OLD_SCENE = 330, OLD_MAX = 20;
+uint8_t oldGam[OLD_SCENE * OLD_MAX];
+// JavaScript's toLowerCase on a Latin-1 byte, as parseOld lowers the names.
+uint8_t lowerLatin1(uint8_t c) { return (c >= 'A' && c <= 'Z') || (c >= 0xc0 && c <= 0xde && c != 0xd7) ? c + 32 : c; }
+struct Out {
+  uint32_t n = 0;
+  void u8(int v) { if (n < GAM_CAP) gam[n++] = (uint8_t)v; }
+  void u16(int v) { u8(v & 255); u8(v >> 8 & 255); }
+};
+// Builds the version 3.00 bytes of an older file into gam (buildPool: offset 0 is "", names are shared).
+uint32_t convertOld(const uint8_t *d, uint32_t n) {
+  int count = (int)(n / OLD_SCENE);
+  if (count > OLD_MAX) count = OLD_MAX;
+  static char names[OLD_MAX][20][16];
+  static const char *const ext[9] = {".pal", ".map", ".bbl", ".mon", ".mbl", ".chr", ".cbl", ".snd", ".cmf"};
+  for (int s = 0; s < count; s++) {
+    const uint8_t *r = d + s * OLD_SCENE;
+    for (int f = 0; f < 20; f++) names[s][f][0] = 0;
+    auto file = [&](int oldIdx, int newIdx, const char *e) {
+      const uint8_t *src = r + 21 + 10 * oldIdx;
+      int k = 0;
+      while (k < 10 && src[k]) { names[s][newIdx][k] = (char)lowerLatin1(src[k]); k++; }
+      if (!k) return;
+      for (int i = 0; e[i]; i++) names[s][newIdx][k++] = e[i];
+      names[s][newIdx][k] = 0;
+    };
+    if (s == 0) { file(0, 2, ".bkd"); file(1, 4, ".txt"); file(2, 6, ".txt"); file(3, 7, ".txt"); file(4, 3, ".cmf"); }
+    else if (s == 1) { file(0, 0, ".bkd"); file(3, 1, ".cmf"); }
+    else for (int j = 0; j < 9; j++) file(j, j, ext[j]);
+  }
+  // The pool, as SceneFiles::Add fills it.
+  static uint8_t pool[OLD_MAX * 20 * 16 + 1];
+  static uint16_t offs[OLD_MAX][20];
+  uint32_t plen = 1; pool[0] = 0;
+  for (int s = 0; s < count; s++)
+    for (int f = 0; f < 20; f++) {
+      const char *nm = names[s][f];
+      offs[s][f] = 0;
+      if (!nm[0]) continue;
+      for (int t = 0; t <= s && !offs[s][f]; t++)
+        for (int g = 0; g < (t == s ? f : 20) && !offs[s][f]; g++)
+          if (names[t][g][0] && same(names[t][g], nm)) offs[s][f] = offs[t][g];
+      if (offs[s][f]) continue;
+      offs[s][f] = (uint16_t)plen;
+      for (int i = 0; nm[i]; i++) pool[plen++] = (uint8_t)nm[i];
+      pool[plen++] = 0;
+    }
+  Out o;
+  o.u8('G'); o.u8('M'); o.u16(300); o.u8(0); o.u8(8);  // DataFileHeader: version 300, FileType GamFile
+  for (int i = 0; i < 250; i++) o.u8("RSD"[i % 3]);
+  o.u16(count); o.u16(20); o.u16(20);
+  for (int s = 0; s < count; s++) {
+    const uint8_t *r = d + s * OLD_SCENE;
+    int type = r[0] | r[1] << 8;
+    o.u16(type == 1 || type == 2 || type == ADVTYPE ? type : NOSCENE);
+    o.u16(r[2] | r[3] << 8); o.u16(r[4] | r[5] << 8);
+    const uint8_t *ss = r + 21 + 90 + 200 + 3;  // ssup, ssdown, ssleft, ssright
+    o.u8(ss[0]); o.u8(ss[1]); o.u8(ss[2]); o.u8(ss[3]); o.u8(0);  // Style FALSE
+    for (int i = 0; i < 11; i++) o.u8(0);
+    o.u8(20);  // NumLinks
+    int dl = 0;
+    while (dl < 15 && r[6 + dl]) dl++;
+    for (int i = 0; i < 20; i++) o.u8(i < dl && i < 19 ? r[6 + i] : 0);
+    for (int f = 0; f < 20; f++) o.u16(offs[s][f]);
+    for (int l = 0; l < 20; l++) {
+      const uint8_t *k = r + 111 + 10 * l;
+      int fx = k[0] | k[1] << 8, fy = k[2] | k[3] << 8, tnum = (int16_t)(k[4] | k[5] << 8), tx = k[6] | k[7] << 8, ty = k[8] | k[9] << 8;
+      o.u16(tnum == OLD_MAX ? NOSCENE : tnum & 0xffff); o.u16(fx); o.u16(fy); o.u16(tx); o.u16(ty);
+    }
+  }
+  o.u16((int)plen);
+  for (uint32_t i = 0; i < plen; i++) o.u8(pool[i]);
+  return o.n;
 }
 
 // The core's LevelInfo: start (the first level only: scene 0's first link), scroll limits and links.
@@ -133,7 +214,13 @@ extern "C" int gp_open(gp_read_fn read, void *user, const char *gam_name) {
   bblName[0] = cblName[0] = chrName[0] = monName[0] = mblName[0] = sndName[0] = palName[0] = 0;
   haveHero = false;
   int32_t n = read(user, gam_name, gam, GAM_CAP);
-  if (n < HEAD || gam[0] != 'G' || gam[1] != 'M') return -1;  // version 3.00 files only, for now
+  if (n >= 2 && !(gam[0] == 'G' && gam[1] == 'M')) {  // an older file: GameClass::Load converts it
+    uint32_t k = (uint32_t)n < sizeof oldGam ? (uint32_t)n : sizeof oldGam;
+    for (uint32_t i = 0; i < k; i++) oldGam[i] = gam[i];
+    if (k < (uint32_t)OLD_SCENE) return -1;
+    n = (int32_t)convertOld(oldGam, k);
+  }
+  if (n < HEAD) return -1;
   gamN = (uint32_t)n;
   nscenes = i16(256);
   if (nscenes < 2 || sceneAt(nscenes) + 2 > gamN) return -1;
@@ -153,8 +240,13 @@ extern "C" const char *gp_graphic(int slot, int level) {
     case GP_LOST: return fileOf(1, 2);
     case GP_INTRO: return level >= 0 && level < nplay ? fileOf(play[level], F_INTRO) : "";
     case GP_EXIT: return level >= 0 && level < nplay ? fileOf(play[level], F_EXIT) : "";
+    case GP_MENU: return fileOf(0, 2);
   }
   return "";
+}
+extern "C" const uint8_t *gp_gam_bytes(uint32_t *n) {
+  *n = gamN;
+  return gam;
 }
 extern "C" int gp_begin(void) { return w && w->begin() ? 0 : -1; }
 extern "C" void gp_key(int scan, int down) { w->key(scan, down != 0); }

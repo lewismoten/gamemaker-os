@@ -16,11 +16,15 @@ extern "C" {
 /* Reads up to cap bytes of the game folder's file `name` (as the .GAM spells
    it); returns the bytes read, or a negative value if there is no such file. */
 typedef int32_t (*gp_read_fn)(void *user, const char *name, uint8_t *buf, uint32_t cap);
-/* Scene 0's title graphic and scene 1's won and lost graphics, and a level's
-   intro and exit graphics (ShowGraphic's file slots). */
-enum {GP_TITLE, GP_WON, GP_LOST, GP_INTRO, GP_EXIT};
-/* Reads the .GAM; returns the number of levels (scenes of type 10), or -1. */
+/* Scene 0's title graphic and scene 1's won and lost graphics, a level's
+   intro and exit graphics (ShowGraphic's file slots), and scene 0's menu picture. */
+enum {GP_TITLE, GP_WON, GP_LOST, GP_INTRO, GP_EXIT, GP_MENU};
+/* Reads the .GAM (version 3.00, or an older one converted as GameClass::Load
+   converts it); returns the number of levels (scenes of type 10), or -1. */
 int gp_open(gp_read_fn read, void *user, const char *gam_name);
+/* The .GAM as version 3.00 bytes, as gp_open read it (an older file converted):
+   the Sandbox Edition's serializeGame(parseGame(file)). */
+const uint8_t *gp_gam_bytes(uint32_t *n);
 /* The file name in a graphic slot ("" when empty); level is for GP_INTRO/GP_EXIT. */
 const char *gp_graphic(int slot, int level);
 int gp_begin(void); /* the first level, from the start of the game: 0, or -1 if its files are missing */

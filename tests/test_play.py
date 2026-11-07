@@ -19,6 +19,13 @@ EV_KEY, RIGHT, ESC, SPACE, ENTER = 1, 106, 1, 57, 28
 READ = C.CFUNCTYPE(C.c_int32, C.c_void_p, C.c_char_p, C.POINTER(C.c_uint8), C.c_uint32)
 
 def tick_ns(n): return (n * TICK_NS10 + 9) // 10  # when tick n is due (rounded up to a whole ns)
+def retrace(k): return k * 1_000_000_000 // 70      # k vertical retraces (70 Hz)
+# Roll the Dice's opening: STARTER.FLI (38 frames, 5 retraces apart), TITLE.GIF fading in
+# (65 retraces) for 12 s, ONE.GIF fading in for 3 s, then the level fading in.
+TITLE_AT = retrace(190)
+INTRO_AT = TITLE_AT + retrace(65) + 12_000_000_000
+LEVEL_AT = INTRO_AT + retrace(65) + 3_000_000_000
+PLAY_AT = LEVEL_AT + retrace(65)
 
 _lib = None
 def lib():
@@ -34,7 +41,13 @@ def lib():
         c.gs_wake.argtypes = [C.c_void_p, C.c_uint64]; c.gs_wake.restype = C.c_uint64
         c.gs_draw.argtypes = [C.c_void_p, C.c_void_p, C.c_uint32]
         c.gmos_session_new.restype = C.c_void_p
-        for f in ('gmos_session_phase', 'gmos_session_card', 'gmos_session_ticks', 'gmos_session_showing_card'): getattr(c, f).argtypes = [C.c_void_p]
+        for f in ('gmos_session_phase', 'gmos_session_stage', 'gmos_session_card', 'gmos_session_ticks', 'gmos_session_showing_card', 'gmos_session_shown', 'gmos_session_keys'): getattr(c, f).argtypes = [C.c_void_p]
+        for f in ('gmos_session_px', 'gmos_session_pal'): getattr(c, f).argtypes = [C.c_void_p]; getattr(c, f).restype = C.c_void_p
+        c.gmos_fli_open.argtypes = [C.c_char_p, C.c_uint32]; c.gmos_fli_next.argtypes = [C.c_void_p, C.c_void_p]
+        c.gs_fade_palette.argtypes = [C.c_char_p, C.c_char_p, C.c_uint32, C.c_uint32, C.c_void_p]
+        c.gp_gif_draw.argtypes = [C.c_char_p, C.c_uint32, C.c_int32, C.c_int32, C.c_void_p, C.c_void_p]
+        c.gp_gam_bytes.argtypes = [C.POINTER(C.c_uint32)]; c.gp_gam_bytes.restype = C.POINTER(C.c_uint8)
+        c.gp_open.argtypes = [C.c_void_p, C.c_char_p, C.c_char_p]
         c.gp_graphic.restype = C.c_char_p
         _lib = c
     return _lib
@@ -52,11 +65,25 @@ class Session:
     def phase(self): return self.c.gmos_session_phase(self.s)
     def ticks(self): return self.c.gmos_session_ticks(self.s)
     def card(self): return self.c.gmos_session_showing_card(self.s)
+    def shown(self): return self.c.gmos_session_shown(self.s)
+    def stage(self): return self.c.gmos_session_stage(self.s)
+    def px(self): return C.string_at(self.c.gmos_session_px(self.s), 64000)
+    def pal(self): return C.string_at(self.c.gmos_session_pal(self.s), 768)
+    def until(self, t_end, every=5_000_000, stop=None):
+        """Steps every 5 ms up to t_end (or until stop() holds); the time reached."""
+        t = getattr(self, 't', 0)
+        while t < t_end:
+            t = min(t + every, t_end); self.step(t)
+            if stop and stop(): break
+        self.t = t; return t
     def frame(self):
         buf = (C.c_uint32 * (W * H))(); self.c.gs_draw(self.s, buf, W); return list(buf)
     def to_play(self):
-        """Through the title (12 s) and the level's intro (3 s): play starts at 15 s."""
-        self.step(12_000_000_000); self.step(15_000_000_000); return 15_000_000_000
+        """Through the animation, the title, the level's intro and the level's fade-in:
+        play starts then, its clock at that step."""
+        self.step(TITLE_AT); self.step(INTRO_AT); self.step(LEVEL_AT); self.step(PLAY_AT)
+        assert self.phase() == GS_PLAY, self.log
+        return PLAY_AT
 
 def gmplay(keys, folder=DICE, gam='DICE.GAM'):
     out = subprocess.run([str(OUT / 'gmplay'), str(folder), gam, str(keys)], check=True, capture_output=True, text=True).stdout
@@ -92,21 +119,27 @@ class Cards(unittest.TestCase):
     def test_title_then_intro_then_play(self):
         s = Session(); self.assertEqual(s.result, 0)
         self.assertEqual(s.phase(), GS_CARDS); self.assertTrue(s.card())
-        self.assertIn('GMOS card skipped (only GIF so far): starter.fli', s.log)   # TITLE.LST: the animation, then title.gif for 12 s
-        self.assertIn('GMOS card title.gif, 12 s', s.log)
-        png(OUT / 'play-title.png', s.frame())
-        self.assertEqual(s.step(11_999_999_999), 0)                                 # still the title
-        self.assertEqual(s.step(12_000_000_000), GS_DRAW); self.assertIn('GMOS card one.gif, 3 s', s.log)
-        png(OUT / 'play-intro.png', s.frame())
-        self.assertEqual(s.step(15_000_000_000), GS_DRAW); self.assertEqual(s.phase(), GS_PLAY)
+        self.assertEqual(s.log, ['GMOS page starter.fli, 38 frames 5/70 s apart, then 0 s'])  # TITLE.LST: the animation, then title.gif for 12 s
+        s.step(TITLE_AT - 1); self.assertEqual(len(s.log), 1)                       # frames until the last one's 5 retraces are up
+        self.assertEqual(s.step(TITLE_AT), GS_DRAW); self.assertIn('GMOS page title.gif, 12 s', s.log)
+        s.step(TITLE_AT + retrace(65)); png(OUT / 'play-title.png', s.frame())
+        self.assertEqual(s.step(INTRO_AT - 1), 0)                                   # still the title
+        self.assertEqual(s.step(INTRO_AT), GS_DRAW); self.assertIn('GMOS page one.gif, 3 s', s.log)
+        s.step(INTRO_AT + retrace(65)); png(OUT / 'play-intro.png', s.frame())
+        self.assertEqual(s.step(LEVEL_AT), GS_DRAW); self.assertEqual(s.phase(), GS_CARDS)   # the level fades in ...
         self.assertIn('GMOS level 1', s.log); self.assertFalse(s.card())
+        self.assertEqual(s.step(PLAY_AT - 1), GS_DRAW); self.assertEqual(s.phase(), GS_CARDS)
+        self.assertEqual(s.step(PLAY_AT), GS_DRAW); self.assertEqual(s.phase(), GS_PLAY)    # ... and then plays
     def test_a_key_moves_on(self):
-        s = Session(); s.key(ENTER, 1); self.assertEqual(s.step(1_000_000), GS_DRAW)
-        self.assertIn('GMOS card one.gif, 3 s', s.log)
-        s.key(ENTER, 0); self.assertEqual(s.step(2_000_000), 0)                     # a release is not a press
-        s.key(SPACE, 1); s.step(3_000_000); self.assertEqual(s.phase(), GS_PLAY)
+        s = Session(); s.key(ENTER, 1); s.key(ENTER, 0)          # a key during the animation: its 0 s pause reads it
+        self.assertEqual(s.step(TITLE_AT), GS_DRAW); self.assertIn('GMOS page title.gif, 12 s', s.log)
+        s.key(SPACE, 1); s.key(SPACE, 2); s.key(SPACE, 0)        # a key during the fade waits in the buffer ...
+        self.assertEqual(s.c.gmos_session_keys(s.s), 1)          # (repeats and releases are not presses)
+        s.step(TITLE_AT + retrace(64)); self.assertNotIn('GMOS page one.gif, 3 s', s.log)
+        s.step(TITLE_AT + retrace(65)); self.assertIn('GMOS page one.gif, 3 s', s.log)   # ... and ends the title's pause
+        s.key(SPACE, 1); s.step(TITLE_AT + retrace(130)); self.assertIn('GMOS level 1', s.log)
     def test_card_layout(self):
-        s = Session(); px = s.frame()
+        s = Session(); s.step(TITLE_AT + retrace(65)); px = s.frame()
         self.assertTrue(all(p == 0 for p in px[:40 * W]))                         # black above and below the 640 x 400 card
         self.assertTrue(all(p == 0 for p in px[440 * W:]))
         self.assertGreater(len(set(px[40 * W:440 * W])), 4)
@@ -155,8 +188,8 @@ class Play(unittest.TestCase):
         # 640x480 surface it logged for the title card, the level's intro card
         # and the play view after 18 ticks with no game key down.
         crc = lambda px: zlib.crc32(struct.pack(f'<{W*H}I', *px))
-        s = Session(); self.assertEqual(crc(s.frame()), 1276733601)
-        s.step(12_000_000_000); self.assertEqual(crc(s.frame()), 334454467)
+        s = Session(); s.step(TITLE_AT); s.step(TITLE_AT + retrace(65)); self.assertEqual(crc(s.frame()), 1276733601)
+        s.step(INTRO_AT); s.step(INTRO_AT + retrace(65)); self.assertEqual(crc(s.frame()), 334454467)
         t0 = s.to_play(); s.step(t0 + tick_ns(1)); self.assertEqual(crc(s.frame()), 4226055335)
         png(OUT / 'play-board-tick1.png', s.frame())
         for k in range(2, 19): s.step(t0 + tick_ns(k))
