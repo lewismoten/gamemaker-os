@@ -117,7 +117,7 @@ static void play(uint32_t *px, const struct gm_game *g) {
   p = put(line, "GMOS play "); p = put(p, g->dir); p = put(p, "/"); put(p, gamname); say(line);
   if (!gamname[0] || gs_start(&game, sd_read, (void *)g->dir, gamname, clock_ns())) {say("GMOS cannot play it"); return;}
   static sbx_input_event ev[16]; uint64_t got;
-  uint32_t frames = 0, step_max = 0, draw_max = 0, late_max = 0, logged = 0, cards = 0;
+  uint32_t frames = 0, step_max = 0, draw_max = 0, late_max = 0, logged = 0, shown = 0;
   uint64_t since = clock_ns();
   int r = GS_DRAW, started = 0;
   for (;;) {
@@ -127,9 +127,9 @@ static void play(uint32_t *px, const struct gm_game *g) {
       gs_draw(&game, px, GM_W); sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H);
       uint32_t dt = (uint32_t)((clock_ns() - d0) / 1000u); if (dt > draw_max) draw_max = dt;
       frames++;
-      if (game.showing_card && game.card != cards) {
-        cards = game.card;
-        p = put(line, "GMOS card frame crc "); num(p, crc32(px, GM_W * GM_H)); say(line);
+      if (game.showing_card && game.shown != shown) { /* a page fully up: faded in, played or written */
+        shown = game.shown;
+        p = put(line, "GMOS page frame crc "); num(p, crc32(px, GM_W * GM_H)); say(line);
       }
       if (!game.showing_card && game.ran && (game.total_ticks == 1 || game.total_ticks == 18)) {
         p = put(line, "GMOS frame crc "); p = num(p, crc32(px, GM_W * GM_H)); p = put(p, " tick "); num(p, game.total_ticks); say(line);
@@ -160,6 +160,9 @@ static void play(uint32_t *px, const struct gm_game *g) {
     r = gs_step(&game, t);
     uint32_t dt = (uint32_t)((clock_ns() - t) / 1000u); if (game.ran && dt > step_max) step_max = dt;
     if (was != GS_PLAY && game.phase == GS_PLAY) started = 1;
+    if (was == GS_PLAY && game.phase == GS_CARDS) { /* the level ended: the session lets go of every key */
+      p = put(line, "GMOS keys released before tick "); num(p, game.total_ticks + 1); say(line);
+    }
     if (game.total_ticks != before && logged++ < 20000) { /* the view after the step's last tick (a late step runs up to 4) */
       p = put(line, "GMOS t "); p = num(p, game.total_ticks); p = put(p, " lv "); p = num(p, (uint32_t)gp_level() + 1); p = put(p, " h "); num(p, gp_frame_hash()); say(line);
     }

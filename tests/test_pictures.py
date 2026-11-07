@@ -39,6 +39,7 @@ class Animations(unittest.TestCase):
     def test_sandbox_sting_frames(self):
         self.frames(SANDBOX / 'games/brief/disk/sandlogo.fli', 'sandlogo')
         self.frames(SANDBOX / 'games/tuneup/disk/sandlogo.fli', 'sandlogo-tuneup')
+        self.frames(SANDBOX / 'games/pictures-and-cartoons/disk/bloom.fli', 'bloom')   # a cartoon after a level
     def test_played_on_the_session_clock(self):
         # FLI::View: frame k at k * 5 retraces, over the black screen; the title follows the last frame's wait.
         s = Session(); t = 0; draws = []
@@ -76,6 +77,16 @@ class TextPages(unittest.TestCase):
         s, after = self.pages('DICECRED', b'credits.gif 0\r\ncredits.txt\r\n', 'credits-menu', 'pictures-credits-text.png')
     def test_missing_text(self):
         self.pages('DICEMISS', b'won.gif 0\r\nnone.txt\r\n', 'missing-menu', 'pictures-missing-text.png')
+    @need_sandbox
+    def test_a_level_intro_text(self):
+        # Cutscenes: level 1's intro list ends with a text page over its picture.
+        r = ref('txt', 'cutscenes-onew'); folder = SANDBOX / 'games/cutscenes/disk'
+        s = Session(folder, b'cuts.gam'); t = 0
+        while not (any('onew.txt' in l for l in s.log) and s.stage() == 3) and t < 60_000_000_000:
+            t += 10_000_000; s.step(t)
+            if s.stage() == 3 and s.c.gmos_session_keys(s.s) == 0 and not any('onew.txt' in l for l in s.log): s.key(ENTER, 1); s.key(ENTER, 0)
+        self.assertEqual(zlib.crc32(s.px()), int(r[r.index('pages') + 1]))
+        png(OUT / 'pictures-cutscenes-text.png', s.frame())
     def test_lines(self):
         c = lib(); c.gp_text_line.argtypes = [C.c_char_p, C.c_uint32, C.POINTER(C.c_uint32), C.POINTER(C.c_uint32)]
         d = b'short\n' + b'x' * 40 + b'\nend'; at = C.c_uint32(0); start = C.c_uint32(0); out = []
