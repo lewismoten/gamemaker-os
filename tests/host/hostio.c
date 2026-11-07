@@ -29,3 +29,12 @@ void gmos_fli_next(uint8_t *px, uint8_t *pal) {
   for (unsigned i = 0; i < fli.w * fli.h; i++) px[i] = fli_px[i];
   for (unsigned i = 0; i < 768; i++) pal[i] = fli_pal[i];
 }
+/* The games list's state for the tests: 0 tab, 1 position in the tab, 2 view, 3 button, 4 the selected game's index (-1: none). */
+#include "menu.h"
+int gmos_menu_state(const struct gm_menu *m, int what) {
+  const struct gm_game *g = gm_selected(m);
+  return what == 0 ? (int)m->tab : what == 1 ? (int)m->pos[m->tab] : what == 2 ? (int)m->view : what == 3 ? (int)m->button : g ? (int)(g - m->games) : -1;
+}
+void gmos_menu_message(struct gm_menu *m, const char *s) {unsigned k = 0; while (s[k] && k < GM_MESSAGE_MAX) {m->message[k] = s[k]; k++;} m->message[k] = 0;}
+void gmos_menu_pic(struct gm_menu *m, unsigned id, int pic) {m->games[id].pic = (int8_t)pic;}
+int gmos_tab_game(const struct gm_menu *m, unsigned tab, unsigned i) {const struct gm_game *g = gm_tab_game(m, tab, i); return g ? (int)(g - m->games) : -1;}
