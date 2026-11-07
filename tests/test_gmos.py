@@ -202,6 +202,24 @@ class Layout(unittest.TestCase):
         px = page().render(); png(OUT / 'games-list-empty.png', px)
         self.assertTrue(any(px[y * W + x] == 0xeef0f6 for y in range(195, 220) for x in range(100, 540)))
 
+class Board(unittest.TestCase):
+    def test_same_frames_as_the_board(self):
+        """The frames the board logged (tests/data/board-list.txt), rendered from a card folder gmosCard.ts wrote: set GMOS_CARD."""
+        card = os.environ.get('GMOS_CARD')
+        if not card: self.skipTest('set GMOS_CARD to a folder written by the Sandbox Edition\'s web/scripts/gmosCard.ts')
+        games = pathlib.Path(card) / 'GAMES'; rows = [l.split() for l in (ROOT / 'tests/data/board-list.txt').read_text().splitlines() if l and l[0] != '#']
+        old = OUT / 'DICEOLD'; old.mkdir(parents=True, exist_ok=True)
+        for f in DICE.iterdir(): (old / f.name).write_bytes(f.read_bytes())
+        (old / 'DICE.GAM').write_bytes((ROOT / 'tests/data/dice-old.gam').read_bytes())
+        for _, keys, want in (r for r in rows if r[0] == 'frame'):
+            p = Page()
+            for _, d, src in (r for r in rows if r[0] == 'game'): p.add_folder(old if src == '-' else games / src, d)
+            p.index((games / 'LIBRARY.JSL').read_text()); p.finish()
+            for k in keys.split(',') if keys != '-' else []: p.key(k)
+            px = p.render()
+            with self.subTest(keys): self.assertEqual(crc(px), int(want))
+            if keys == '-': png(OUT / 'games-list-board.png', px)
+
 class Build(unittest.TestCase):
     def test_font_source_is_current(self):
         self.assertEqual(subprocess.run([sys.executable, str(ROOT / 'tools/make_font.py'), '--check']).returncode, 0)

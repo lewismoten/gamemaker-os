@@ -1,0 +1,20 @@
+# The games page on the Pi Zero W (kernel generation 17, 2026-11-07): the card's
+# folders in the board's listing order (DIR, then the folder of a gmosCard.ts card
+# that holds the same files; DICEOLD is tests/games/DICE with tests/data/dice-old.gam),
+# the index /OS/LIBRARY.JSL from that card, then keys pressed from the start and the
+# "GMOS list frame crc" the board logged once every card was drawn.
+game DICE DICE
+game KITSHOP KITSHOP
+game SNDBOARD SNDBOARD
+game DICEOLD -
+game OVERHEAD OVERHEAD
+game MONSTERS MEET
+game KEYDOORS KEYS
+game CARTOONS PICS
+game CUTSCENE CUTS
+frame - 3343288830
+frame pgdn 668103751
+frame pgdn,enter 1420505742
+frame pgdn,enter,right 860673960
+frame pgdn,enter,right,esc,tab 2280499649
+frame pgdn,enter,right,esc,tab,tab,home,enter 540982737
