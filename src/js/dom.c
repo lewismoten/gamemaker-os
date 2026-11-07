@@ -22,7 +22,7 @@
 #include "../font.h"
 #define W 640
 #define H 480
-#define SLOTS 16
+#define SLOTS 8
 struct dom_el *dom_body, *dom_focused;
 struct dom_stats dom_stats;
 static dom_loader loader;
@@ -145,7 +145,7 @@ int dom_set_src(struct dom_el *e, const char *src) {
 }
 int dom_set_canvas_size(struct dom_el *e, uint32_t w, uint32_t h) {
   if (w > W || h > H) return -1;
-  uint32_t *p = calloc(w * h ? w * h : 1, 4);
+  uint32_t *p = calloc(w && h ? w * h : 1, 4);
   if (!p) return -1;
   free(e->pixels); e->pixels = p; e->pw = w; e->ph = h;
   dom_changed(e); return 0;
@@ -209,7 +209,8 @@ int dom_set_style(struct dom_el *e, const char *name, const char *v) {
   } else if (!strcmp(name, "textAlign")) {
     if (!strcmp(v, "left")) s.align = 0; else if (!strcmp(v, "center")) s.align = 1; else if (!strcmp(v, "right")) s.align = 2; else return -1;
   } else if (!strcmp(name, "fontSize")) {
-    if (px(v, &n) || n == DOM_AUTO || n < 9 || n > 36) return -1; s.font = (uint8_t)(n / 9);
+    if (px(v, &n) || n == DOM_AUTO || n < 9 || n > 36) return -1;
+    s.font = (uint8_t)(n / 9);
   } else return -1;
   if (memcmp(&s, &e->st, sizeof s)) {e->st = s; dom_changed(e);}
   return 0;

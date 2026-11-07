@@ -9,6 +9,7 @@ struct jsrt_stats {
   uint64_t js_ns, render_ns, present_ns; /* time in JS, in layout and paint, presenting (totals) */
   uint32_t frames, presents;
   uint32_t game_ticks, game_late_max_us, game_step_max_us;
+  uint64_t game_play_ns;              /* time in the play phase (ticks are due only then) */
 };
 extern struct jsrt_stats jsrt_stats;
 /* Starts the app in folder dir ("/sd/OS/APPS/HELLO": runs its MAIN.JS);

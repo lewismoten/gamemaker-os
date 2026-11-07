@@ -33,7 +33,7 @@ struct jel {struct dom_el *e; JSValue self, style, ctx2d; uint32_t fill;};
 /* The game element's session (one game at a time: the play core is one). */
 static struct gs_session session;
 static struct dom_el *game_el;
-static char game_dir[48];
+static char game_dir[64];
 static int game_started;
 
 static void say(const char *s) {plat_log(s, (uint32_t)strlen(s));}
@@ -58,7 +58,7 @@ static JSValue call_native(const char *name, int argc, JSValueConst *argv) {
 }
 
 /* Files: "/sd/..." paths; the reader the play core and pictures use. */
-static uint8_t io[512 * 1024];
+static uint8_t io[256 * 1024];
 static int32_t dir_read(void *user, const char *name, uint8_t *buf, uint32_t cap) {
   char path[96]; int n = snprintf(path, sizeof path, "%s/", (const char *)user);
   for (; *name && n < (int)sizeof path - 1; name++) path[n++] = *name >= 'a' && *name <= 'z' ? (char)(*name - 32) : *name;
@@ -280,7 +280,7 @@ static JSValue js_play(JSContext *c, JSValueConst this, int argc, JSValueConst *
   if (plat_list(game_dir, find_gam, &f) < 0 || !f.gam[0]) return JS_ThrowRangeError(c, "no .GAM in %s", game_dir);
   session.say = say;
   if (gs_start(&session, dir_read, game_dir, f.gam, plat_clock_ns())) return JS_ThrowRangeError(c, "cannot play %s", game_dir);
-  e->game = &session; game_started = 1; jsrt_stats.game_ticks = 0; jsrt_stats.game_late_max_us = jsrt_stats.game_step_max_us = 0;
+  e->game = &session; game_started = 1; jsrt_stats.game_ticks = 0; jsrt_stats.game_play_ns = 0; jsrt_stats.game_late_max_us = jsrt_stats.game_step_max_us = 0;
   sayf("JS game %s/%s", game_dir, f.gam);
   focus_to(e); dom_changed(e);
   return JS_UNDEFINED;
@@ -299,6 +299,13 @@ static JSValue js_stop(JSContext *c, JSValueConst this, int argc, JSValueConst *
   if (e == game_el && game_started) stop_game();
   return JS_UNDEFINED;
 }
+/* game.press(linuxKeyCode, down): a key for the game, as if pressed (demos, bots, benchmarks). */
+static JSValue js_press(JSContext *c, JSValueConst this, int argc, JSValueConst *argv) {
+  struct dom_el *e = el_of(c, this); int32_t code, down = 1;
+  if (!e || JS_ToInt32(c, &code, argv[0]) || (argc > 1 && JS_ToInt32(c, &down, argv[1]))) return JS_EXCEPTION;
+  if (e == game_el && game_started && gs_event(&session, 1, (uint16_t)code, down ? 1 : 0) & GS_EXIT) stop_game();
+  return JS_UNDEFINED;
+}
 static JSValue js_get_context(JSContext *c, JSValueConst this, int argc, JSValueConst *argv);
 static const JSCFunctionListEntry el_proto[] = {
   JS_CGETSET_MAGIC_DEF("tagName", el_get, 0, P_TAG), JS_CGETSET_MAGIC_DEF("id", el_get, el_set, P_ID),
@@ -314,7 +321,7 @@ static const JSCFunctionListEntry el_proto[] = {
   JS_CFUNC_DEF("removeChild", 1, js_remove_child), JS_CFUNC_DEF("remove", 0, js_remove),
   JS_CFUNC_DEF("focus", 0, js_focus), JS_CFUNC_DEF("blur", 0, js_blur),
   JS_CFUNC_DEF("getBoundingClientRect", 0, js_rect), JS_CFUNC_DEF("getContext", 1, js_get_context),
-  JS_CFUNC_DEF("play", 0, js_play), JS_CFUNC_DEF("stop", 0, js_stop),
+  JS_CFUNC_DEF("play", 0, js_play), JS_CFUNC_DEF("stop", 0, js_stop), JS_CFUNC_DEF("press", 2, js_press),
 };
 
 /* element.style: one accessor per supported property (dom.c's CSS subset). */
@@ -498,6 +505,7 @@ static JSValue js_stats(JSContext *c, JSValueConst t, int n, JSValueConst *a) {
   JS_SetPropertyStr(c, o, "rects", JS_NewUint32(c, dom_stats.rects));
   JS_SetPropertyStr(c, o, "pixels", JS_NewUint32(c, dom_stats.pixels));
   JS_SetPropertyStr(c, o, "gameTicks", JS_NewUint32(c, jsrt_stats.game_ticks));
+  JS_SetPropertyStr(c, o, "gamePlayMs", JS_NewFloat64(c, (double)jsrt_stats.game_play_ns / 1e6));
   JS_SetPropertyStr(c, o, "gameLateMaxUs", JS_NewUint32(c, jsrt_stats.game_late_max_us));
   JS_SetPropertyStr(c, o, "gameStepMaxUs", JS_NewUint32(c, jsrt_stats.game_step_max_us));
   return o;
@@ -623,8 +631,8 @@ int jsrt_start(const char *dir, uint32_t heap_limit) {
   JS_SetPropertyStr(ctx, g, "Element", JS_DupValue(ctx, ector));
   JS_FreeValue(ctx, g);
   char path[96]; snprintf(path, sizeof path, "%s/MAIN.JS", dir);
-  static char src[256 * 1024];
-  int32_t n = plat_read(path, (uint8_t *)src, sizeof src - 1);
+  char *src = (char *)io; /* JS_Eval copies what it keeps */
+  int32_t n = plat_read(path, io, sizeof io - 1);
   if (n < 0) {sayf("JS no %s", path); return -1;}
   src[n] = 0;
   uint64_t before = jsrt_stats.js_ns;
@@ -657,6 +665,8 @@ uint64_t jsrt_step(void) {
   if (game_started) {
     uint64_t t = plat_clock_ns(), due = gs_wake(&session, t);
     if (session.phase == GS_PLAY && t > due) {uint32_t l = (uint32_t)((t - due) / 1000u); if (l > jsrt_stats.game_late_max_us) jsrt_stats.game_late_max_us = l;}
+    static uint64_t last; if (session.phase == GS_PLAY && last && t > last) jsrt_stats.game_play_ns += t - last;
+    last = t;
     int was = session.phase; uint32_t before = session.total_ticks;
     int r = gs_step(&session, t);
     uint32_t dt = (uint32_t)((plat_clock_ns() - t) / 1000u);
