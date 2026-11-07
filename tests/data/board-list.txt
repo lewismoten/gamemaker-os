@@ -3,6 +3,10 @@
 # that holds the same files; DICEOLD is tests/games/DICE with tests/data/dice-old.gam),
 # the index /OS/LIBRARY.JSL from that card, then keys pressed from the start and the
 # "GMOS list frame crc" the board logged once every card was drawn.
+# These frames are the 640x480x32 page (before 2026-11-07's 960x540x16 one): the
+# board's card has since changed (126 games), so they wait to be recorded again
+# with a card whose files are on hand. Until then the test skips.
+stale 640x480
 game DICE DICE
 game KITSHOP KITSHOP
 game SNDBOARD SNDBOARD

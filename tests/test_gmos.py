@@ -241,6 +241,7 @@ class Board(unittest.TestCase):
         card = os.environ.get('GMOS_CARD')
         if not card: self.skipTest('set GMOS_CARD to a folder written by the Sandbox Edition\'s web/scripts/gmosCard.ts')
         games = pathlib.Path(card) / 'GAMES'; rows = [l.split() for l in (ROOT / 'tests/data/board-list.txt').read_text().splitlines() if l and l[0] != '#']
+        if any(r[0] == 'stale' for r in rows): self.skipTest('tests/data/board-list.txt was recorded from the 640x480 page: record it again')
         old = OUT / 'DICEOLD'; old.mkdir(parents=True, exist_ok=True)
         for f in DICE.iterdir(): (old / f.name).write_bytes(f.read_bytes())
         (old / 'DICE.GAM').write_bytes((ROOT / 'tests/data/dice-old.gam').read_bytes())
