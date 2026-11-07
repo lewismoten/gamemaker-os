@@ -73,5 +73,97 @@ class Hello(unittest.TestCase):
             self.assertEqual((w, h, depth), (960, 540, 16))   # Esc: back to the page's mode
 
 
+class Clock(unittest.TestCase):
+    def probe(self, script, keys='', ms=2400):
+        """Append test-only observers; run the real app on the real JS runtime."""
+        with tempfile.TemporaryDirectory() as t:
+            app = pathlib.Path(t) / 'CLOCK'
+            app.mkdir()
+            source = (ROOT / 'apps/CLOCK/MAIN.JS').read_text()
+            (app / 'MAIN.JS').write_text(source + '\n' + script)
+            sd = card({'CLOCK': app})
+            try:
+                code, out = run(sd, 'CLOCK', ms, keys)
+                self.assertEqual(code, 0, out)
+                for marker in ('Uncaught', '(it threw)', 'FAIL', 'unsupported'):
+                    self.assertNotIn(marker, out)
+                return out
+            finally:
+                import shutil
+                shutil.rmtree(sd)
+
+    def test_theme_keys(self):
+        cases = [
+            ('200:20:1,220:20:0', 'Paper'),  # T
+            ('200:20:1,210:20:2,220:20:0', 'Paper'),  # ignore repeat
+            ('200:20:0', 'Night'),  # release alone is not a press
+            ('200:30:1,220:30:0', 'Night'),  # A is not a theme key
+            ('200:20:1,220:20:0,400:20:1,420:20:0', 'Night'),
+            ('200:28:1,220:28:0', 'Paper'),  # focused button: Enter
+            ('200:57:1,220:57:0', 'Paper'),  # focused button: Space
+        ]
+        for keys, expected in cases:
+            with self.subTest(keys=keys):
+                out = self.probe('''
+setTimeout(() => {
+  console.log('CLOCK TEST ' + document.getElementById('theme').textContent);
+  sys.exit(0);
+}, 700);
+''', keys)
+                self.assertIn('JS CLOCK TEST Theme: ' + expected, out)
+
+    def test_120_frame_smoke_and_time_advancement(self):
+        out = self.probe('''
+console.log('CLOCK TEST start=' + document.getElementById('uptime').textContent);
+let observedFrames = 0;
+function observeClock() {
+  if (++observedFrames === 120) {
+    console.log('CLOCK TEST frames=' + observedFrames);
+    console.log('CLOCK TEST end=' + document.getElementById('uptime').textContent);
+    console.log('CLOCK TEST date=' + document.getElementById('date-gap').textContent);
+    sys.exit(0);
+  } else requestAnimationFrame(observeClock);
+}
+requestAnimationFrame(observeClock);
+''')
+        self.assertIn('JS CLOCK TEST start=00:00:00', out)
+        self.assertIn('JS CLOCK TEST frames=120', out)
+        # Frame 1 is at t=0, so frame 120 precedes the two-second boundary.
+        self.assertIn('JS CLOCK TEST end=00:00:01', out)
+        self.assertIn('JS CLOCK TEST date=Date: unavailable (no civil-clock API)', out)
+
+    def test_uptime_rollovers(self):
+        # Test-only clock injection covers long uptimes without waiting days.
+        for seconds, expected in [(59, '00:00:59'), (60, '00:01:00'),
+                                  (3599, '00:59:59'), (3600, '01:00:00'),
+                                  (86400, '24:00:00'), (360000, '100:00:00')]:
+            with self.subTest(seconds=seconds):
+                out = self.probe('''
+performance.now = () => %d;
+setTimeout(() => {
+  console.log('CLOCK TEST time=' + document.getElementById('uptime').textContent);
+  sys.exit(0);
+}, 150);
+''' % (seconds * 1000))
+                self.assertIn('JS CLOCK TEST time=' + expected, out)
+
+    def test_uptime_page(self):
+        sd = card({'CLOCK': ROOT / 'apps/CLOCK'})
+        try:
+            with tempfile.TemporaryDirectory() as t:
+                shot = pathlib.Path(t) / 'clock.shot'
+                code, out = run(sd, 'CLOCK', 2200, shot=shot)
+                self.assertEqual(code, 0, out)
+                self.assertNotIn('Uncaught', out)
+                self.assertNotIn('(it threw)', out)
+                self.assertIn('JS CLOCK ready', out)
+                w, h, depth, px = read_shot(shot)
+                self.assertEqual((w, h, depth), (960, 540, 16))
+                self.assertEqual(len(px), 960 * 540 * 2)
+        finally:
+            import shutil
+            shutil.rmtree(sd)
+
+
 if __name__ == '__main__':
     unittest.main()
