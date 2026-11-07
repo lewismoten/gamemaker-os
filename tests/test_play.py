@@ -132,12 +132,13 @@ class Cards(unittest.TestCase):
         self.assertEqual(s.step(PLAY_AT), GS_DRAW); self.assertEqual(s.phase(), GS_PLAY)    # ... and then plays
     def test_a_key_moves_on(self):
         s = Session(); s.key(ENTER, 1); s.key(ENTER, 0)          # a key during the animation: its 0 s pause reads it
-        self.assertEqual(s.step(TITLE_AT), GS_DRAW); self.assertIn('GMOS page title.gif, 12 s', s.log)
+        s.step(TITLE_AT - 1)                                     # the frames, drawn ...
+        self.assertEqual(s.step(TITLE_AT), GS_DRAW); self.assertIn('GMOS page title.gif, 12 s', s.log)   # ... then the title
         s.key(SPACE, 1); s.key(SPACE, 2); s.key(SPACE, 0)        # a key during the fade waits in the buffer ...
         self.assertEqual(s.c.gmos_session_keys(s.s), 1)          # (repeats and releases are not presses)
         s.step(TITLE_AT + retrace(64)); self.assertNotIn('GMOS page one.gif, 3 s', s.log)
-        s.step(TITLE_AT + retrace(65)); self.assertIn('GMOS page one.gif, 3 s', s.log)   # ... and ends the title's pause
-        s.key(SPACE, 1); s.step(TITLE_AT + retrace(130)); self.assertIn('GMOS level 1', s.log)
+        s.step(TITLE_AT + retrace(65)); s.step(TITLE_AT + retrace(65) + 1); self.assertIn('GMOS page one.gif, 3 s', s.log)   # ... and ends the title's pause once it is up
+        s.key(SPACE, 1); s.step(TITLE_AT + retrace(130)); s.step(TITLE_AT + retrace(130) + 1); self.assertIn('GMOS level 1', s.log)
     def test_card_layout(self):
         s = Session(); s.step(TITLE_AT + retrace(65)); px = s.frame()
         self.assertTrue(all(p == 0 for p in px[:40 * W]))                         # black above and below the 640 x 400 card

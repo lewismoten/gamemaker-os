@@ -252,7 +252,7 @@ static int run_cards(struct gs_session *s, uint64_t now) {
         }
         copy(s->pal, s->to, 768); r |= GS_DRAW;
         uint64_t end = s->t + retrace(GS_FADE_STEPS);
-        if (s->stage == GS_FADE) {s->shown++; pause_from(s, s->pause, end); continue;}
+        if (s->stage == GS_FADE) {s->shown++; pause_from(s, s->pause, end); return r;} /* the whole picture is drawn before a waiting key ends it */
         if (s->stage == GS_LEVEL_IN) {s->phase = GS_PLAY; s->t0 = now; s->ticks = 0; s->keys = 0; return r;}
         level_change(s, s->change);
         next_from(s, end);
@@ -260,7 +260,7 @@ static int run_cards(struct gs_session *s, uint64_t now) {
       }
       case GS_FLI:
         r |= fli_step(s, now);
-        if (s->stage == GS_FLI) return r;
+        if (s->stage == GS_FLI || r) return r; /* the last frame is drawn before its pause */
         continue;
       case GS_PAUSE: {
         uint64_t end = s->t + (uint64_t)s->pause * 1000000000ull;

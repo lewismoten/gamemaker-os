@@ -102,7 +102,7 @@ class Fades(unittest.TestCase):
             lib().gs_fade_palette(a, b, step, 65, out)
             self.assertEqual(bytes(out), bytes(x + int((y - x) * step / 65) for x, y in zip(a, b)), step)
     def test_title_fades_in(self):
-        s = Session(); s.step(retrace(190)); pal = (C.c_uint8 * 768)(); px = (C.c_uint8 * 64000)()
+        s = Session(); s.step(retrace(185)); s.step(retrace(190)); pal = (C.c_uint8 * 768)(); px = (C.c_uint8 * 64000)()
         d = (DICE / 'TITLE.GIF').read_bytes(); lib().gp_gif(d, len(d), pal, px); title = bytes(pal)
         black = bytes(768); out = (C.c_uint8 * 768)()
         self.assertEqual(s.pal(), black)                                           # SetAllPalTo(&Black), then the picture
@@ -112,8 +112,8 @@ class Fades(unittest.TestCase):
         s.step(retrace(190) + retrace(65)); self.assertEqual(s.pal(), title)
     def test_level_fades_out_and_in(self):
         # Esc aside, a level ends by fading to black; here the level's start: it fades in from ONE.GIF's palette.
-        s = Session(); s.step(retrace(190)); t = retrace(190) + retrace(65) + 12_000_000_000; s.step(t)
-        s.step(t + retrace(65) + 3_000_000_000); level_at = t + retrace(65) + 3_000_000_000
+        s = Session(); level_at = retrace(190) + retrace(65) + 12_000_000_000 + retrace(65) + 3_000_000_000
+        s.until(level_at); self.assertIn('GMOS level 1', s.log)
         self.assertEqual(s.phase(), GS_CARDS); self.assertFalse(s.card())
         s.step(level_at + retrace(30)); png(OUT / 'pictures-level-fading.png', s.frame())
         pal = (C.c_uint8 * 768)(); px = (C.c_uint8 * 64000)(); d = (DICE / 'ONE.GIF').read_bytes(); lib().gp_gif(d, len(d), pal, px)
