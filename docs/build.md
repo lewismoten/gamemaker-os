@@ -88,10 +88,13 @@ need the kernel's long-name support, which comes later.
    its `.GAM`'s CRC-32 (else its folder, `locator`, or `.GAM` name, `dosName`)
    and gives its title, category, company, year and blurb. Games it does not
    list go in an Other tab.
-4. Draws the games page after the Sandbox Edition web site's Games page in its
+4. Switches the screen to 960x540 at 16 bits a pixel (RGB565; ABI 1.2), which
+   the GPU scales to the HDMI mode: exactly twice in each direction on a 1080p
+   monitor, so the page fills it with square pixels. Draws the games page after
+   the Sandbox Edition web site's Games page in its
    dark theme: the header, category tabs with counts (Starters, Sandbox,
-   Bizarre, CD, Other; only those with games), the tab's line, six game cards a
-   page (three across) with each game's title screen, title and company, the
+   Bizarre, CD, Other; only those with games), the tab's line, eight game cards a
+   page (four across) with each game's title screen (218 by 136), title and company, the
    selected card outlined in blue, and the key help. Each card's title screen is
    read from the game's own files between key presses (about 100 ms a game on
    the Pi Zero W, the last 24 kept), the way the web page picks it: scene 0's
@@ -101,7 +104,7 @@ need the kernel's long-name support, which comes later.
 5. Reads `/dev/input/event0` without blocking. On the grid the arrows move
    (repeats too), PgUp and PgDn turn the page, Home and End go to the first and
    last card, Tab and Shift+Tab (or `]` and `[`) change the tab, and Enter opens
-   the details view: the title screen at full size, the category, title,
+   the details view: the title screen at twice its size (640 by 400), the category, title,
    company and year, the blurb, and Play and Back buttons (Left, Right or Tab
    pick one; Enter or Space presses it; Esc goes back). Play logs
    `GMOS chose <DIR> "<title>"` and plays the game ([play.md](play.md)); the

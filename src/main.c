@@ -4,8 +4,10 @@
  * from that file and from the library index /sd/GAMES/LIBRARY.JSL when it
  * lists the game), draws the games page on /dev/fb0 (menu.h, view.h: tabs,
  * cards with title screens read from each game's files a card at a time, a
- * details view) and moves through it with /dev/input/event0. Play on the
- * details view plays the game (session.h) at 18.2 Hz on the kernel's clock,
+ * details view) and moves through it with /dev/input/event0. The page is
+ * 960x540 at 16 bpp (ABI 1.2), which the GPU doubles to fill a 1080p screen.
+ * Play on the details view plays the game (session.h) in 640x480x32 as
+ * before, the mode every program starts in, at 18.2 Hz on the kernel's clock,
  * sleeping between ticks; Esc or the game's end returns to the list, and Esc
  * or Q on the grid quits. */
 #include <sandbox/syscall.h>
@@ -129,18 +131,30 @@ static int32_t sd_read(void *user, const char *name, uint8_t *buf, uint32_t cap)
   return (int32_t)have;
 }
 static uint64_t clock_ns(void) {uint64_t t = 0; sbx_clock_ns(&t); return t;}
-static uint32_t crc32(const uint32_t *px, uint32_t words) {
+static uint32_t crc32(const void *data, uint32_t bytes) {
+  const uint8_t *b = (const uint8_t *)data;
   static uint32_t table[256];
   if (!table[1]) for (uint32_t i = 0; i < 256; i++) {uint32_t c = i; for (int k = 0; k < 8; k++) c = c >> 1 ^ (0xedb88320u & (0u - (c & 1))); table[i] = c;}
   uint32_t c = ~0u;
-  for (uint32_t i = 0; i < words; i++) for (int k = 0; k < 4; k++) c = table[(c ^ (px[i] >> (8 * k))) & 0xff] ^ c >> 8;
+  for (uint32_t i = 0; i < bytes; i++) c = table[(c ^ b[i]) & 0xff] ^ c >> 8;
   return ~c;
+}
+#define PLAY_W 640u /* a game's screen: 320 x 200 doubled, as before the page went 16:9 */
+#define PLAY_H 480u
+/* Another screen mode (sbx_fb_set_mode clears it), checked and logged with its time. 0 when it is up. */
+static int screen_mode(uint32_t w, uint32_t h, uint32_t format) {
+  uint64_t t0 = clock_ns(); sbx_fb_mode m; char line[64], *p;
+  int bad = sbx_fb_set_mode(fb_fd, w, h, format) || sbx_fb_query(fb_fd, &m) || m.width != w || m.height != h || m.format != format ||
+            m.pitch != w * (format == SBX_FB_XRGB8888 ? 4u : 2u);
+  p = put(line, "GMOS screen "); p = num(p, w); p = put(p, "x"); p = num(p, h); p = put(p, format == SBX_FB_XRGB8888 ? "x32" : "x16");
+  if (bad) put(p, " refused"); else {p = put(p, " in "); p = num(p, (uint32_t)((clock_ns() - t0) / 1000u)); put(p, " us");}
+  say(line); return bad;
 }
 static struct gs_session game;
 /* Plays the chosen game until Esc or its end. Each tick logs its number and the
    view's hash (the Pocket Player host test's), each game key the tick it lands
    before, and every 5 s the timing: the host tests replay those lines. */
-static void play(uint32_t *px, const struct gm_game *g) {
+static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in the game's 640x480x32 */
   char path[24], *p = put(path, "/sd/GAMES/"), gamname[13], line[120];
   p = put(p, g->dir);
   find_gam(path, (uint32_t)(p - path), gamname);
@@ -149,6 +163,7 @@ static void play(uint32_t *px, const struct gm_game *g) {
   snd_dir(&game.sound, g->dir);
   p = put(line, "GMOS play "); p = put(p, g->dir); p = put(p, "/"); put(p, gamname); say(line);
   if (!gamname[0] || gs_start(&game, sd_read, (void *)g->dir, gamname, clock_ns())) {say("GMOS cannot play it"); return;}
+  if (screen_mode(PLAY_W, PLAY_H, SBX_FB_XRGB8888)) return;
   static sbx_input_event ev[16]; uint64_t got;
   uint32_t frames = 0, step_max = 0, draw_max = 0, late_max = 0, logged = 0, shown = 0;
   uint64_t since = clock_ns();
@@ -157,15 +172,15 @@ static void play(uint32_t *px, const struct gm_game *g) {
     heartbeat();
     if (r & GS_DRAW) {
       uint64_t d0 = clock_ns();
-      gs_draw(&game, px, GM_W); sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H);
+      gs_draw(&game, px, PLAY_W); sbx_fb_present(fb_fd, 0, 0, PLAY_W, PLAY_H);
       uint32_t dt = (uint32_t)((clock_ns() - d0) / 1000u); if (dt > draw_max) draw_max = dt;
       frames++;
       if (game.showing_card && game.shown != shown) { /* a page fully up: faded in, played or written */
         shown = game.shown;
-        p = put(line, "GMOS page frame crc "); num(p, crc32(px, GM_W * GM_H)); say(line);
+        p = put(line, "GMOS page frame crc "); num(p, crc32(px, PLAY_W * PLAY_H * 4u)); say(line);
       }
       if (!game.showing_card && game.ran && (game.total_ticks == 1 || game.total_ticks == 18)) {
-        p = put(line, "GMOS frame crc "); p = num(p, crc32(px, GM_W * GM_H)); p = put(p, " tick "); num(p, game.total_ticks); say(line);
+        p = put(line, "GMOS frame crc "); p = num(p, crc32(px, PLAY_W * PLAY_H * 4u)); p = put(p, " tick "); num(p, game.total_ticks); say(line);
       }
     }
     if (r & GS_EXIT) break;
@@ -230,7 +245,7 @@ static int load_next_thumb(void) {
   return 0;
 }
 /* Draws the games page and presents it; once every card on it is drawn, logs the frame's CRC (the host tests render the same frame). */
-static void show_list(uint32_t *px) {
+static void show_list(uint16_t *px) {
   const struct gm_game *g = gm_selected(&menu);
   if (menu.view == GM_DETAILS && g && big_id != (int)(g - menu.games)) {big_id = (int)(g - menu.games); big_ok = !title_picture(g, big_px, big_pal);}
   gm_draw(px, GM_W, &menu, menu.view == GM_DETAILS && big_ok ? big_px : 0, big_pal);
@@ -240,7 +255,7 @@ static void show_list(uint32_t *px) {
     unsigned t = menu.tab, first = menu.pos[t] / GM_PAGE * GM_PAGE;
     for (unsigned i = 0; i < GM_PAGE; i++) {const struct gm_game *c = gm_tab_game(&menu, t, first + i); if (c && (c->pic == 0 || (c->pic > 0 && !gm_thumb_get((unsigned)(c - menu.games))))) pending = 1;}
   }
-  if (!pending) {char line[48], *p = put(line, "GMOS list frame crc "); num(p, crc32(px, GM_W * GM_H)); say(line);}
+  if (!pending) {char line[48], *p = put(line, "GMOS list frame crc "); num(p, crc32(px, GM_W * GM_H * 2u)); say(line);}
 }
 int main(const sbx_startup *start) {
   char line[128], *p;
@@ -249,9 +264,14 @@ int main(const sbx_startup *start) {
   heartbeat(); /* readiness: the kernel wants it within 10 s */
   p = put(line, "GMOS hello, ABI "); p = num(p, start->major); p = put(p, "."); p = num(p, start->minor);
   p = put(p, ", generation "); num(p, generation); say(line);
-  sbx_fb_mode mode; uint32_t *px;
-  if (sbx_open("/dev/fb0", 8, SBX_O_RDWR, &fb_fd) || sbx_fb_query(fb_fd, &mode) || mode.width != GM_W || mode.height != GM_H ||
-      sbx_fb_map(fb_fd, mode.buffer_bytes, (void **)&px)) {say("GMOS needs a 640x480 /dev/fb0"); return 4;}
+  sbx_fb_mode mode; void *surface; uint16_t *px;
+  if (abi_minor < 2) {say("GMOS needs screen modes (ABI 1.2)"); return 4;}
+  /* Every program starts in 640x480x32, whose surface is the largest: map it once, then switch. */
+  if (sbx_open("/dev/fb0", 8, SBX_O_RDWR, &fb_fd) || sbx_fb_query(fb_fd, &mode) || mode.buffer_bytes < GM_W * GM_H * 2u ||
+      mode.buffer_bytes < PLAY_W * PLAY_H * 4u || sbx_fb_map(fb_fd, mode.buffer_bytes, &surface) || screen_mode(GM_W, GM_H, SBX_FB_RGB565)) {
+    say("GMOS needs a /dev/fb0 that takes 960x540x16"); return 4;
+  }
+  px = (uint16_t *)surface;
   find_games();
   p = put(line, "GMOS "); p = num(p, menu.count); p = put(p, menu.count == 1 ? " game" : " games"); put(p, " in /sd/GAMES"); say(line);
   for (unsigned i = 0; i < menu.count; i++) {
@@ -284,7 +304,8 @@ int main(const sbx_startup *start) {
       if (a == GM_CHOSEN) {
         const struct gm_game *g = gm_selected(&menu);
         p = put(line, "GMOS chose "); p = put(p, g->dir); p = put(p, " \""); p = put(p, g->title); put(p, "\""); say(line);
-        play(px, g);
+        play((uint32_t *)surface, g);
+        if (screen_mode(GM_W, GM_H, SBX_FB_RGB565)) return 4;
         menu.message[0] = 0; menu.shift = 0; redraw = 1;
         big_id = -1; /* the game used the play core: read the title screen again */
         if (have_input) {sbx_input_state st; sbx_input_state_get(in_fd, &st);} /* keys held in the game are not the list's */

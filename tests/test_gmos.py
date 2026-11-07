@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MIT
 """Host tests for the pure parts of GMOS.ELF: the .GAM title reader, the library
 index, the games page (tabs, grid, details) and its keys, the title screens on
-the cards, and the 640x480 layout, rendered to PNG files in build/host/ for a
+the cards, and the 960x540 layout, rendered to PNG files in build/host/ for a
 person to look at. GMOS_GAMES may name a folder of game folders (each with a
 .GAM) to title real games too."""
 import ctypes as C
 import os, pathlib, struct, subprocess, sys, unittest, zlib
-from gmos_page import (Page, lib, png, crc, gam_of, W, H, TW, TH, NONE, MOVED, CHOSEN, QUIT, RESYNC,
+from gmos_page import (Page, lib, png, crc, q, rgb, gam_of, W, H, TW, TH, PAGE, NONE, MOVED, CHOSEN, QUIT, RESYNC,
                        STARTER, SANDBOX, BIZARRE, CD, OTHER, GRID, DETAILS)
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUT = ROOT / os.environ.get('GMOS_HOST', 'build/host')  # make test-asan: build/asan
@@ -96,20 +96,20 @@ class Keys(unittest.TestCase):
         self.assertEqual((p.tab, p.pos, p.view), (SANDBOX, 0, GRID))
         self.assertEqual(p.key('up'), NONE); self.assertEqual(p.key('left'), NONE)           # the first card stays put
         self.assertEqual(p.key('right'), MOVED); self.assertEqual(p.pos, 1)
-        self.assertEqual(p.key('down'), MOVED); self.assertEqual(p.pos, 4)                    # three across
-        self.assertEqual(p.key('down'), MOVED); self.assertEqual(p.pos, 7)                    # onto the next page
-        self.assertEqual(p.key('pgdn'), MOVED); self.assertEqual(p.pos, 13)                   # six on, held at the last
+        self.assertEqual(p.key('down'), MOVED); self.assertEqual(p.pos, 5)                    # four across
+        self.assertEqual(p.key('down'), MOVED); self.assertEqual(p.pos, 9)                    # onto the next page
+        self.assertEqual(p.key('pgdn'), MOVED); self.assertEqual(p.pos, 13)                   # eight on, held at the last
         self.assertEqual(p.key('down'), NONE); self.assertEqual(p.key('right'), NONE)
-        self.assertEqual(p.key('pgup'), MOVED); self.assertEqual(p.pos, 7)
+        self.assertEqual(p.key('pgup'), MOVED); self.assertEqual(p.pos, 5)
         self.assertEqual(p.key('home'), MOVED); self.assertEqual(p.pos, 0)
         self.assertEqual(p.key('end'), MOVED); self.assertEqual(p.pos, 13)
-        p.key('home'); p.key('down'); p.key('down'); p.key('down')                            # 0, 3, 6, 9
+        p.key('home'); p.key('down'); p.key('down')                                           # 0, 4, 8
         self.assertEqual(p.key('down'), MOVED); self.assertEqual(p.pos, 12)                   # 12
         self.assertEqual(p.key('down'), NONE)                                                 # 12 is on the last row
         p.key('pgup'); p.key('pgup'); p.key('right'); p.key('right')                          # 2
         self.assertEqual(p.key('right', 2), MOVED); self.assertEqual(p.key('right', 0), NONE) # repeats move, releases do not
     def test_short_row_below(self):
-        p = many(5); p.key('right'); p.key('right')                                           # 2: the row below has 3 and 4
+        p = many(5); p.key('right'); p.key('right')                                           # 2: the row below has only 4
         self.assertEqual(p.key('down'), MOVED); self.assertEqual(p.pos, 4)
     def test_tabs(self):
         p = Page(); p.add_folder(DICE); p.add('ALPHA', 'A'); p.add('BETA', 'B', gam='BETA.GAM'); p.add('LOOSE', 'L'); p.index(INDEX); p.finish()
@@ -178,30 +178,32 @@ class Layout(unittest.TestCase):
         p.keys('tab', 'tab', 'tab')                                                           # Bizarre, Other, Starters (Roll the Dice)
         self.assertEqual(p.tab, STARTER)
         px = p.render(); png(OUT / 'games-grid.png', px)
-        self.assertEqual(px[10 * W + 300], 0x000080)                                          # the navy header
+        self.assertEqual(rgb(px[10 * W + 300]), q(0x000080))                                 # the navy header
         x, y, w, h = card_box(0)
-        self.assertEqual(px[(y - 1) * W + x + 40], 0x6d8bff)                                  # the selected card's blue ring
-        thumb = [px[(y + 1 + j) * W + x + 1 + i] for j in range(20, 100) for i in range(20, 170)]
+        self.assertEqual([x, y, w, h], [16, 112, 220, 180]); self.assertEqual(card_box(7)[:2], [16 + 3 * 236, 112 + 192])  # four across, two down
+        self.assertEqual(rgb(px[(y - 1) * W + x + 40]), q(0x6d8bff))                          # the selected card's blue ring
+        thumb = [px[(y + 1 + j) * W + x + 1 + i] for j in range(20, 120) for i in range(20, 200)]
         self.assertGreater(len(set(thumb)), 20)                                               # a title screen, not a stand-in
     def test_scrolled_page(self):
-        p = many(14); p.keys('pgdn', 'down', 'right'); p.message('Chose Game 10')
+        p = many(14); p.keys('pgdn', 'down', 'right'); p.message('Chose Game 13')
         px = p.render(); png(OUT / 'games-grid-page2.png', px)
-        self.assertEqual(p.pos, 10)
-        x, y, w, h = card_box(10 % 6)
-        self.assertEqual(px[(y - 1) * W + x + 40], 0x6d8bff)
+        self.assertEqual(p.pos, 13)
+        x, y, w, h = card_box(13 % PAGE)
+        self.assertEqual(rgb(px[(y - 1) * W + x + 40]), q(0x6d8bff))
     def test_details(self):
         p = Page(); p.add_folder(DICE); p.index(INDEX); p.finish(); p.key('enter')
         px = p.render(); png(OUT / 'games-details.png', px)
         self.assertEqual(p.view, DETAILS)
         gif = (DICE / 'TITLE.GIF').read_bytes(); want = (C.c_uint8 * 64000)(); wpal = (C.c_uint8 * 768)()
         c().gp_gif(gif, len(gif), wpal, want)
-        rgb = lambda i: sum(((wpal[want[i] * 3 + k] & 63) << 2 | (wpal[want[i] * 3 + k] & 63) >> 4) << (16 - 8 * k) for k in range(3))
-        self.assertEqual([px[(64 + y) * W + 36 + x] for y in (0, 99, 199) for x in (0, 160, 319)],
-                         [rgb(y * 320 + x) for y in (0, 99, 199) for x in (0, 160, 319)])
+        vga = lambda i: sum(((wpal[want[i] * 3 + k] & 63) << 2 | (wpal[want[i] * 3 + k] & 63) >> 4) << (16 - 8 * k) for k in range(3))
+        for dy, dx in (0, 0), (1, 1):                                                        # each pixel doubled, at (36, 68)
+            self.assertEqual([rgb(px[(68 + 2 * y + dy) * W + 36 + 2 * x + dx]) for y in (0, 99, 199) for x in (0, 160, 319)],
+                             [q(vga(y * 320 + x)) for y in (0, 99, 199) for x in (0, 160, 319)])
         p.key('right'); png(OUT / 'games-details-back.png', p.render())
     def test_empty(self):
         px = page().render(); png(OUT / 'games-list-empty.png', px)
-        self.assertTrue(any(px[y * W + x] == 0xeef0f6 for y in range(195, 220) for x in range(100, 540)))
+        self.assertTrue(any(rgb(px[y * W + x]) == q(0xeef0f6) for y in range(230, 256) for x in range(100, 860)))
 
 class Memory(unittest.TestCase):
     """Regression tests from the AddressSanitizer pass (make test-asan): what the C side writes fits what it is given."""
@@ -239,6 +241,7 @@ class Board(unittest.TestCase):
         card = os.environ.get('GMOS_CARD')
         if not card: self.skipTest('set GMOS_CARD to a folder written by the Sandbox Edition\'s web/scripts/gmosCard.ts')
         games = pathlib.Path(card) / 'GAMES'; rows = [l.split() for l in (ROOT / 'tests/data/board-list.txt').read_text().splitlines() if l and l[0] != '#']
+        if any(r[0] == 'stale' for r in rows): self.skipTest('tests/data/board-list.txt was recorded from the 640x480 page: record it again')
         old = OUT / 'DICEOLD'; old.mkdir(parents=True, exist_ok=True)
         for f in DICE.iterdir(): (old / f.name).write_bytes(f.read_bytes())
         (old / 'DICE.GAM').write_bytes((ROOT / 'tests/data/dice-old.gam').read_bytes())

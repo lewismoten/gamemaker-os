@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: MIT; original games list layout (view.h). Two
  * bitmap fonts drawn proportionally (each glyph as wide as its ink, a column
  * apart): PLAYGAME's 8 x 8 font (text.h) for titles and labels, the 5 x 9
- * Game-Maker OS font (font.h) for smaller lines. */
+ * Game-Maker OS font (font.h) for smaller lines. At 960 x 540: four cards
+ * across, two down, and the details view's title screen at twice its size. */
 #include "view.h"
 #include "font.h"
 #include "text.h"
 #include "thumb.h"
+#include "rgb565.h"
 #define C_HEADER 0x000080u
 #define C_GOLD 0xffd700u
 #define C_PAGE 0x11131au
@@ -23,23 +25,30 @@
 #define C_TITLE 0xffe14du
 #define C_OUTLINE 0x2a1060u
 #define C_EMPTY 0x232736u
-#define HEADER_H 36u
-#define TABS_Y 44u
+#define HEADER_H 40u
+#define TABS_Y 48u
 #define TABS_H 32u
-#define HEAD_Y 86u
-#define GRID_Y 104u
-#define CARD_W 196u
-#define CARD_H 164u
-#define GAP_X 10u
-#define GAP_Y 8u
-#define FOOT_Y 448u
-static uint32_t *P, S; /* the surface being drawn */
+#define HEAD_Y 92u
+#define GRID_Y 112u
+#define CARD_W 220u /* four across with 16 between and at the sides */
+#define CARD_H 180u
+#define GAP_X 16u
+#define GAP_Y 12u
+#define FOOT_Y 494u
+#define PIC_X 36   /* the details view's title screen, doubled: 640 x 400 */
+#define PIC_Y 68
+#define SIDE_X 700 /* the details view's column beside it */
+#define SIDE_W 232
+static uint16_t *P; static uint32_t S; /* the surface being drawn */
 static int measuring; /* count_lines: nothing is drawn */
-static void dot(int32_t x, int32_t y, uint32_t c) {if (!measuring && x >= 0 && y >= 0 && x < (int32_t)GM_W && y < (int32_t)GM_H) P[(uint32_t)y * S + (uint32_t)x] = c;}
+static int on_page(int32_t x, int32_t y) {return !measuring && x >= 0 && y >= 0 && x < (int32_t)GM_W && y < (int32_t)GM_H;}
+static void dot16(int32_t x, int32_t y, uint16_t c) {if (on_page(x, y)) P[(uint32_t)y * S + (uint32_t)x] = c;}
+static void dot_dither(int32_t x, int32_t y, uint32_t c) {if (on_page(x, y)) P[(uint32_t)y * S + (uint32_t)x] = gm_565_dither(c, (uint32_t)x, (uint32_t)y);}
 static void fill(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t c) {
   if (measuring) return;
+  uint16_t v = gm_565(c);
   for (int32_t j = y < 0 ? 0 : y; j < y + h && j < (int32_t)GM_H; j++)
-    for (int32_t i = x < 0 ? 0 : x; i < x + w && i < (int32_t)GM_W; i++) P[(uint32_t)j * S + (uint32_t)i] = c;
+    for (int32_t i = x < 0 ? 0 : x; i < x + w && i < (int32_t)GM_W; i++) P[(uint32_t)j * S + (uint32_t)i] = v;
 }
 /* How far row j (0 at the top edge) of a corner of radius r is cut in. */
 static int32_t inset(int32_t r, int32_t j) {
@@ -153,17 +162,17 @@ static const char *const TAB_LINE[GM_CATS] = {
 static void header(void) {
   fill(0, 0, GM_W, HEADER_H, C_HEADER);
   int32_t x = 16;
-  for (const char *s = "GAME-MAKER"; *s; s++) x = text(F8, x, 14, s, 1, C_GOLD, 1) + 2;
+  for (const char *s = "GAME-MAKER"; *s; s++) x = text(F8, x, 16, s, 1, C_GOLD, 1) + 2;
   x += 8;
   const char *ed = "SANDBOX EDITION";
   int32_t w = width(F5, ed, len(ed), 1) + 10;
-  box(x, 10, w, 16, 2, 1, C_GOLD, 0, 0);
-  text0(F5, x + 5, 14, ed, C_GOLD);
-  text0(F5, x + w + 12, 14, "Game-Maker OS", C_GOLD);
+  box(x, 12, w, 16, 2, 1, C_GOLD, 0, 0);
+  text0(F5, x + 5, 16, ed, C_GOLD);
+  text0(F5, x + w + 12, 16, "Game-Maker OS", C_GOLD);
   const char *nav = "Games";
   int32_t nw = width(F8, nav, len(nav), 1);
-  text0(F8, (int32_t)GM_W - 16 - nw, 14, nav, C_GOLD);
-  fill((int32_t)GM_W - 16 - nw, 25, nw, 2, C_GOLD);
+  text0(F8, (int32_t)GM_W - 16 - nw, 16, nav, C_GOLD);
+  fill((int32_t)GM_W - 16 - nw, 27, nw, 2, C_GOLD);
 }
 static void tabs(const struct gm_menu *m) {
   box(16, TABS_Y, GM_W - 32, TABS_H, 8, 1, C_LINE2, C_PANEL, 1);
@@ -186,10 +195,10 @@ static void tabs(const struct gm_menu *m) {
 void gm_card_rect(unsigned i, uint32_t *x, uint32_t *y, uint32_t *w, uint32_t *h) {
   *x = 16 + i % GM_COLS * (CARD_W + GAP_X); *y = GRID_Y + i / GM_COLS * (CARD_H + GAP_Y); *w = CARD_W; *h = CARD_H;
 }
-static void picture(int32_t x, int32_t y, const uint32_t *pic, int32_t w, int32_t h, int32_t r) {
+static void picture(int32_t x, int32_t y, const uint16_t *pic, int32_t w, int32_t h, int32_t r) {
   for (int32_t j = 0; j < h; j++) {
     int32_t k = inset(r, j);
-    for (int32_t i = k; i < w - k; i++) dot(x + i, y + j, pic[j * w + i]);
+    for (int32_t i = k; i < w - k; i++) dot16(x + i, y + j, pic[j * w + i]);
   }
 }
 static void card(const struct gm_menu *m, const struct gm_game *g, unsigned i, int on) {
@@ -197,7 +206,7 @@ static void card(const struct gm_menu *m, const struct gm_game *g, unsigned i, i
   int32_t x = (int32_t)ux, y = (int32_t)uy, w = (int32_t)uw, h = (int32_t)uh;
   if (on) box(x - 2, y - 2, w + 4, h + 4, 8, 3, C_BLUE, C_PANEL, 1);
   else box(x, y, w, h, 6, 1, C_LINE, C_PANEL, 1);
-  const uint32_t *pic = g->pic > 0 ? gm_thumb_get((unsigned)(g - m->games)) : 0;
+  const uint16_t *pic = g->pic > 0 ? gm_thumb_get((unsigned)(g - m->games)) : 0;
   if (pic) picture(x + 1, y + 1, pic, GM_THUMB_W, GM_THUMB_H, 5);
   else {
     for (int32_t j = 0; j < (int32_t)GM_THUMB_H; j++) {int32_t k = inset(5, j); fill(x + 1 + k, y + 1 + j, (int32_t)GM_THUMB_W - 2 * k, 1, C_EMPTY);}
@@ -205,8 +214,9 @@ static void card(const struct gm_menu *m, const struct gm_game *g, unsigned i, i
     text0(F5, x + 1 + ((int32_t)GM_THUMB_W - width(F5, say, len(say), 1)) / 2, y + 1 + (int32_t)GM_THUMB_H / 2 - 4, say, C_DIM);
   }
   fill(x + 1, y + 1 + (int32_t)GM_THUMB_H, (int32_t)GM_THUMB_W, 1, C_LINE2);
-  unsigned lines = wrap(F8, x + 9, y + 130, w - 18, g->title, 2, 11, 0xffffffu, 1);
-  text0(F5, x + 9, y + 130 + (int32_t)lines * 11 + 2, g->company[0] ? g->company : g->dir, C_DIM);
+  int32_t ty = y + 1 + (int32_t)GM_THUMB_H + 9;
+  unsigned lines = wrap(F8, x + 9, ty, w - 18, g->title, 2, 11, 0xffffffu, 1);
+  text0(F5, x + 9, ty + (int32_t)lines * 11 + 2, g->company[0] ? g->company : g->dir, C_DIM);
 }
 static void keycap(int32_t *x, int32_t y, const char *key, const char *label) {
   int32_t kw = width(F5, key, len(key), 1) + 10;
@@ -217,7 +227,7 @@ static void keycap(int32_t *x, int32_t y, const char *key, const char *label) {
 static void footer(const struct gm_menu *m) {
   fill(0, FOOT_Y, GM_W, GM_H - FOOT_Y, C_FOOT);
   fill(0, FOOT_Y, GM_W, 1, C_LINE2);
-  int32_t x = 16, y = FOOT_Y + 12;
+  int32_t x = 16, y = FOOT_Y + 18;
   if (m->message[0]) {text0(F8, x, y, m->message, C_GOLD); return;}
   if (m->view == GM_DETAILS) {keycap(&x, y, "Left/Right", "choose"); keycap(&x, y, "Enter", "press"); keycap(&x, y, "Esc", "back to the games"); return;}
   keycap(&x, y, "Arrows", "choose"); keycap(&x, y, "Enter", "open");
@@ -227,8 +237,8 @@ static void grid(const struct gm_menu *m) {
   unsigned t = m->tab, n = m->tab_count[t], p = m->pos[t], first = p / GM_PAGE * GM_PAGE;
   if (!m->count) {
     const char *a = "No games in /sd/GAMES", *b = "Copy a game's folder there to see it here.";
-    text(F8, ((int32_t)GM_W - width(F8, a, len(a), 2)) / 2, 200, a, len(a), C_TEXT, 2);
-    text0(F5, ((int32_t)GM_W - width(F5, b, len(b), 1)) / 2, 236, b, C_MUTED);
+    text(F8, ((int32_t)GM_W - width(F8, a, len(a), 2)) / 2, 236, a, len(a), C_TEXT, 2);
+    text0(F5, ((int32_t)GM_W - width(F5, b, len(b), 1)) / 2, 272, b, C_MUTED);
     return;
   }
   int32_t x = text0(F8, 16, HEAD_Y, TAB_NAME[t], 0xffffffu);
@@ -260,20 +270,20 @@ static void details(const struct gm_menu *m, const uint8_t *big, const uint8_t *
   int32_t px = 16, py = TABS_Y, pw = GM_W - 32, ph = FOOT_Y - 8 - TABS_Y;
   for (int32_t j = 0; j < ph; j++) {
     int32_t k = inset(12, j < ph - 1 - j ? j : ph - 1 - j);
-    for (int32_t i = k; i < pw - k; i++) dot(px + i, py + j, mix(mix(0x150e4cu, 0x3b2272u, (uint32_t)i, (uint32_t)pw), 0x370d4eu, (uint32_t)j, (uint32_t)ph * 2));
+    for (int32_t i = k; i < pw - k; i++) dot_dither(px + i, py + j, mix(mix(0x150e4cu, 0x3b2272u, (uint32_t)i, (uint32_t)pw), 0x370d4eu, (uint32_t)j, (uint32_t)ph * 2));
   }
   if (!g) return;
-  round_rect(28, 56, 336, 216, 10, C_FRAME);
-  if (big) {
-    uint32_t rgb[256];
-    for (unsigned i = 0; i < 256; i++) {const uint8_t *c = big_pal + i * 3; rgb[i] = 0; for (int k = 0; k < 3; k++) rgb[i] = rgb[i] << 8 | ((c[k] & 63u) << 2 | (c[k] & 63u) >> 4);}
-    for (int32_t j = 0; j < 200; j++) for (int32_t i = 0; i < 320; i++) dot(36 + i, 64 + j, rgb[big[j * 320 + i]]);
+  round_rect(PIC_X - 8, PIC_Y - 8, 656, 416, 10, C_FRAME);
+  if (big) { /* each pixel 2 x 2: crisp, and 1080p is exactly 2x again */
+    uint16_t c16[256];
+    for (unsigned i = 0; i < 256; i++) {const uint8_t *c = big_pal + i * 3; uint32_t v = 0; for (int k = 0; k < 3; k++) v = v << 8 | ((c[k] & 63u) << 2 | (c[k] & 63u) >> 4); c16[i] = gm_565(v);}
+    for (int32_t j = 0; j < 400; j++) for (int32_t i = 0; i < 640; i++) dot16(PIC_X + i, PIC_Y + j, c16[big[(j >> 1) * 320 + (i >> 1)]]);
   } else {
-    fill(36, 64, 320, 200, C_EMPTY);
+    fill(PIC_X, PIC_Y, 640, 400, C_EMPTY);
     const char *say = "No title screen";
-    text0(F5, 36 + (320 - width(F5, say, len(say), 1)) / 2, 160, say, C_DIM);
+    text(F8, PIC_X + (640 - width(F8, say, len(say), 2)) / 2, PIC_Y + 192, say, len(say), C_DIM, 2);
   }
-  int32_t x = 380, w = 228, y = 58;
+  int32_t x = SIDE_X, w = SIDE_W, y = 62;
   const char *badge = BADGE[g->cat];
   int32_t bw = width(F8, badge, len(badge), 1) + 12;
   round_rect(x, y, bw, 17, 4, C_BADGE);
@@ -289,14 +299,16 @@ static void details(const struct gm_menu *m, const uint8_t *big, const uint8_t *
     if (g->company[0]) {fill(bx + 3, y + 3, 2, 2, C_TEXT); bx += 9;}
     text0(F5, bx, y, yr, C_TEXT);
   }
-  button(x, 236, 100, "Play", 1, m->button == GM_BTN_PLAY);
-  button(x + 112, 236, 80, "Back", 0, m->button == GM_BTN_BACK);
+  y += 22;
+  button(x, y, 112, "Play", 1, m->button == GM_BTN_PLAY);
+  button(x + 124, y, 88, "Back", 0, m->button == GM_BTN_BACK);
   const char *blurb = g->blurb[0] ? g->blurb : "This game has no entry in the library index, so there is no description to show.";
-  wrap(F5, 32, 288, 576, blurb, 10, 13, C_TEXT, 1);
+  y += 50;
+  wrap(F5, x, y, w, blurb, (unsigned)((440 - y) / 13), 13, C_TEXT, 1);
   char where[40], *q = put(where, "/sd/GAMES/"); q = put(q, g->dir); q = put(q, "/"); put(q, g->gam);
-  text0(F5, (int32_t)GM_W - 32 - width(F5, where, len(where), 1), 420, where, 0xb0a8d0u);
+  text0(F5, x, 464, where, 0xb0a8d0u);
 }
-void gm_draw(uint32_t *px, uint32_t stride, const struct gm_menu *m, const uint8_t *big, const uint8_t *big_pal) {
+void gm_draw(uint16_t *px, uint32_t stride, const struct gm_menu *m, const uint8_t *big, const uint8_t *big_pal) {
   P = px; S = stride;
   fill(0, 0, GM_W, GM_H, C_PAGE);
   header();
