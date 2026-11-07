@@ -70,6 +70,9 @@ usb_kernel.py <port> key down down enter                # press keys
 usb_kernel.py <port> key esc                            # quit
 ```
 
+A packed game is one file: `put DICE.GMP --name POCKET/DICE.GMP` (or
+`GAMES/DICE.GMP`), up to 1 MiB; see [gmp.md](gmp.md).
+
 Folder and file names must be 8.3 and are sent in upper case. Games can also be
 copied onto the card from any computer into a `GAMES` folder; long folder names
 need the kernel's long-name support, which comes later.
@@ -80,7 +83,9 @@ need the kernel's long-name support, which comes later.
    pass of its loop.
 2. Lists `/sd/GAMES`: each folder holding a `.GAM` file is a game, titled from
    the start scene's description in that file (an empty one shows the folder
-   name).
+   name). Then the packed games, `.GMP` files in `/sd/GAMES` and
+   `/sd/POCKET` (one file a game, shared with the Pocket Player; see
+   [gmp.md](gmp.md)), titled the same way from the `.GAM` inside.
 3. Reads the library index, `/sd/GAMES/LIBRARY.JSL` (or `/sd/OS/LIBRARY.JSL`,
    where `put` can install it), if there is one: the Pocket Player's
    `library.jsonl` format from Game-Maker: Sandbox Edition, one JSON object a

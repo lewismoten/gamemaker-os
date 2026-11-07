@@ -3,7 +3,9 @@
  * text), its drawing, the GIF and FLI decoders and the title-screen picker
  * fed truncated and mutated copies of a real game's files. Every input sits
  * in its own exact-size heap block, so AddressSanitizer sees any read past
- * it. Usage: fuzz <games folder holding DICE> [rounds] [folder of game folders...]:
+ * it. Packed games (gmp.h): tests/data/dice.gmp mutated (its index fields
+ * too), split into volumes at random, opened, read and title-pictured.
+ * Usage: fuzz <games folder holding DICE> [rounds] [folder of game folders...]:
  * the folders' games are listed, title-pictured and drawn too. Seeded, so a
  * failure repeats. */
 #include <stdio.h>
@@ -12,6 +14,7 @@
 #include <strings.h>
 #include <dirent.h>
 #include "fli.h"
+#include "gmp.h"
 #include "gif.h"
 #include "hostio.h"
 #include "library.h"
@@ -149,6 +152,49 @@ static void fuzz_title(uint32_t rounds) {
   }
   free(px); free(pal);
 }
+/* A pack's volumes, each its own exact-size block (gmp.h's read_at). */
+struct mem_pack {uint8_t *v[4]; uint32_t n[4];};
+static int mem_at(void *user, unsigned v, uint32_t off, void *buf, uint32_t n) {
+  struct mem_pack *m = user;
+  if (v >= 4 || off > m->n[v] || n > m->n[v] - off) {fprintf(stderr, "fuzz: gmp read past volume %u\n", v); abort();}
+  memcpy(buf, m->v[v] + off, n); return 0;
+}
+static void fuzz_gmp(const char *games, uint32_t rounds) {
+  static char path[1100]; static const char *names[] = {"DICE.GAM", "TITLE.GIF", "MENU.GIF", "TITLE.LST", "STARTER.FLI", "ONE.MAP", "dice.pal", "NOPE.GIF", "", "A_NAME_LONGER_THAN_THE_INDEX_HOLDS.GIF"};
+  snprintf(path, sizeof path, "%s/../data/dice.gmp", games);
+  FILE *f = fopen(path, "rb");
+  if (!f) {fprintf(stderr, "fuzz: no %s\n", path); exit(2);}
+  static uint8_t file[1 << 20]; uint32_t n = (uint32_t)fread(file, 1, sizeof file, f); fclose(f);
+  uint8_t *px = malloc(64000), *pal = malloc(768);
+  unsigned opened = 0;
+  for (uint32_t i = 0; i < rounds * 4; i++) {
+    uint32_t m; uint8_t *c = mutate(file, n, &m);
+    uint32_t count = m >= 8 ? c[4] | c[5] << 8 | c[6] << 16 | (uint32_t)c[7] << 24 : 0;
+    for (uint32_t k = below(3); k-- && count && count < 4096 && 8 + count * 40 <= m;) { /* an entry's offset or length */
+      uint32_t at = 8 + below(count) * 40 + 32 + 4 * below(2), vals[] = {0, 0xffffffffu, m, m - 1, rnd(), 8 + count * 40};
+      uint32_t v = vals[below(6)]; c[at] = (uint8_t)v; c[at + 1] = (uint8_t)(v >> 8); c[at + 2] = (uint8_t)(v >> 16); c[at + 3] = (uint8_t)(v >> 24);
+    }
+    struct mem_pack mp = {0}; struct gmp g = {0};
+    unsigned vols = 1 + below(4); uint32_t at = 0;
+    for (unsigned v = 0; v < vols; v++) {
+      uint32_t take = v + 1 == vols ? m - at : below(m - at + 1);
+      mp.v[v] = malloc(take ? take : 1); memcpy(mp.v[v], c + at, take); mp.n[v] = take; g.size[v] = take; at += take;
+    }
+    g.read_at = mem_at; g.user = &mp; g.volumes = vols;
+    if (!gmp_open(&g)) {
+      opened++;
+      for (unsigned k = 0; k < 4; k++) {
+        uint32_t cap = below(4) ? below(1 << 20) + 1 : below(64) + 1; uint8_t *buf = malloc(cap);
+        gmp_read(&g, names[below(10)], buf, cap); free(buf);
+      }
+      gm_title_picture(gmp_read, &g, g.gam, px, pal);
+    }
+    for (unsigned v = 0; v < vols; v++) free(mp.v[v]);
+    free(c);
+  }
+  printf("fuzz: packed games ok (%u of %u opened)\n", opened, rounds * 4);
+  free(px); free(pal);
+}
 /* Every game in the folders: its title from the .GAM, its title screen, a card and both views drawn. */
 static unsigned real_games(int argc, char **argv) {
   static char path[1024], gam[64], title[32];
@@ -193,6 +239,7 @@ int main(int argc, char **argv) {
   fuzz_menu(rounds / 4 + 1); puts("fuzz: games list and drawing ok");
   fuzz_pictures(rounds); puts("fuzz: GIF and FLI ok");
   fuzz_title(rounds); puts("fuzz: title pictures ok");
+  fuzz_gmp(argv[1], rounds);
   if (argc > 3) printf("fuzz: %u real games listed, pictured and drawn ok\n", real_games(argc - 3, argv + 3));
   return 0;
 }
