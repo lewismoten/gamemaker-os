@@ -17,7 +17,9 @@
 static const char *root;
 static int vclock;
 static uint64_t vnow;
-static uint32_t fb[PLAT_W * PLAT_H];
+static uint32_t fb[PLAT_SURFACE / 4];
+static uint32_t mode_w = PLAT_W, mode_h = PLAT_H, mode_d = 32;
+static uint8_t palette[768];
 static struct {uint64_t at; uint16_t code; int32_t value;} keys[256];
 static int nkeys, next_key;
 static uint64_t start;
@@ -75,7 +77,14 @@ int32_t plat_list(const char *path, void (*fn)(void *, const char *, uint32_t, i
   closedir(d);
   return n;
 }
-uint32_t *plat_fb(void) {return fb;}
+void *plat_fb(void) {return fb;}
+int plat_set_mode(uint32_t w, uint32_t h, uint32_t depth, uint32_t *us) {
+  if ((depth != 8 && depth != 16 && depth != 32) || w * h * (depth / 8) > PLAT_SURFACE || w % 4) return -1;
+  mode_w = w; mode_h = h; mode_d = depth; memset(fb, 0, sizeof fb);
+  if (us) *us = 0;
+  return 0;
+}
+int plat_palette(const uint8_t *pal) {memcpy(palette, pal, 768); return 0;}
 void plat_present(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {(void)x; (void)y; (void)w; (void)h;}
 int plat_event(uint16_t *type, uint16_t *code, int32_t *value) {
   if (next_key >= nkeys || keys[next_key].at > plat_clock_ns()) return 0;
@@ -108,6 +117,9 @@ int main(int argc, char **argv) {
     if (next_key < nkeys && keys[next_key].at < wake) wake = keys[next_key].at;
     plat_sleep_until(wake < end ? wake : end);
   }
-  if (shot) {FILE *f = fopen(shot, "wb"); if (f) {fwrite(fb, 4, PLAT_W * PLAT_H, f); fclose(f);}}
+  if (shot) { /* "GMJS" w h depth, the 768-byte palette, then the pixels (tools/jsshot.py makes a PNG) */
+    FILE *f = fopen(shot, "wb");
+    if (f) {uint32_t hd[4] = {0x534a4d47u, mode_w, mode_h, mode_d}; fwrite(hd, 4, 4, f); fwrite(palette, 1, 768, f); fwrite(fb, 1, mode_w * mode_h * (mode_d / 8), f); fclose(f);}
+  }
   return jsrt_exit_code();
 }

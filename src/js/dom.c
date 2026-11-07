@@ -20,8 +20,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../font.h"
-#define W 640
-#define H 480
+static int32_t W = 640, H = 480; /* the screen mode (dom_screen) */
+static uint32_t depth = 32;
 #define SLOTS 8
 struct dom_el *dom_body, *dom_focused;
 struct dom_stats dom_stats;
@@ -49,13 +49,19 @@ static void unite(struct dom_rect *a, const struct dom_rect *b) {
   a->x = min32(a->x, b->x); a->y = min32(a->y, b->y); a->w = x1 - a->x; a->h = y1 - a->y;
 }
 void dom_damage(const struct dom_rect *in) {
-  static const struct dom_rect screen = {0, 0, W, H};
+  const struct dom_rect screen = {0, 0, W, H};
   struct dom_rect r = *in;
   if (!clip(&r, &screen)) return;
   for (uint32_t i = 0; i < ndirty; i++)
     if (touches(&dirty[i], &r)) {unite(&r, &dirty[i]); dirty[i] = dirty[--ndirty]; i = (uint32_t)-1;} /* merge, then look again */
   if (ndirty == DOM_MAX_DIRTY) {for (uint32_t i = 1; i < ndirty; i++) unite(&dirty[0], &dirty[i]); ndirty = 1; unite(&dirty[0], &r); return;}
   dirty[ndirty++] = r;
+}
+void dom_screen(int32_t w, int32_t h, uint32_t d) {
+  W = w; H = h; depth = d;
+  if (dom_body) {dom_body->st.width = W; dom_body->st.height = H;}
+  need_layout = 1; ndirty = 0;
+  struct dom_rect all = {0, 0, W, H}; dom_damage(&all);
 }
 void dom_init(dom_loader load, void (*draw_game)(void *, uint32_t *, uint32_t)) {
   loader = load; game_draw = draw_game;
@@ -144,7 +150,7 @@ int dom_set_src(struct dom_el *e, const char *src) {
   return 0;
 }
 int dom_set_canvas_size(struct dom_el *e, uint32_t w, uint32_t h) {
-  if (w > W || h > H) return -1;
+  if (w > 960 || h > 540) return -1;
   uint32_t *p = calloc(w && h ? w * h : 1, 4);
   if (!p) return -1;
   free(e->pixels); e->pixels = p; e->pw = w; e->ph = h;
@@ -290,18 +296,22 @@ static void moved(struct dom_el *e) {
   if (memcmp(&e->box, &e->old, sizeof e->box)) {dom_damage(&e->old); dom_damage(&e->box);}
 }
 
-/* Drawing, clipped to r. */
-static void fill(uint32_t *fb, struct dom_rect a, const struct dom_rect *r, uint32_t c) {
+/* Drawing, clipped to r, into 32-bit (XRGB8888) or 16-bit (RGB565) pixels. */
+struct surf {void *p; uint32_t stride; int d16;};
+static inline uint16_t c565(uint32_t c) {return (uint16_t)((c >> 8 & 0xf800) | (c >> 5 & 0x07e0) | (c >> 3 & 0x001f));}
+static inline void put(const struct surf *s, uint32_t i, uint32_t c) {if (s->d16) ((uint16_t *)s->p)[i] = c565(c); else ((uint32_t *)s->p)[i] = c;}
+static void fill(const struct surf *f, struct dom_rect a, const struct dom_rect *r, uint32_t c) {
   if (!clip(&a, r)) return;
-  for (int32_t y = a.y; y < a.y + a.h; y++) {uint32_t *p = fb + y * W + a.x; for (int32_t i = 0; i < a.w; i++) p[i] = c;}
+  if (f->d16) {uint16_t v = c565(c); for (int32_t y = a.y; y < a.y + a.h; y++) {uint16_t *p = (uint16_t *)f->p + y * f->stride + a.x; for (int32_t i = 0; i < a.w; i++) p[i] = v;}}
+  else for (int32_t y = a.y; y < a.y + a.h; y++) {uint32_t *p = (uint32_t *)f->p + y * f->stride + a.x; for (int32_t i = 0; i < a.w; i++) p[i] = c;}
   dom_stats.pixels += (uint32_t)(a.w * a.h);
 }
-static void frame(uint32_t *fb, struct dom_rect b, int32_t t, const struct dom_rect *r, uint32_t c) {
+static void frame(const struct surf *f, struct dom_rect b, int32_t t, const struct dom_rect *r, uint32_t c) {
   if (t <= 0) return;
   struct dom_rect s[4] = {{b.x, b.y, b.w, t}, {b.x, b.y + b.h - t, b.w, t}, {b.x, b.y, t, b.h}, {b.x + b.w - t, b.y, t, b.h}};
-  for (int i = 0; i < 4; i++) fill(fb, s[i], r, c);
+  for (int i = 0; i < 4; i++) fill(f, s[i], r, c);
 }
-static void glyphs(uint32_t *dst, uint32_t stride, struct dom_rect lim, int32_t x, int32_t y, uint32_t c, int sc, const char *s, uint32_t n) {
+static void glyphs(const struct surf *f, struct dom_rect lim, int32_t x, int32_t y, uint32_t c, int sc, const char *s, uint32_t n) {
   for (uint32_t i = 0; i < n; i++, x += 6 * sc) {
     unsigned ch = (unsigned char)s[i];
     if (ch < 32 || ch > 126) ch = '?';
@@ -313,24 +323,33 @@ static void glyphs(uint32_t *dst, uint32_t stride, struct dom_rect lim, int32_t 
         if (!(g[row] >> (GM_FONT_W - 1 - col) & 1)) continue;
         for (int dy = 0; dy < sc; dy++) for (int dx = 0; dx < sc; dx++) {
           int32_t px_ = x + col * sc + dx, py = y + row * sc + dy;
-          if (px_ >= lim.x && px_ < lim.x + lim.w && py >= lim.y && py < lim.y + lim.h) dst[py * stride + px_] = c;
+          if (px_ >= lim.x && px_ < lim.x + lim.w && py >= lim.y && py < lim.y + lim.h) put(f, (uint32_t)(py * (int32_t)f->stride + px_), c);
         }
       }
     }
   }
 }
-static void scaled(uint32_t *dst, uint32_t stride, struct dom_rect to, struct dom_rect lim, const uint8_t *px, const uint32_t *pal, const uint32_t *rgb, uint32_t sw, uint32_t sh) {
+static void scaled(const struct surf *f, struct dom_rect to, struct dom_rect lim, const uint8_t *px, const uint32_t *pal, const uint32_t *rgb, uint32_t sw, uint32_t sh) {
   struct dom_rect a = to;
   if (to.w <= 0 || to.h <= 0 || !clip(&a, &lim)) return;
+  uint16_t lut[256];
+  if (pal && f->d16) for (int i = 0; i < 256; i++) lut[i] = c565(pal[i]);
+  uint32_t step = (uint32_t)(((uint64_t)sw << 16) / (uint32_t)to.w);
   for (int32_t y = a.y; y < a.y + a.h; y++) {
-    uint32_t sy = (uint32_t)((int64_t)(y - to.y) * sh / to.h), *d = dst + y * stride;
-    uint32_t step = (uint32_t)(((uint64_t)sw << 16) / (uint32_t)to.w), sx = (uint32_t)(a.x - to.x) * step;
-    if (pal) {const uint8_t *s = px + sy * sw; for (int32_t x = a.x; x < a.x + a.w; x++, sx += step) d[x] = pal[s[sx >> 16]];}
-    else {const uint32_t *s = rgb + sy * sw; for (int32_t x = a.x; x < a.x + a.w; x++, sx += step) d[x] = s[sx >> 16];}
+    uint32_t sy = (uint32_t)((int64_t)(y - to.y) * sh / to.h), sx = (uint32_t)(a.x - to.x) * step;
+    if (f->d16) {
+      uint16_t *d = (uint16_t *)f->p + y * f->stride;
+      if (pal) {const uint8_t *s = px + sy * sw; for (int32_t x = a.x; x < a.x + a.w; x++, sx += step) d[x] = lut[s[sx >> 16]];}
+      else {const uint32_t *s = rgb + sy * sw; for (int32_t x = a.x; x < a.x + a.w; x++, sx += step) d[x] = c565(s[sx >> 16]);}
+    } else {
+      uint32_t *d = (uint32_t *)f->p + y * f->stride;
+      if (pal) {const uint8_t *s = px + sy * sw; for (int32_t x = a.x; x < a.x + a.w; x++, sx += step) d[x] = pal[s[sx >> 16]];}
+      else {const uint32_t *s = rgb + sy * sw; for (int32_t x = a.x; x < a.x + a.w; x++, sx += step) d[x] = s[sx >> 16];}
+    }
   }
   dom_stats.pixels += (uint32_t)(a.w * a.h);
 }
-static void paint(const struct dom_el *e, uint32_t *fb, const struct dom_rect *r) {
+static void paint(const struct dom_el *e, const struct surf *fb, const struct dom_rect *r) {
   if (e->st.display == DOM_NONE || !touches(&e->box, r)) {
     if (e->st.display == DOM_NONE) return;
     for (const struct dom_el *c = e->first; c; c = c->next) if (c->st.absolute) paint(c, fb, r); /* may sit outside */
@@ -338,20 +357,20 @@ static void paint(const struct dom_el *e, uint32_t *fb, const struct dom_rect *r
   }
   const struct dom_style *s = &e->st;
   struct dom_rect b = e->box, in = {b.x + s->border, b.y + s->border, b.w - 2 * s->border, b.h - 2 * s->border};
-  if (e->tag == DOM_GAME && e->game && game_draw) {game_draw(e->game, fb, W); dom_stats.pixels += W * H;}
+  if (e->tag == DOM_GAME && e->game && game_draw && !fb->d16) {game_draw(e->game, fb->p, fb->stride); dom_stats.pixels += (uint32_t)(W * H);}
   if (s->has_background) fill(fb, b, r, s->background);
   frame(fb, b, s->border, r, s->border_color);
   int32_t pad = s->padding + s->border;
   struct dom_rect content = {b.x + pad, b.y + pad, b.w - 2 * pad, b.h - 2 * pad}, lim = content;
-  if (e->tag == DOM_IMG && e->img >= 0) scaled(fb, W, in, *r, pics[e->img].px, pics[e->img].pal, 0, 320, 200);
-  if (e->tag == DOM_CANVAS && e->pixels) scaled(fb, W, content, *r, 0, 0, e->pixels, e->pw, e->ph);
+  if (e->tag == DOM_IMG && e->img >= 0) scaled(fb, in, *r, pics[e->img].px, pics[e->img].pal, 0, 320, 200);
+  if (e->tag == DOM_CANVAS && e->pixels) scaled(fb, content, *r, 0, 0, e->pixels, e->pw, e->ph);
   if (e->text_n && clip(&lim, r)) {
     int sc = s->font; uint32_t len, at = 0; int32_t y = content.y;
     int32_t width = s->width != DOM_AUTO || !e->parent || !(e->parent->st.display == DOM_FLEX && e->parent->st.row) ? content.w : 0;
     while (at < e->text_n) {
       uint32_t st = at; at = next_line(e->text, e->text_n, at, width, sc, &len);
       int32_t lw = (int32_t)len * 6 * sc, x = content.x + (s->align == 1 ? (content.w - lw) / 2 : s->align == 2 ? content.w - lw : 0);
-      glyphs(fb, W, lim, x, y + sc, s->color, sc, e->text + st, len);
+      glyphs(fb, lim, x, y + sc, s->color, sc, e->text + st, len);
       y += 11 * sc;
     }
   }
@@ -359,10 +378,10 @@ static void paint(const struct dom_el *e, uint32_t *fb, const struct dom_rect *r
   if (e == dom_focused) frame(fb, b, 2, r, s->outline_color);
 }
 static void remember(struct dom_el *e) {e->old = e->box; for (struct dom_el *c = e->first; c; c = c->next) remember(c);}
-uint32_t dom_render(uint32_t *fb, struct dom_rect *out) {
+uint32_t dom_render(void *px, struct dom_rect *out) {
   dom_layout();
-  uint32_t n = ndirty;
-  for (uint32_t i = 0; i < n; i++) {paint(dom_body, fb, &dirty[i]); out[i] = dirty[i];}
+  uint32_t n = ndirty; struct surf fb = {px, (uint32_t)W, depth == 16};
+  for (uint32_t i = 0; i < n; i++) {paint(dom_body, &fb, &dirty[i]); out[i] = dirty[i];}
   if (n) {dom_stats.paints++; dom_stats.rects += n; remember(dom_body);}
   ndirty = 0;
   return n;
@@ -412,19 +431,21 @@ void dom_canvas_fill(struct dom_el *e, int32_t x, int32_t y, int32_t w, int32_t 
   if (!e->pixels) return;
   struct dom_rect a = {x, y, w, h}, all = {0, 0, (int32_t)e->pw, (int32_t)e->ph};
   if (!clip(&a, &all)) return;
-  for (int32_t j = a.y; j < a.y + a.h; j++) {uint32_t *p = e->pixels + j * e->pw + a.x; for (int32_t i = 0; i < a.w; i++) p[i] = rgb;}
+  struct surf f = {e->pixels, e->pw, 0}; fill(&f, a, &all, rgb); dom_stats.pixels -= (uint32_t)(a.w * a.h);
   canvas_damage(e);
 }
 void dom_canvas_text(struct dom_el *e, int32_t x, int32_t y, uint32_t rgb, int scale, const char *s, uint32_t n) {
   if (!e->pixels) return;
   struct dom_rect all = {0, 0, (int32_t)e->pw, (int32_t)e->ph};
-  glyphs(e->pixels, e->pw, all, x, y, rgb, scale < 1 ? 1 : scale, s, n);
+  struct surf f = {e->pixels, e->pw, 0};
+  glyphs(&f, all, x, y, rgb, scale < 1 ? 1 : scale, s, n);
   canvas_damage(e);
 }
 void dom_canvas_image(struct dom_el *e, const struct dom_el *img, int32_t x, int32_t y, int32_t w, int32_t h) {
   if (!e->pixels || !img) return;
   struct dom_rect to = {x, y, w, h}, all = {0, 0, (int32_t)e->pw, (int32_t)e->ph};
-  if (img->tag == DOM_IMG && img->img >= 0) scaled(e->pixels, e->pw, to, all, pics[img->img].px, pics[img->img].pal, 0, 320, 200);
-  else if (img->tag == DOM_CANVAS && img->pixels) scaled(e->pixels, e->pw, to, all, 0, 0, img->pixels, img->pw, img->ph);
+  struct surf f = {e->pixels, e->pw, 0};
+  if (img->tag == DOM_IMG && img->img >= 0) scaled(&f, to, all, pics[img->img].px, pics[img->img].pal, 0, 320, 200);
+  else if (img->tag == DOM_CANVAS && img->pixels) scaled(&f, to, all, 0, 0, img->pixels, img->pw, img->ph);
   canvas_damage(e);
 }

@@ -87,46 +87,60 @@ let frame = 0, before = null;
 function phase(name, frames, each) {
   phases.push({ name, frames, each });
 }
-// 2a. A key press a frame: the focus moves, two cards repaint.
-phase('dom-keypress', 120, (i) => cards[(i + 1) % 6].card.focus());
-// 2b. Every card changes every frame: all six repaint.
-phase('dom-all-cards', 120, (i) => {
-  for (const c of cards) c.label.textContent = (c.name || 'none') + ' ' + (i % 10);
-});
-// 3. The same grid drawn on a canvas each frame (immediate mode).
 let canvas = null, ctx = null;
-phase('canvas-grid', 120, (i) => {
-  if (!canvas) {
-    grid.style.display = 'none';
-    canvas = document.createElement('canvas');
-    canvas.width = 640;
-    canvas.height = 300;
-    canvas.style.position = 'absolute';
-    canvas.style.top = 40;
-    document.body.appendChild(canvas);
-    ctx = canvas.getContext('2d');
-  }
-  ctx.fillStyle = '#0b1020';
-  ctx.fillRect(0, 0, 640, 300);
-  cards.forEach((c, k) => {
-    const x = 10 + (k % 3) * 210, y = 10 + Math.floor(k / 3) * 150;
-    ctx.fillStyle = k === i % 6 ? '#ffd400' : '#8a96b8';
-    ctx.fillRect(x, y, 200, 140);
-    ctx.fillStyle = '#0b1020';
-    ctx.fillRect(x + 2, y + 2, 196, 136);
-    ctx.drawImage(c.pic, x + 6, y + 6, 188, 118);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(c.name || 'none', x + 6, y + 127);
-  });
-});
-// 4. A full-screen repaint a frame (the worst case for the tree).
-phase('dom-full-screen', 60, (i) => {
-  if (canvas) {
-    canvas.remove();
-    canvas = null;
+function grids(mode) {
+  const tag = mode.join('x') + ' ';
+  phase('mode ' + tag, 1, () => {
+    if (canvas) {
+      canvas.remove();
+      canvas = null;
+    }
     grid.style.display = 'block';
-  }
-  document.body.style.background = i % 2 ? '#0b1020' : '#0c1122';
+    const us = screen.setMode(mode[0], mode[1], mode[2]);
+    out('switch', `${tag}in ${us} us`);
+  });
+  // A key press a frame: the focus moves, two cards repaint.
+  phase(tag + 'dom-keypress', 120, (i) => cards[(i + 1) % 6].card.focus());
+  // Every card changes every frame: all six repaint.
+  phase(tag + 'dom-all-cards', 120, (i) => {
+    for (const c of cards) c.label.textContent = (c.name || 'none') + ' ' + (i % 10);
+  });
+  // A full-screen repaint a frame (the worst case for the tree).
+  phase(tag + 'dom-full-screen', 60, (i) => {
+    document.body.style.background = i % 2 ? '#0b1020' : '#0c1122';
+  });
+  // The same grid drawn on a canvas each frame (immediate mode).
+  phase(tag + 'canvas-grid', 120, (i) => {
+    if (!canvas) {
+      grid.style.display = 'none';
+      canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 300;
+      canvas.style.position = 'absolute';
+      canvas.style.top = 40;
+      document.body.appendChild(canvas);
+      ctx = canvas.getContext('2d');
+    }
+    ctx.fillStyle = '#0b1020';
+    ctx.fillRect(0, 0, 640, 300);
+    cards.forEach((c, k) => {
+      const x = 10 + (k % 3) * 210, y = 10 + Math.floor(k / 3) * 150;
+      ctx.fillStyle = k === i % 6 ? '#ffd400' : '#8a96b8';
+      ctx.fillRect(x, y, 200, 140);
+      ctx.fillStyle = '#0b1020';
+      ctx.fillRect(x + 2, y + 2, 196, 136);
+      ctx.drawImage(c.pic, x + 6, y + 6, 188, 118);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(c.name || 'none', x + 6, y + 127);
+    });
+  });
+}
+grids([640, 480, 32]);
+grids([640, 480, 16]);
+grids([960, 540, 16]);
+phase('back', 1, () => {
+  if (canvas) canvas.remove();
+  out('switch', `640x480x32 in ${screen.setMode(640, 480, 32)} us`);
 });
 
 function run(ts) {
@@ -156,6 +170,7 @@ function play() {
   game.src = '/sd/GAMES/' + name;
   document.body.appendChild(game);
   game.play();
+  out('switch', `game 320x200x8 in ${screen.switchUs} us`);
   // Keys as a player might: Enter through the title pages, then walk right.
   const keys = [[500, 28, 1], [600, 28, 0], [3000, 28, 1], [3100, 28, 0], [6000, 28, 1], [6100, 28, 0], [8000, 106, 1], [20000, 106, 0], [20500, 105, 1], [26000, 105, 0]];
   for (const [at, code, down] of keys) setTimeout(() => game.press(code, down), at);
@@ -173,6 +188,7 @@ function play() {
       out('game-js', `${frames} JS frames alongside (${(frames / secs).toFixed(1)} a second), 1000-object update ${(js / frames).toFixed(3)} ms each`);
       perFrame('game-loop', delta(start, s));
       game.stop();
+      out('switch', `back to ${screen.width}x${screen.height}x${screen.depth} in ${screen.switchUs} us`);
       finish();
     }
   };

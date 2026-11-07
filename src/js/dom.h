@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT; a small retained element tree that feels like
  * the DOM: elements with an id, a class, text, a picture or pixels, a CSS
  * subset (dom.c says which), block and flex row/column layout, focus moved by
- * the arrow keys, and redraws limited to what changed (dirty rectangles).
+ * the arrow keys, and redraws limited to what changed (dirty rectangles), at 32 or 16 bits a pixel.
  * Pure C with no JS engine in it: jsrt.c binds it to JavaScript, and the host
  * tests drive it directly. */
 #pragma once
@@ -36,6 +36,8 @@ extern struct dom_stats dom_stats;
    a src (a .GIF, or a game folder's title screen); 0, or -1 when it cannot. */
 typedef int (*dom_loader)(const char *src, uint8_t *px, uint8_t *pal);
 void dom_init(dom_loader load, void (*draw_game)(void *game, uint32_t *fb, uint32_t stride));
+/* The screen's size and depth (32: XRGB8888, 16: RGB565); everything repaints. */
+void dom_screen(int32_t w, int32_t h, uint32_t depth);
 int dom_tag(const char *name);                  /* DOM_* or -1 */
 const char *dom_tag_name(int tag);
 struct dom_el *dom_new(int tag);                /* 0 when out of memory */
@@ -61,7 +63,7 @@ int dom_focus_move(int dir);
 int dom_visible(const struct dom_el *e);
 /* Lays out what changed and paints the damaged parts into fb (640x480);
    returns the rectangles to present (count), copied into out. */
-uint32_t dom_render(uint32_t *fb, struct dom_rect *out);
+uint32_t dom_render(void *fb, struct dom_rect *out);
 /* Canvas drawing, into the element's own pixels (marks it for repaint). */
 void dom_canvas_fill(struct dom_el *e, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t rgb);
 void dom_canvas_text(struct dom_el *e, int32_t x, int32_t y, uint32_t rgb, int scale, const char *s, uint32_t n);

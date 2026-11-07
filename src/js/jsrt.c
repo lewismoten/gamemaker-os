@@ -35,6 +35,17 @@ static struct gs_session session;
 static struct dom_el *game_el;
 static char game_dir[64];
 static int game_started;
+/* Screen modes: the page's (any the kernel takes; 640x480x32 at the start),
+   and a game's own 320x200 at 8 bpp with its palette, when lowres is on (the
+   default): the play core's picture goes straight to the screen. */
+static uint32_t mode_w = PLAT_W, mode_h = PLAT_H, mode_d = 32, switch_us;
+static int lowres = 1, lowres_on;
+static uint8_t shown_pal[768];
+static int set_mode(uint32_t w, uint32_t h, uint32_t d) {
+  if (plat_set_mode(w, h, d, &switch_us)) return -1;
+  if (d != 8) {mode_w = w; mode_h = h; mode_d = d; dom_screen((int32_t)w, (int32_t)h, d);}
+  return 0;
+}
 
 static void say(const char *s) {plat_log(s, (uint32_t)strlen(s));}
 static void sayf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
@@ -280,6 +291,7 @@ static JSValue js_play(JSContext *c, JSValueConst this, int argc, JSValueConst *
   if (plat_list(game_dir, find_gam, &f) < 0 || !f.gam[0]) return JS_ThrowRangeError(c, "no .GAM in %s", game_dir);
   session.say = say;
   if (gs_start(&session, dir_read, game_dir, f.gam, plat_clock_ns())) return JS_ThrowRangeError(c, "cannot play %s", game_dir);
+  if (lowres && !set_mode(GP_W, GP_H, 8)) {lowres_on = 1; memset(shown_pal, 0xff, sizeof shown_pal);}
   e->game = &session; game_started = 1; jsrt_stats.game_ticks = 0; jsrt_stats.game_play_ns = 0; jsrt_stats.game_late_max_us = jsrt_stats.game_step_max_us = 0;
   sayf("JS game %s/%s", game_dir, f.gam);
   focus_to(e); dom_changed(e);
@@ -289,6 +301,7 @@ static void stop_game(void) {
   if (!game_el) return;
   struct dom_el *e = game_el;
   game_started = 0; e->game = 0; gp_release_all(); dom_changed(e);
+  if (lowres_on) {lowres_on = 0; set_mode(mode_w, mode_h, mode_d);} /* the page's mode again: it all repaints */
   JSValue args[2] = {JS_DupValue(ctx, ((struct jel *)e->js)->self), JS_NewString(ctx, "ended")};
   JS_FreeValue(ctx, call_native("onEvent", 2, args));
   JS_FreeValue(ctx, args[0]); JS_FreeValue(ctx, args[1]);
@@ -519,7 +532,23 @@ static JSValue js_memory(JSContext *c, JSValueConst t, int n, JSValueConst *a) {
   JS_SetPropertyStr(c, o, "objects", JS_NewInt64(c, u.obj_count));
   return o;
 }
+static JSValue js_set_mode(JSContext *c, JSValueConst t, int n, JSValueConst *a) {
+  (void)t; int32_t w, h, d = 32;
+  if (JS_ToInt32(c, &w, a[0]) || JS_ToInt32(c, &h, a[1]) || (n > 2 && JS_ToInt32(c, &d, a[2]))) return JS_EXCEPTION;
+  if (d != 32 && d != 16) return JS_ThrowRangeError(c, "screen.setMode: depth 32 or 16 for pages (8 is the game's)");
+  if (lowres_on || set_mode((uint32_t)w, (uint32_t)h, (uint32_t)d)) return JS_ThrowRangeError(c, "screen.setMode(%d, %d, %d) refused", (int)w, (int)h, (int)d);
+  sayf("JS screen %dx%dx%d in %u us", (int)w, (int)h, (int)d, (unsigned)switch_us);
+  return JS_NewUint32(c, switch_us);
+}
+static JSValue js_screen(JSContext *c, JSValueConst t, int n, JSValueConst *a) {
+  (void)t; (void)n; (void)a; JSValue o = JS_NewObject(c);
+  JS_SetPropertyStr(c, o, "width", JS_NewUint32(c, mode_w)); JS_SetPropertyStr(c, o, "height", JS_NewUint32(c, mode_h));
+  JS_SetPropertyStr(c, o, "depth", JS_NewUint32(c, mode_d)); JS_SetPropertyStr(c, o, "switchUs", JS_NewUint32(c, switch_us));
+  return o;
+}
+static JSValue js_lowres(JSContext *c, JSValueConst t, int n, JSValueConst *a) {(void)t; (void)n; lowres = JS_ToBool(c, a[0]); return JS_UNDEFINED;}
 static const JSCFunctionListEntry native_fns[] = {
+  JS_CFUNC_DEF("setMode", 3, js_set_mode), JS_CFUNC_DEF("screen", 0, js_screen), JS_CFUNC_DEF("gameLowres", 1, js_lowres),
   JS_CFUNC_DEF("createElement", 1, js_create), JS_CFUNC_DEF("getElementById", 1, js_by_id),
   JS_CFUNC_DEF("querySelector", 1, js_query), JS_CFUNC_DEF("querySelectorAll", 1, js_query_all),
   JS_CFUNC_DEF("focused", 0, js_focused), JS_CFUNC_DEF("now", 0, js_now), JS_CFUNC_DEF("wakeAt", 1, js_wake_at),
@@ -673,13 +702,19 @@ uint64_t jsrt_step(void) {
     if (session.ran && dt > jsrt_stats.game_step_max_us) jsrt_stats.game_step_max_us = dt;
     jsrt_stats.game_ticks += session.total_ticks - before;
     if (was != GS_PLAY && session.phase == GS_PLAY) {session.t0 = plat_clock_ns(); session.ticks = 0;}
-    if (r & GS_DRAW && game_el) {struct dom_rect all = {0, 0, PLAT_W, PLAT_H}; dom_damage(&all);}
+    if (r & GS_DRAW && lowres_on) { /* 320x200 indices as they are; the palette only when it changed */
+      uint64_t d0 = plat_clock_ns();
+      if (memcmp(shown_pal, session.pal, 768)) {memcpy(shown_pal, session.pal, 768); plat_palette(session.pal);}
+      memcpy(plat_fb(), session.px, GP_W * GP_H);
+      plat_present(0, 0, GP_W, GP_H);
+      jsrt_stats.present_ns += plat_clock_ns() - d0; jsrt_stats.presents++;
+    } else if (r & GS_DRAW && game_el) {struct dom_rect all = {0, 0, PLAT_W, PLAT_H}; dom_damage(&all);}
     if (r & GS_EXIT) stop_game();
   }
   for (JSContext *c; JS_ExecutePendingJob(rt, &c) > 0;) {}
   uint64_t t = plat_clock_ns();
   struct dom_rect rects[DOM_MAX_DIRTY];
-  uint32_t n = dom_render(plat_fb(), rects);
+  uint32_t n = lowres_on ? 0 : dom_render(plat_fb(), rects);
   uint64_t t2 = plat_clock_ns();
   jsrt_stats.render_ns += t2 - t;
   for (uint32_t i = 0; i < n; i++) plat_present((uint32_t)rects[i].x, (uint32_t)rects[i].y, (uint32_t)rects[i].w, (uint32_t)rects[i].h);

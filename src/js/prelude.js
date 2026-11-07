@@ -188,6 +188,24 @@
   g.performance = { now: N.now };
   g.fs = { readFile: N.readFile, readdir: N.readdir };
   g.sys = { exit: N.exit, stats: N.stats, memory: N.memory };
+  // The screen: setMode(width, height, depth 32|16) for the page; a playing
+  // <game> uses 320x200 at 8 bpp unless screen.gameLowres(false).
+  g.screen = {
+    setMode: N.setMode,
+    gameLowres: N.gameLowres,
+    get width() {
+      return N.screen().width;
+    },
+    get height() {
+      return N.screen().height;
+    },
+    get depth() {
+      return N.screen().depth;
+    },
+    get switchUs() {
+      return N.screen().switchUs;
+    },
+  };
   g.document = document;
   g.window = g;
   g.Event = Event;

@@ -52,7 +52,21 @@ int32_t plat_list(const char *path, void (*fn)(void *, const char *, uint32_t, i
   sbx_close(fd);
   return count;
 }
-uint32_t *plat_fb(void) {return fb;}
+void *plat_fb(void) {return fb;}
+int plat_set_mode(uint32_t w, uint32_t h, uint32_t depth, uint32_t *us) {
+  uint64_t t = plat_clock_ns();
+  int r = sbx_fb_set_mode(fb_fd, w, h, depth == 32 ? SBX_FB_XRGB8888 : depth == 16 ? SBX_FB_RGB565 : SBX_FB_INDEX8);
+  if (us) *us = (uint32_t)((plat_clock_ns() - t) / 1000u);
+  return r ? -1 : 0;
+}
+int plat_palette(const uint8_t *pal) {
+  static sbx_fb_palette_rec r;
+  for (int i = 0; i < 256; i++) {
+    uint32_t c[3]; for (int k = 0; k < 3; k++) {c[k] = pal[i * 3 + k] & 63; c[k] = c[k] << 2 | c[k] >> 4;}
+    r.rgb[i] = c[0] << 16 | c[1] << 8 | c[2];
+  }
+  return sbx_fb_palette(fb_fd, &r, 0, 256) ? -1 : 0;
+}
 void plat_present(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {sbx_fb_present(fb_fd, x, y, w, h);}
 int plat_event(uint16_t *type, uint16_t *code, int32_t *value) {
   static sbx_input_event ev[16]; static uint32_t n, at;
