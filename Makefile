@@ -63,7 +63,7 @@ $(HOSTDIR)/fuzz: tests/host/fuzz.c tests/host/hostio.h $(HOSTDIR)/libgmos.so | $
 # core, newlib's libc and libm from the toolchain under a fixed heap (src/js/sys.c).
 QJS := quickjs libregexp libunicode dtoa
 QJSFLAGS := -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -Os -ffunction-sections -fdata-sections -D__DJGPP -DJS_HAVE_THREADS=0 -DNDEBUG -Wno-implicit-function-declaration -w
-JSC := src/js/jsrt.c src/js/dom.c src/session.c src/gif.c src/fli.c src/text.c src/thumb.c src/font_data.c src/font8_data.c
+JSC := src/js/jsrt.c src/js/dom.c src/session.c src/sound.c src/gif.c src/fli.c src/text.c src/thumb.c src/font_data.c src/font8_data.c
 JSFLAGS := -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -Os -ffunction-sections -fdata-sections -std=gnu11 -Wall -Wextra -Werror -Wno-main -Isdk/include -Isrc -Ithird_party/quickjs-ng
 js: build/JS.ELF
 build/js:
