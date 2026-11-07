@@ -13,18 +13,25 @@ else from the kernel is used, and the kernel knows nothing about Game-Maker
 files: to it, `/sd/GAMES` is an ordinary folder.
 
 The program needs the kernel's M1 slice 3 or later: `/dev/input/event0`,
-`getdents` and the `health` heartbeat.
+`getdents` and the `health` heartbeat. Playing a game needs ABI 1.1 (M1 slice 4):
+`clock_gettime` and `sleep_until`. On an older kernel the list works and Enter
+logs `GMOS playing needs the kernel's clock (ABI 1.1)`.
+
+`third_party/gmcore/` is the Game-Maker play core from Game-Maker: Sandbox
+Edition, copied unchanged with that repository's license;
+`scripts/vendor_gmcore.sh <checkout> [commit]` refreshes it and its `PINNED`.
 
 ## Build
 
 ```
 make            # build/GMOS.ELF (Arm GNU toolchain; set TOOLCHAIN to its prefix)
-make test       # host tests; renders build/host/games-list*.png
+make test       # host tests; renders build/host/games-list*.png and play-*.png
 ```
 
 The host tests build the title reader, list and drawing code (`src/gam.c`,
-`src/menu.c`, `src/view.c`, `src/font_data.c`) as a host library and render frames
-to PNG. One test renders the frame the board showed after Down, Down, Enter and
+`src/menu.c`, `src/view.c`, `src/font_data.c`) and the game player (`src/game.cpp`,
+`src/gif.c`, `src/session.c`) as a host library and render frames to PNG; see
+[play.md](play.md) for the game tests. One test renders the frame the board showed after Down, Down, Enter and
 checks it against the screen checksum the kernel logged. Set `GMOS_GAMES` to a
 folder of game folders to title real games as well. The font is edited in
 `tools/font.txt`; `python3 tools/make_font.py` regenerates `src/font_data.c`.
@@ -57,9 +64,10 @@ need the kernel's long-name support, which comes later.
 3. Draws "GAME-MAKER OS", the list (nine rows, scrolling), the folder names, the
    key help and the position, and presents the frame.
 4. Reads `/dev/input/event0` without blocking: Up and Down move (repeats too),
-   Enter logs `GMOS chose <DIR> "<title>"` and shows it in the footer, Esc or Q
-   logs `GMOS quit` and exits 0, leaving the last frame on the screen. After
+   Enter logs `GMOS chose <DIR> "<title>"` and plays the game ([play.md](play.md));
+   Esc or Q logs `GMOS quit` and exits 0, leaving the last frame on the screen. After
    `SYN_DROPPED` it reads the current state and goes on. If the device goes away
    it logs `GMOS input removed` and opens it again once it is back.
 
-The program busy-waits between events; it will sleep once the kernel has `poll`.
+Between input reads the list sleeps 10 ms (`sleep_until`); it will block on
+input once the kernel has `poll`.
