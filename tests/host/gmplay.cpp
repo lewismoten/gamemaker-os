@@ -2,7 +2,8 @@
 // a key script and prints the state after every tick in the Pocket Player host
 // test's line format (S lines), so the two can be compared line for line: the
 // same core, fed from the original files here and from the packed ones there.
-//   gmplay <game folder> <NAME.GAM> <script>   lines: "K <tick> <scan, +128 a release>", "R <seed>", "T <ticks>"
+//   gmplay <game folder> <NAME.GAM> <script>   lines: "K <tick> <scan, +128 a release>", "R <seed>", "T <ticks>",
+//   "A <tick>" (every key let go before that tick, as the board's session does when a level ends)
 #include <stdio.h>
 #include <stdlib.h>
 #include "hostio.h"
@@ -21,6 +22,7 @@ int main(int argc, char **argv) {
   while (fgets(line, sizeof line, f)) {
     int t, k; unsigned seed;
     if (sscanf(line, "K %d %d", &t, &k) == 2 && nev < 4096) evs[nev++] = {t, k};
+    if (sscanf(line, "A %d", &t) == 1 && nev < 4096) evs[nev++] = {t, -1};
     if (sscanf(line, "T %d", &t) == 1) maxTick = t;
     if (sscanf(line, "R %u", &seed) == 1) w.seed = seed;
   }
@@ -28,7 +30,9 @@ int main(int argc, char **argv) {
   if (gp_begin()) { fprintf(stderr, "cannot start level 1\n"); return 2; }
   int e = 0;
   for (int t = 1; t <= maxTick; t++) {
-    for (; e < nev && evs[e].tick == t; e++) w.key(evs[e].key & 127, !(evs[e].key & 128));
+    for (; e < nev && evs[e].tick == t; e++)
+      if (evs[e].key < 0) w.releaseAll();
+      else w.key(evs[e].key & 127, !(evs[e].key & 128));
     char code = w.tick();
     int32_t ms = 0;
     for (int i = 0; i < 30; i++) ms += w.meter[i];

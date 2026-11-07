@@ -1,0 +1,215 @@
+fli starter frames 38 speed 5 records 38
+f starter 0 3188737110
+f starter 1 2093092188
+f starter 2 2947514634
+f starter 3 2412419592
+f starter 4 79046150
+f starter 5 1236929452
+f starter 6 312699911
+f starter 7 2153302815
+f starter 8 1336025314
+f starter 9 2325274304
+f starter 10 3012689533
+f starter 11 4137403283
+f starter 12 3144587447
+f starter 13 860482644
+f starter 14 3058136507
+f starter 15 3698411467
+f starter 16 1628054751
+f starter 17 1384316482
+f starter 18 353927832
+f starter 19 1162154002
+f starter 20 3683956260
+f starter 21 160961457
+f starter 22 2011950575
+f starter 23 2011950575
+f starter 24 2011950575
+f starter 25 2011950575
+f starter 26 740985847
+f starter 27 740985847
+f starter 28 740985847
+f starter 29 740985847
+f starter 30 2011950575
+f starter 31 2011950575
+f starter 32 2011950575
+f starter 33 2011950575
+f starter 34 740985847
+f starter 35 740985847
+f starter 36 1867845419
+f starter 37 3386711760
+fli sandlogo frames 54 speed 6 records 55
+f sandlogo 0 3705575841
+f sandlogo 1 2954083116
+f sandlogo 2 1152720006
+f sandlogo 3 2668553997
+f sandlogo 4 2612392336
+f sandlogo 5 3885533860
+f sandlogo 6 720938800
+f sandlogo 7 2318762578
+f sandlogo 8 1273641
+f sandlogo 9 3779618926
+f sandlogo 10 2017914390
+f sandlogo 11 4246387840
+f sandlogo 12 117801828
+f sandlogo 13 3700294348
+f sandlogo 14 41119845
+f sandlogo 15 2750077794
+f sandlogo 16 3461358955
+f sandlogo 17 2961097501
+f sandlogo 18 131048059
+f sandlogo 19 391849529
+f sandlogo 20 3027808272
+f sandlogo 21 2137723614
+f sandlogo 22 1359921899
+f sandlogo 23 3436448409
+f sandlogo 24 167553598
+f sandlogo 25 358388146
+f sandlogo 26 3491007319
+f sandlogo 27 607016028
+f sandlogo 28 1332759508
+f sandlogo 29 1160927217
+f sandlogo 30 559459344
+f sandlogo 31 3247235089
+f sandlogo 32 995580800
+f sandlogo 33 3275210572
+f sandlogo 34 665224631
+f sandlogo 35 506684603
+f sandlogo 36 4292077441
+f sandlogo 37 968673336
+f sandlogo 38 229236292
+f sandlogo 39 678306009
+f sandlogo 40 3647049843
+f sandlogo 41 105026778
+f sandlogo 42 4207593460
+f sandlogo 43 3304884318
+f sandlogo 44 3858874946
+f sandlogo 45 3172422512
+f sandlogo 46 2181111604
+f sandlogo 47 2719602686
+f sandlogo 48 2605333047
+f sandlogo 49 771577051
+f sandlogo 50 3946259200
+f sandlogo 51 3454817437
+f sandlogo 52 3574635216
+f sandlogo 53 432925025
+fli sandlogo-tuneup frames 54 speed 6 records 54
+f sandlogo-tuneup 0 3705575841
+f sandlogo-tuneup 1 2954083116
+f sandlogo-tuneup 2 1152720006
+f sandlogo-tuneup 3 2668553997
+f sandlogo-tuneup 4 2612392336
+f sandlogo-tuneup 5 3885533860
+f sandlogo-tuneup 6 720938800
+f sandlogo-tuneup 7 2318762578
+f sandlogo-tuneup 8 1273641
+f sandlogo-tuneup 9 3779618926
+f sandlogo-tuneup 10 2017914390
+f sandlogo-tuneup 11 4246387840
+f sandlogo-tuneup 12 117801828
+f sandlogo-tuneup 13 3700294348
+f sandlogo-tuneup 14 41119845
+f sandlogo-tuneup 15 2750077794
+f sandlogo-tuneup 16 3461358955
+f sandlogo-tuneup 17 2961097501
+f sandlogo-tuneup 18 131048059
+f sandlogo-tuneup 19 391849529
+f sandlogo-tuneup 20 3027808272
+f sandlogo-tuneup 21 2137723614
+f sandlogo-tuneup 22 1359921899
+f sandlogo-tuneup 23 3436448409
+f sandlogo-tuneup 24 167553598
+f sandlogo-tuneup 25 358388146
+f sandlogo-tuneup 26 3491007319
+f sandlogo-tuneup 27 607016028
+f sandlogo-tuneup 28 1332759508
+f sandlogo-tuneup 29 1160927217
+f sandlogo-tuneup 30 559459344
+f sandlogo-tuneup 31 3247235089
+f sandlogo-tuneup 32 995580800
+f sandlogo-tuneup 33 3275210572
+f sandlogo-tuneup 34 665224631
+f sandlogo-tuneup 35 506684603
+f sandlogo-tuneup 36 4292077441
+f sandlogo-tuneup 37 968673336
+f sandlogo-tuneup 38 229236292
+f sandlogo-tuneup 39 678306009
+f sandlogo-tuneup 40 3647049843
+f sandlogo-tuneup 41 105026778
+f sandlogo-tuneup 42 4207593460
+f sandlogo-tuneup 43 3304884318
+f sandlogo-tuneup 44 3858874946
+f sandlogo-tuneup 45 3172422512
+f sandlogo-tuneup 46 2181111604
+f sandlogo-tuneup 47 2719602686
+f sandlogo-tuneup 48 2605333047
+f sandlogo-tuneup 49 771577051
+f sandlogo-tuneup 50 3946259200
+f sandlogo-tuneup 51 3454817437
+f sandlogo-tuneup 52 3574635216
+f sandlogo-tuneup 53 432925025
+fli bloom frames 40 speed 6 records 40
+f bloom 0 2971993262
+f bloom 1 3102637200
+f bloom 2 1439231756
+f bloom 3 1711116688
+f bloom 4 3301701968
+f bloom 5 429084605
+f bloom 6 1025641096
+f bloom 7 252437321
+f bloom 8 1350150842
+f bloom 9 1691035711
+f bloom 10 2417173030
+f bloom 11 1887017819
+f bloom 12 2104984557
+f bloom 13 940329424
+f bloom 14 4190076739
+f bloom 15 2845410289
+f bloom 16 1563839653
+f bloom 17 1869850127
+f bloom 18 388321155
+f bloom 19 2504546383
+f bloom 20 834472393
+f bloom 21 2363636438
+f bloom 22 4073044665
+f bloom 23 4183336072
+f bloom 24 1821759940
+f bloom 25 3518285924
+f bloom 26 2628022860
+f bloom 27 1148921230
+f bloom 28 3803137658
+f bloom 29 577780972
+f bloom 30 3862603388
+f bloom 31 290035672
+f bloom 32 873010947
+f bloom 33 2723237897
+f bloom 34 1278376630
+f bloom 35 3652844792
+f bloom 36 3896257276
+f bloom 37 2109189298
+f bloom 38 2971187973
+f bloom 39 2165712384
+bkd w99.bkd 0 3000 cards5.gif 1709109635
+bkd w15.bkd 0 600 cards1.gif 2949291455
+txt won col 105 red 106 pages 3793972882 4110778970 after 1245111371
+txt lost col 105 red 106 pages 3501147216 after 1674632525
+txt credits col 105 red 106 pages 2002521452 3338803967 after 1654774418
+txt missing col 105 red 106 pages 2016087734 after 1245111371
+txt won-menu col 105 red 106 pages 3793972882 4110778970 after 1245111371
+txt credits-menu col 105 red 106 pages 2002521452 3338803967 after 1654774418
+txt missing-menu col 105 red 106 pages 2016087734 after 1245111371
+txt cutscenes-onew col 105 red 106 pages 3203066003 after 3924274866
+gam dice-old 3032433211
+gam sharware/ajqst2/demo.gam 3844186883
+gam sharware/ajquest/a_j.gam 81957237
+gam sharware/bounerm/bounerim.gam 3543972048
+gam sharware/congress/congress.gam 593871980
+gam sharware/fluffyr/ralph.gam 341711179
+gam sharware/gridlin/gridline.gam 3118644343
+gam sharware/njlnflx/nejilian.gam 3228207059
+gam sharware/octolrs/octolris.gam 1842975625
+gam sharware/orb/orb.gam 1542443375
+gam sharware/pac/pac.gam 494580872
+gam sharware/paperair/spap.gam 1324752052
+gam sharware/parsec3d/parsec3d.gam 15775530
+gam sharware/signhdg/sign.gam 2720769341
+gam sharware/zoom/zoom_.gam 1449188767

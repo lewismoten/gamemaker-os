@@ -1,0 +1,31 @@
+THROUGH!
+
+One die, two doors.
+
+The die is a ring of six
+blocks. Face 1 is set to turn
+into face 2 after a few ticks
+(18.2 a second), face 2 into
+face 3, and so on round to 1
+again. Each face block turns
+into a still copy of itself
+when touched, and gives a key
+(a gold one for 1, 3, 5 and a
+silver one for 2, 4, 6).
+
+Game-Maker has no random
+number. The clock starts when
+the room loads, so the face
+you stop on depends only on
+the tick you touch it. Wait a
+little longer or a little less
+and the roll changes, but the
+same walk always rolls the
+same.
+
+Open the game in Game-Maker,
+pick a face block in the
+Blocks tab and look at its
+Next block and its time.
+Change a number, then play
+your change.
