@@ -1,0 +1,100 @@
+# JS.ELF: a JavaScript layer for making your own OS
+
+`JS.ELF` runs a small web-page-like app from the SD card on sandbox-kernel. The
+app is JavaScript (QuickJS-ng, ES2023: `let`, arrow functions, classes, template
+strings, `Map`, promises) with a few browser-like globals over native code. JS
+only moves things around. The element tree, layout, drawing, files and the
+Game-Maker play core are C. It was built as a spike on 2026-11-07. The numbers
+and the recommendation are in sandbox-kernel's `docs/js-spike.md`.
+
+## Make your own shell in two files
+
+```
+/OS/AUTORUN.TXT          line 1: the program the kernel starts (GMOS.ELF or JS.ELF)
+                         line 2: the app JS.ELF runs (default APPS/HELLO)
+/OS/APPS/HELLO/MAIN.JS   the script
+/OS/APPS/HELLO/INDEX.HTM the layout (optional; MAIN.JS reads it into innerHTML)
+```
+
+`apps/HELLO` is the example. It has a header with a clock, Games and About
+buttons, and a grid of six cards with each game's title screen. Enter on a card
+plays the game, and Esc comes back. To try it:
+
+```
+make js                                                     # build/JS.ELF
+scripts/usb_kernel.py <port> put build/JS.ELF               # stripped: about 790 KB
+scripts/usb_kernel.py <port> putapp apps/HELLO HELLO        # /OS/APPS/HELLO/
+scripts/usb_kernel.py <port> run JS.ELF                     # or JS.ELF on line 1 of AUTORUN.TXT
+```
+
+(`usb_kernel.py` is sandbox-kernel's. `putapp` and 1 MiB files need its
+2026-11-07 kernel or later.) On the host, `make host` builds `build/host/jsrun`,
+which runs an app from a folder that stands in for the card. `--vclock` makes the
+clock virtual, `--keys ms:code:value,...` presses keys, and `--shot` saves the
+screen; `tools/jsshot.py` turns that into a PNG.
+
+```
+build/host/jsrun <card folder> /sd/OS/APPS/HELLO --vclock --ms 2000 --keys 500:28:1,520:28:0 --shot a.shot
+python3 tools/jsshot.py a.shot a.png 2      # 2x, nearest neighbor, as a 1080p screen shows 960x540
+```
+
+## What a page can use
+
+| Global | What it is |
+| --- | --- |
+| `document.createElement(tag)` | `div` (also `section`, `header`, `main`), `text` (also `span`, `p`, `h1`, `label`), `img`, `button`, `canvas`, `game` |
+| `document.body`, `getElementById`, `querySelector`, `querySelectorAll` | one simple selector: `#id`, `.class` or a tag |
+| `element.appendChild / insertBefore / removeChild / remove` | `parentNode`, `children`, `firstChild`, `lastChild`, `nextSibling`, `previousSibling` |
+| `element.id / className / textContent / tabIndex` | buttons (and `tabIndex = 0`) can take focus |
+| `element.innerHTML = '...'` | the same tags; `id`, `class`, `style` and other attributes; `&lt; &gt; &amp; &quot;` |
+| `element.style.*` | the CSS subset below; a value outside it is logged and ignored |
+| `element.addEventListener(type, fn)` | `keydown`, `keyup` (`key`, `code`, `repeat`), `click`, `focus`, `blur`, `ended`; events bubble to `document`; `preventDefault()` stops the default |
+| `element.focus() / blur()`, `document.activeElement` | the arrow keys move focus to the nearest button that way; Enter or Space clicks |
+| `element.getBoundingClientRect()` | the laid-out box |
+| `img.src` | a `.GIF` on the card, or a game folder (its title screen) |
+| `canvas.getContext('2d')` | `fillStyle`, `font` (`9px` steps), `fillRect`, `clearRect`, `fillText`, `drawImage(img or canvas, x, y[, w, h])` |
+| `game.src = '/sd/GAMES/DICE'; game.play()` | plays the folder's game with the native play core at 18.2 Hz; keys go to it while it has focus; Esc or the game's end fires `ended`; `game.stop()`, `game.ticks`, `game.playing`, `game.press(code, down)` |
+| `requestAnimationFrame`, `cancelAnimationFrame` | 60 a second on the kernel clock, never bunched up after a slow frame |
+| `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval`, `performance.now()` | |
+| `console.log` (and `info`, `warn`, `error`) | to the kernel's USB log, `JS ` in front |
+| `fs.readFile(path)`, `fs.readdir(path)` | read-only, `/sd/...` |
+| `screen.setMode(w, h, depth)` | the page's mode: 32 (XRGB8888) or 16 (RGB565) bits; 960x540x16 is exactly half of 1080p |
+| `screen.gameLowres(on, w, h)` | a playing game switches to its own 8-bit mode with its palette: 320x200, or larger with the picture centered (384x216 is 1080p / 5) |
+| `sys.exit(code)`, `sys.stats()`, `sys.memory()` | timing and heap counters (the benchmarks use them) |
+
+CSS subset (`src/js/dom.c` has the details): `left`, `top`, `width` and `height`
+in px; `position: static | absolute`; `display: block | flex | none`;
+`flexDirection: row | column`; `gap`; `padding`; `border` (`"2px solid #fff"`),
+`borderWidth`, `borderColor`; `color`, `background`, `backgroundColor`
+(`#rgb`, `#rrggbb`, `rgb(r,g,b)`, a few names, `transparent`); `outlineColor`
+(the focus ring); `fontSize` (9, 18, 27 or 36 px of the 5x9 bitmap font);
+`textAlign`.
+
+Left out on purpose: style sheets and selectors with more than one part,
+margins, percentages, `z-index` (later siblings paint over earlier ones),
+wrapping flex lines, other fonts, transparency other than no background,
+mouse and touch, `fetch`, writing files, modules (`import`). Each could be
+added later if a real app needs it.
+
+## How it works
+
+- `src/js/dom.c`: the element tree. Changing a property marks the element. The
+  next frame lays out what changed, repaints only the damaged rectangles
+  (merged, at most 16), and presents only those. Moving focus between two cards
+  repaints and presents those two cards, not the screen.
+- `src/js/jsrt.c`: the QuickJS-ng bindings and the loop. Each turn reads input,
+  runs due timers and frames, steps the game, then paints. A game element in
+  low-res mode copies the play core's 320x200 picture straight to an 8-bit
+  screen and sets the palette only when it changes (fades too).
+- `src/js/prelude.js`: events, `document`, timers, `innerHTML` and `console`,
+  in JS (compiled into the ELF by `tools/embed_js.py`).
+- `src/js/plat.h`: what the runtime needs from the machine. `plat_sbx.c` is the
+  board (the kernel's system calls) and `tests/host/jsrun.c` is the host.
+- `src/js/sys.c`: newlib's libc and libm (from the Arm GNU toolchain) get one
+  fixed 3 MiB heap for `malloc`. There are no threads and no files through stdio.
+- `apps/BENCH`: the benchmarks.
+
+`make test` includes `tests/test_js.py`. It checks the DOM-like API with
+`tests/js/PROBE`, the HELLO page at 960x540, playing a game from JS and coming
+back to the page's mode, and that two runs on the virtual clock give the same
+picture.

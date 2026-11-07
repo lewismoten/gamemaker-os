@@ -76,8 +76,9 @@ build/js/game.o: $(PLAYCORE) src/game.h $(GMCORE) Makefile | build/js
 	$(CXX) $(PXXFLAGS) -ffunction-sections -fdata-sections -c $(PLAYCORE) -o $@
 build/JS.ELF: src/js/main.c src/js/plat_sbx.c src/js/sys.c $(JSC) build/js/prelude.c $(QJS:%=build/js/q_%.o) build/js/game.o $(wildcard src/js/*.h) $(wildcard src/*.h) sdk/lib/crt0.S sdk/lib/sandbox.ld Makefile
 	$(CC) $(JSFLAGS) -nostartfiles -Tsdk/lib/sandbox.ld -Wl,-z,noexecstack -Wl,--build-id=none -Wl,-z,max-page-size=4096 -Wl,--gc-sections \
-	  sdk/lib/crt0.S src/js/main.c src/js/plat_sbx.c src/js/sys.c $(JSC) build/js/prelude.c $(QJS:%=build/js/q_%.o) build/js/game.o -lm -lc -lgcc -o $@
-	$(TOOLCHAIN)size $@
+	  sdk/lib/crt0.S src/js/main.c src/js/plat_sbx.c src/js/sys.c $(JSC) build/js/prelude.c $(QJS:%=build/js/q_%.o) build/js/game.o -lm -lc -lgcc -o build/js/JS.full.elf
+	$(TOOLCHAIN)size build/js/JS.full.elf
+	$(TOOLCHAIN)strip -o $@ build/js/JS.full.elf
 # The runtime on the host: tests/host/jsrun.c (tests/test_js.py and the benchmarks).
 $(HOSTDIR)/js_prelude.c: src/js/prelude.js tools/embed_js.py | $(HOSTDIR)
 	$(PYTHON) tools/embed_js.py $< $@ jsrt_prelude
