@@ -6,7 +6,15 @@ It runs on [sandbox-kernel](https://github.com/lewismoten/sandbox-kernel), a sma
 
 ## Status
 
-Planning. The first target is a Raspberry Pi Zero W v1.1 with a Waveshare 2.13 inch e-Paper HAT (V4) as a status display, connected to a computer by USB for development.
+The first program runs on the board. `GMOS.ELF` lists the games in `/sd/GAMES` (each a folder with a `.GAM` file, titled from that file), draws the list on HDMI at 640x480, moves the selection with the arrow keys and logs the game chosen with Enter; Esc or Q quits. Playing a game comes later. Input is the kernel's synthetic device for now: the development computer sends key presses over USB.
+
+The first target is a Raspberry Pi Zero W v1.1 with a Waveshare 2.13 inch e-Paper HAT (V4) as a status display, connected to a computer by USB for development.
+
+![The games list, rendered on the host from the same code; the board's screen checksum matched it](docs/games-list.png)
+
+## Build
+
+`GMOS.ELF` is built only against the sandbox-kernel SDK, vendored in `sdk/` at the kernel commit named in `sdk/PINNED`. `make` builds it with the Arm GNU toolchain; `make test` runs the host tests and renders the list to PNG files in `build/host/`. See [docs/build.md](docs/build.md) for installing it on a card and driving it over USB.
 
 ## Plan
 
