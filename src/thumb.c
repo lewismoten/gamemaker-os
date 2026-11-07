@@ -4,10 +4,12 @@
 #include "thumb.h"
 #include "fli.h"
 #include "gif.h"
+#include "rgb565.h"
 #define W 320u
 #define H 200u
 static uint8_t file[1024 * 1024], list[4096], frame[W * H], frame_pal[768], best[W * H], best_pal[768];
-static uint32_t cache[GM_THUMB_SLOTS][GM_THUMB_W * GM_THUMB_H], used[GM_THUMB_SLOTS], clock;
+static uint16_t cache[GM_THUMB_SLOTS][GM_THUMB_W * GM_THUMB_H];
+static uint32_t used[GM_THUMB_SLOTS], clock;
 static int16_t owner[GM_THUMB_SLOTS];
 static int owners_set;
 static int lower(int c) {return c >= 'A' && c <= 'Z' ? c + 32 : c;}
@@ -130,7 +132,7 @@ int gm_title_picture(gp_read_fn read, void *user, const char *gam_name, uint8_t 
   menu[k] = 0;
   return !graphic(read, user, title, 0, px, pal) || !graphic(read, user, menu, 0, px, pal) ? 0 : -1;
 }
-void gm_shrink(const uint8_t *px, const uint8_t *pal, uint32_t *out, uint32_t w, uint32_t h) {
+void gm_shrink(const uint8_t *px, const uint8_t *pal, uint16_t *out, uint32_t w, uint32_t h) {
   uint32_t rgb[256];
   for (unsigned i = 0; i < 256; i++) {
     const uint8_t *c = pal + i * 3; uint32_t v = 0;
@@ -145,13 +147,13 @@ void gm_shrink(const uint8_t *px, const uint8_t *pal, uint32_t *out, uint32_t w,
       for (uint32_t yy = y0; yy < y1; yy++) for (uint32_t xx = x0; xx < x1; xx++) {
         uint32_t c = rgb[px[yy * W + xx]]; r += c >> 16; g += c >> 8 & 255u; b += c & 255u;
       }
-      out[y * w + x] = (r + n / 2) / n << 16 | (g + n / 2) / n << 8 | (b + n / 2) / n;
+      out[y * w + x] = gm_565((r + n / 2) / n << 16 | (g + n / 2) / n << 8 | (b + n / 2) / n);
     }
   }
 }
 static void init(void) {if (!owners_set) {for (unsigned i = 0; i < GM_THUMB_SLOTS; i++) owner[i] = -1; owners_set = 1;}}
 void gm_thumb_clear(void) {owners_set = 0; init();}
-const uint32_t *gm_thumb_get(unsigned id) {
+const uint16_t *gm_thumb_get(unsigned id) {
   init();
   for (unsigned i = 0; i < GM_THUMB_SLOTS; i++) if (owner[i] == (int16_t)id) {used[i] = ++clock; return cache[i];}
   return 0;

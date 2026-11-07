@@ -81,7 +81,7 @@ static void fuzz_library(uint32_t rounds) {
 static void random_text(char *s, uint32_t n) {for (uint32_t i = 0; i < n; i++) s[i] = (char)(1 + below(255)); s[n] = 0;}
 static void fuzz_menu(uint32_t rounds) {
   static char line[8192], dir[64], gam[64], title[2048];
-  static uint32_t frame[640 * 480];
+  static uint16_t frame[GM_W * GM_H];
   static uint8_t big[64000], pal[768];
   struct gm_menu *m = malloc(sizeof *m);
   for (uint32_t i = 0; i < rounds; i++) {
@@ -103,7 +103,7 @@ static void fuzz_menu(uint32_t rounds) {
       if (!below(4)) {
         for (uint32_t p = 0; p < 64000; p++) big[p] = (uint8_t)rnd();
         for (uint32_t p = 0; p < 768; p++) pal[p] = (uint8_t)rnd();
-        gm_draw(frame, 640, m, below(2) ? big : 0, pal);
+        gm_draw(frame, GM_W, m, below(2) ? big : 0, pal);
       }
     }
   }
@@ -153,7 +153,7 @@ static void fuzz_title(uint32_t rounds) {
 static unsigned real_games(int argc, char **argv) {
   static char path[1024], gam[64], title[32];
   static uint8_t head[512], px[64000], pal[768];
-  static uint32_t frame[640 * 480];
+  static uint16_t frame[GM_W * GM_H];
   struct gm_menu *m = calloc(1, sizeof *m);
   for (int a = 0; a < argc; a++) {
     DIR *top = opendir(argv[a]); struct dirent *e;
@@ -179,8 +179,8 @@ static unsigned real_games(int argc, char **argv) {
   gm_finish(m);
   for (unsigned t = 0; t < GM_CATS; t++) {
     m->tab = t;
-    for (unsigned k = 0; k <= m->tab_count[t]; k++) {gm_draw(frame, 640, m, 0, 0); gm_event(m, 1, 106, 1);}
-    m->view = GM_DETAILS; gm_draw(frame, 640, m, px, pal); m->view = GM_GRID;
+    for (unsigned k = 0; k <= m->tab_count[t]; k++) {gm_draw(frame, GM_W, m, 0, 0); gm_event(m, 1, 106, 1);}
+    m->view = GM_DETAILS; gm_draw(frame, GM_W, m, px, pal); m->view = GM_GRID;
   }
   unsigned count = m->count; free(m);
   return count;

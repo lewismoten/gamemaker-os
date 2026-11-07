@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT; the games list as data, and what input does
  * to it. It follows the Sandbox Edition web site's Games page: category tabs
  * (Starters, Sandbox, Bizarre, CD, and Other for games the library index does
- * not know), a grid of game cards six to a page, and a details view with Play.
+ * not know), a grid of game cards eight to a page, and a details view with Play.
  * Pure: no system calls, so the host tests drive it directly. */
 #pragma once
 #include <stdint.h>
@@ -9,8 +9,8 @@
 #include "gam.h"
 #include "library.h"
 #define GM_MAX_GAMES 256u
-#define GM_COLS 3u
-#define GM_PAGE 6u /* cards on a page: three across, two down */
+#define GM_COLS 4u
+#define GM_PAGE 8u /* cards on a page: four across, two down */
 #define GM_MESSAGE_MAX 48u
 enum {GM_CAT_STARTER, GM_CAT_SANDBOX, GM_CAT_BIZARRE, GM_CAT_CD, GM_CAT_OTHER, GM_CATS};
 enum {GM_GRID, GM_DETAILS};       /* what shows */

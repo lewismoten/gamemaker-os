@@ -7,7 +7,7 @@ the Pocket Player's own host test, run on its packed copy of the same game,
 wrote tests/data/dice-pocket.txt and dice-cards.txt (tools/pocket_reference.py)."""
 import ctypes as C
 import os, pathlib, struct, subprocess, unittest, zlib
-from test_gmos import png, W, H
+from gmos_page import png, PW as W, PH as H
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUT = ROOT / os.environ.get('GMOS_HOST', 'build/host')  # make test-asan: build/asan
 DICE = ROOT / 'tests/games/DICE'

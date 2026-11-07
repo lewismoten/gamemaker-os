@@ -1,19 +1,22 @@
 # SPDX-License-Identifier: MIT
 """The games page on the host, as GMOS.ELF builds it on the board: game folders
 (each with a .GAM), the library index lines, input events, title screens read
-from each game's files, and the 640x480 frame. Used by test_gmos.py and
+from each game's files, and the 960x540 RGB565 frame (a game plays in
+640x480x32: PW, PH). Used by test_gmos.py and
 tools/render_list.py."""
 import ctypes as C
 import os, pathlib, struct, subprocess, zlib
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUT = ROOT / os.environ.get('GMOS_HOST', 'build/host')  # make test-asan: build/asan
-W, H = 640, 480
-TW, TH = 194, 121
+W, H = 960, 540      # the games page, 16 bpp
+PW, PH = 640, 480    # a game's screen, 32 bpp
+TW, TH = 218, 136
 NONE, MOVED, CHOSEN, QUIT, RESYNC = range(5)
 KEYS = dict(esc=1, backspace=14, tab=15, q=16, lbracket=26, rbracket=27, enter=28, lshift=42, space=57,
             home=102, up=103, pgup=104, left=105, right=106, end=107, down=108, pgdn=109)
 STARTER, SANDBOX, BIZARRE, CD, OTHER = range(5)
 GRID, DETAILS = range(2)
+PAGE, COLS = 8, 4   # cards on a page, and across
 _lib = None
 
 def lib():
@@ -88,21 +91,34 @@ class Page:
             if pic: self.c.gm_thumb_put(i, *pic)
     def page_games(self):
         """The game indexes of the cards on the selected card's page."""
-        t = self.tab; first = self.pos // 6 * 6
-        return [g for g in (self.c.gmos_tab_game(self.m, t, k) for k in range(first, first + 6)) if g >= 0]
+        t = self.tab; first = self.pos // PAGE * PAGE
+        return [g for g in (self.c.gmos_tab_game(self.m, t, k) for k in range(first, first + PAGE)) if g >= 0]
     def render(self, load=True):
         if load and self.view == GRID: self.load_page()
         big = pal = None
         if self.view == DETAILS and self.selected >= 0:
             pic = self.title_picture(self.selected)
             if pic: big, pal = pic
-        buf = (C.c_uint32 * (W * H))()
+        buf = (C.c_uint16 * (W * H))()
         self.c.gm_draw(buf, W, self.m, big, pal)
         return list(buf)
 
-def crc(px): return zlib.crc32(struct.pack(f'<{W*H}I', *px))
+def crc(px): return zlib.crc32(struct.pack(f'<{W*H}H', *px))
 
-def png(path, px, w=W, h=H):
+def rgb(c):
+    """An RGB565 pixel as 0x00RRGGBB, each channel's bits repeated into the low ones."""
+    r, g, b = c >> 11, c >> 5 & 63, c & 31
+    return (r << 3 | r >> 2) << 16 | (g << 2 | g >> 4) << 8 | (b << 3 | b >> 2)
+
+def q(c):
+    """0x00RRGGBB as the page shows it: rounded to RGB565 (src/rgb565.h) and back."""
+    r5, g6, b5 = ((c >> 16 & 255) * 31 + 127) // 255, ((c >> 8 & 255) * 63 + 127) // 255, ((c & 255) * 31 + 127) // 255
+    return rgb(r5 << 11 | g6 << 5 | b5)
+
+def png(path, px, w=None, h=None):
+    """A games page (W x H RGB565) or a game's screen (PW x PH, 0x00RRGGBB) to a PNG."""
+    if w is None: w, h = (W, H) if len(px) == W * H else (PW, PH)
+    if len(px) == W * H and (w, h) == (W, H): px = [rgb(p) for p in px]
     raw = b''.join(b'\0' + b''.join(struct.pack('>I', p)[1:] for p in px[y*w:(y+1)*w]) for y in range(h))
     def chunk(t, d): return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d))
     pathlib.Path(path).write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b''))
