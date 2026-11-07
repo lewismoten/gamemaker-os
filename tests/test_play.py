@@ -119,6 +119,7 @@ class Cards(unittest.TestCase):
     def test_title_then_intro_then_play(self):
         s = Session(); self.assertEqual(s.result, 0)
         self.assertEqual(s.phase(), GS_CARDS); self.assertTrue(s.card())
+        s.log[:] = [l for l in s.log if not l.startswith('SND ')]                    # the sound lines: test_sound.py
         self.assertEqual(s.log, ['GMOS page starter.fli, 38 frames 5/70 s apart, then 0 s'])  # TITLE.LST: the animation, then title.gif for 12 s
         s.step(TITLE_AT - 1); self.assertEqual(len(s.log), 1)                       # frames until the last one's 5 retraces are up
         self.assertEqual(s.step(TITLE_AT), GS_DRAW); self.assertIn('GMOS page title.gif, 12 s', s.log)

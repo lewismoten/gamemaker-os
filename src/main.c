@@ -146,6 +146,7 @@ static void play(uint32_t *px, const struct gm_game *g) {
   find_gam(path, (uint32_t)(p - path), gamname);
   if (abi_minor < 1) {say("GMOS playing needs the kernel's clock (ABI 1.1)"); return;}
   game.say = say;
+  snd_dir(&game.sound, g->dir);
   p = put(line, "GMOS play "); p = put(p, g->dir); p = put(p, "/"); put(p, gamname); say(line);
   if (!gamname[0] || gs_start(&game, sd_read, (void *)g->dir, gamname, clock_ns())) {say("GMOS cannot play it"); return;}
   static sbx_input_event ev[16]; uint64_t got;

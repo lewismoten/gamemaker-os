@@ -41,3 +41,4 @@ int gmos_tab_game(const struct gm_menu *m, unsigned tab, unsigned i) {const stru
 /* sizeof(struct gm_record), for the ctypes mirror's size check. */
 #include "library.h"
 unsigned gmos_record_bytes(void) {return sizeof(struct gm_record);}
+void gmos_session_sound_dir(struct gs_session *s, const char *dir) {snd_dir(&s->sound, dir);}
