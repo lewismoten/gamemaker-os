@@ -1,21 +1,27 @@
 /* SPDX-License-Identifier: MIT; GMOS.ELF, the first Game-Maker OS program.
  * Built only against the sandbox-kernel SDK (sdk/). It reports readiness,
  * lists the games in /sd/GAMES (each a folder holding a .GAM file, titled
- * from that file), draws the list on /dev/fb0 and moves the selection with
- * /dev/input/event0. Enter plays the game chosen (session.h) at 18.2 Hz on
- * the kernel's clock, sleeping between ticks; Esc or the game's end returns
- * to the list, and Esc or Q there quits. */
+ * from that file and from the library index /sd/GAMES/LIBRARY.JSL when it
+ * lists the game), draws the games page on /dev/fb0 (menu.h, view.h: tabs,
+ * cards with title screens read from each game's files a card at a time, a
+ * details view) and moves through it with /dev/input/event0. Play on the
+ * details view plays the game (session.h) at 18.2 Hz on the kernel's clock,
+ * sleeping between ticks; Esc or the game's end returns to the list, and Esc
+ * or Q on the grid quits. */
 #include <sandbox/syscall.h>
 #include "gam.h"
 #include "menu.h"
 #include "session.h"
+#include "thumb.h"
 #include "view.h"
 static uint64_t log_fd, fb_fd, in_fd;
 static uint32_t generation, abi_minor;
 static uint64_t beat;
 static int have_input;
 static struct gm_menu menu;
-static uint8_t dents[2048], head[GM_GAM_TITLE_BYTES];
+static uint8_t dents[2048], gamfile[64 * 1024], index_text[256 * 1024];
+static uint8_t pic_px[GP_W * GP_H], pic_pal[768], big_px[GP_W * GP_H], big_pal[768];
+static int big_id = -1, big_ok;
 static unsigned length(const char *s) {unsigned n = 0; while (s[n]) n++; return n;}
 static char *put(char *p, const char *s) {while (*s) *p++ = *s++; *p = 0; return p;}
 static char *num(char *p, uint32_t n) {char t[11]; int k = 0; do t[k++] = (char)('0' + n % 10); while (n /= 10); while (k) *p++ = t[--k]; *p = 0; return p;}
@@ -53,11 +59,25 @@ static void add_game(const char *dir, unsigned dn) {
   *p++ = '/'; p = put(p, name);
   if (sbx_open(path, (uint32_t)(p - path), SBX_O_RDONLY, &fd)) return;
   uint32_t have = 0;
-  while (have < sizeof head && !sbx_read(fd, head + have, sizeof head - have, &got) && got) have += (uint32_t)got;
+  while (have < sizeof gamfile && !sbx_read(fd, gamfile + have, sizeof gamfile - have, &got) && got) have += (uint32_t)got;
   sbx_close(fd);
-  if (gm_gam_title(head, have, title) < 0) return;
+  if (gm_gam_title(gamfile, have, title) < 0) return;
   char d[9]; unsigned k = 0; while (k < dn && k < 8) {d[k] = dir[k]; k++;} d[k] = 0;
-  gm_add(&menu, d, title);
+  gm_add(&menu, d, name, title, gm_crc32(0, gamfile, have));
+}
+/* /sd/GAMES/LIBRARY.JSL, a line at a time: the titles, categories and blurbs it gives. */
+static void read_index(void) {
+  uint64_t fd, got; uint32_t have = 0, matched = 0;
+  if (sbx_open("/sd/GAMES/LIBRARY.JSL", 21, SBX_O_RDONLY, &fd)) {say("GMOS no library index; titles from the .GAM files"); return;}
+  while (have < sizeof index_text && !sbx_read(fd, index_text + have, sizeof index_text - have, &got) && got) have += (uint32_t)got;
+  sbx_close(fd);
+  for (uint32_t at = 0; at < have;) {
+    uint32_t end = at; while (end < have && index_text[end] != '\n') end++;
+    matched += (uint32_t)gm_library_line(&menu, (const char *)index_text + at, end - at);
+    at = end + 1;
+    heartbeat();
+  }
+  char line[64], *p = put(line, "GMOS library index: "); p = num(p, matched); put(p, matched == 1 ? " game" : " games"); say(line);
 }
 static void find_games(void) {
   uint64_t fd, got;
@@ -71,7 +91,8 @@ static void find_games(void) {
     }
   }
   sbx_close(fd);
-  gm_sort(&menu);
+  read_index();
+  gm_finish(&menu);
 }
 static void open_input(void) {
   sbx_input_info info; sbx_input_state st;
@@ -175,8 +196,42 @@ static void play(uint32_t *px, const struct gm_game *g) {
   }
   say("GMOS back to the games list");
 }
+/* The title screen of a game (thumb.h), read from its folder; -1 when it has none. */
+static int title_picture(const struct gm_game *g, uint8_t *px, uint8_t *pal) {
+  return gm_title_picture(sd_read, (void *)g->dir, g->gam, px, pal);
+}
+/* The next card on the page whose title screen is not drawn yet: reads it. 1 when one was read. */
+static int load_next_thumb(void) {
+  if (menu.view != GM_GRID) return 0;
+  unsigned t = menu.tab, first = menu.pos[t] / GM_PAGE * GM_PAGE;
+  for (unsigned i = 0; i < GM_PAGE; i++) {
+    struct gm_game *g = (struct gm_game *)gm_tab_game(&menu, t, first + i);
+    if (!g || g->pic < 0) continue;
+    unsigned id = (unsigned)(g - menu.games);
+    if (g->pic > 0 && gm_thumb_get(id)) continue;
+    uint64_t t0 = clock_ns();
+    g->pic = title_picture(g, pic_px, pic_pal) ? -1 : 1;
+    if (g->pic > 0) gm_thumb_put(id, pic_px, pic_pal);
+    char line[80], *p = put(line, "GMOS title screen "); p = put(p, g->dir); p = put(p, g->pic > 0 ? " drawn in " : " none, looked "); p = num(p, (uint32_t)((clock_ns() - t0) / 1000000u)); put(p, " ms"); say(line);
+    return 1;
+  }
+  return 0;
+}
+/* Draws the games page and presents it; once every card on it is drawn, logs the frame's CRC (the host tests render the same frame). */
+static void show_list(uint32_t *px) {
+  const struct gm_game *g = gm_selected(&menu);
+  if (menu.view == GM_DETAILS && g && big_id != (int)(g - menu.games)) {big_id = (int)(g - menu.games); big_ok = !title_picture(g, big_px, big_pal);}
+  gm_draw(px, GM_W, &menu, menu.view == GM_DETAILS && big_ok ? big_px : 0, big_pal);
+  sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H);
+  int pending = 0;
+  if (menu.view == GM_GRID) {
+    unsigned t = menu.tab, first = menu.pos[t] / GM_PAGE * GM_PAGE;
+    for (unsigned i = 0; i < GM_PAGE; i++) {const struct gm_game *c = gm_tab_game(&menu, t, first + i); if (c && (c->pic == 0 || (c->pic > 0 && !gm_thumb_get((unsigned)(c - menu.games))))) pending = 1;}
+  }
+  if (!pending) {char line[48], *p = put(line, "GMOS list frame crc "); num(p, crc32(px, GM_W * GM_H)); say(line);}
+}
 int main(const sbx_startup *start) {
-  char line[96], *p;
+  char line[128], *p;
   generation = start->generation; abi_minor = start->minor;
   if (sbx_open("/dev/log", 8, SBX_O_WRONLY, &log_fd)) return 3;
   heartbeat(); /* readiness: the kernel wants it within 10 s */
@@ -187,8 +242,12 @@ int main(const sbx_startup *start) {
       sbx_fb_map(fb_fd, mode.buffer_bytes, (void **)&px)) {say("GMOS needs a 640x480 /dev/fb0"); return 4;}
   find_games();
   p = put(line, "GMOS "); p = num(p, menu.count); p = put(p, menu.count == 1 ? " game" : " games"); put(p, " in /sd/GAMES"); say(line);
-  for (unsigned i = 0; i < menu.count; i++) {p = put(line, "GMOS game "); p = put(p, menu.games[i].dir); p = put(p, ": "); put(p, menu.games[i].title); say(line);}
-  gm_draw(px, GM_W, &menu); sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H);
+  for (unsigned i = 0; i < menu.count; i++) {
+    const struct gm_game *g = &menu.games[i];
+    static const char *const cat[GM_CATS] = {"starter", "sandbox", "bizarre", "cd", "other"};
+    p = put(line, "GMOS game "); p = put(p, g->dir); p = put(p, " ["); p = put(p, cat[g->cat]); p = put(p, "]: "); put(p, g->title); say(line);
+  }
+  show_list(px);
   open_input();
   if (!have_input) say("GMOS no input yet; trying again");
   static sbx_input_event ev[16]; uint64_t got;
@@ -200,23 +259,27 @@ int main(const sbx_startup *start) {
       continue;
     }
     int32_t s = sbx_read(in_fd, ev, sizeof ev, &got);
-    if (s == -SBX_EAGAIN) {sbx_sleep_until(clock_ns() + 10000000ull); continue;} /* look again in 10 ms */
+    if (s == -SBX_EAGAIN) { /* nothing pressed: draw the next card's title screen, or look again in 10 ms */
+      if (load_next_thumb()) show_list(px); else sbx_sleep_until(clock_ns() + 10000000ull);
+      continue;
+    }
     if (s) {sbx_close(in_fd); have_input = 0; say(s == -SBX_ENODEV ? "GMOS input removed" : "GMOS input error"); continue;}
     int redraw = 0;
     for (uint32_t i = 0; i < got / sizeof ev[0]; i++) {
       int a = gm_event(&menu, ev[i].type, ev[i].code, ev[i].value);
       if (a == GM_MOVED) redraw = 1;
-      if (a == GM_RESYNC) {sbx_input_state st; sbx_input_state_get(in_fd, &st); say("GMOS input resync after SYN_DROPPED"); break;}
+      if (a == GM_RESYNC) {sbx_input_state st; sbx_input_state_get(in_fd, &st); menu.shift = 0; say("GMOS input resync after SYN_DROPPED"); break;}
       if (a == GM_CHOSEN) {
-        const struct gm_game *g = &menu.games[menu.sel];
+        const struct gm_game *g = gm_selected(&menu);
         p = put(line, "GMOS chose "); p = put(p, g->dir); p = put(p, " \""); p = put(p, g->title); put(p, "\""); say(line);
         play(px, g);
-        menu.message[0] = 0; redraw = 1;
+        menu.message[0] = 0; menu.shift = 0; redraw = 1;
+        big_id = -1; /* the game used the play core: read the title screen again */
         if (have_input) {sbx_input_state st; sbx_input_state_get(in_fd, &st);} /* keys held in the game are not the list's */
         break;
       }
       if (a == GM_QUIT) {say("GMOS quit"); return 0;}
     }
-    if (redraw) {gm_draw(px, GM_W, &menu); sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H);}
+    if (redraw) show_list(px);
   }
 }
