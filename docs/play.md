@@ -99,6 +99,10 @@ the list.
 
 ## The screen
 
+A game plays in 640x480 at 32 bits a pixel, the mode every program starts
+in: GMOS switches to it from the games page's 960x540x16 when the game starts
+(about 4 ms) and back when it ends. On a 1080p monitor the GPU scales it 2.25
+times, with black at the sides.
 The play view is PLAYGAME's 312 by 196 (the CRT controller showed no more while
 playing) at twice the size: 624 by 392, centered on the 640 by 480 screen. A
 page between levels is 320 by 200 at twice the size, 640 by 400 from row 40.
