@@ -65,10 +65,13 @@ static void add_game(const char *dir, unsigned dn) {
   char d[9]; unsigned k = 0; while (k < dn && k < 8) {d[k] = dir[k]; k++;} d[k] = 0;
   gm_add(&menu, d, name, title, gm_crc32(0, gamfile, have));
 }
-/* /sd/GAMES/LIBRARY.JSL, a line at a time: the titles, categories and blurbs it gives. */
+/* /sd/GAMES/LIBRARY.JSL (or /sd/OS/LIBRARY.JSL, where the kernel's USB PUTF can
+   install it), a line at a time: the titles, categories and blurbs it gives. */
 static void read_index(void) {
   uint64_t fd, got; uint32_t have = 0, matched = 0;
-  if (sbx_open("/sd/GAMES/LIBRARY.JSL", 21, SBX_O_RDONLY, &fd)) {say("GMOS no library index; titles from the .GAM files"); return;}
+  if (sbx_open("/sd/GAMES/LIBRARY.JSL", 21, SBX_O_RDONLY, &fd) && sbx_open("/sd/OS/LIBRARY.JSL", 18, SBX_O_RDONLY, &fd)) {
+    say("GMOS no library index; titles from the .GAM files"); return;
+  }
   while (have < sizeof index_text && !sbx_read(fd, index_text + have, sizeof index_text - have, &got) && got) have += (uint32_t)got;
   sbx_close(fd);
   for (uint32_t at = 0; at < have;) {
