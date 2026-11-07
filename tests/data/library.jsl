@@ -1,0 +1,7 @@
+{"schema":"gmp-library-index","version":1}
+{"schema":"gmp-library","version":1,"uid":"catalog:dice","title":"Roll the Dice","dosName":"DICE","category":["starter","500"],"course":506,"gamCrc32":"A745C830","id":"dice","storage":"gmos","locator":"DICE","company":"Sandbox Software","year":1994,"blurb":"One short level about chance. A die sits on the ground, rolling: it is a ring of six blocks that each turn into the next after a few ticks. Mara walks into it and it stops on the face it shows, handing over a gold key for an odd face or a silver key for an even one. A wall ahead has a gold door on the ground and a silver door up a ladder, so the face picks the door. Signs in the level say how. Play it, then open it in Game-Maker and change how long a face shows."}
+{"schema":"gmp-library","version":1,"uid":"test:alpha","title":"Alpha ’s Café — One","dosName":"ALPHA","category":["sandbox"],"gamCrc32":"00000000","locator":"ALPHA","company":"Sandbox Software","year":1994,"blurb":"Found by its folder name.","extra":{"nested":[1,2,{"x":null}]},"flag":true}
+{"schema":"gmp-library","version":1,"uid":"test:beta","title":"Beta’s “Song”…","dosName":"BETA","category":["bizarre"],"gamCrc32":"00000001","company":"The Bard of Bizarre","year":1994}
+{"schema":"gmp-library","version":1,"uid":"test:broken","title":"Broken","category":["cd"
+not json at all
+{"schema":"something-else","title":"Not a game record"}

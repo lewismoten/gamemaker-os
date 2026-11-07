@@ -13,7 +13,7 @@ PFLAGS := $(ARCH) -std=c11 -Isdk/include -Isrc
 # The core is header-only C++ (no exceptions, RTTI or static constructors).
 PXXFLAGS := $(ARCH) -std=c++17 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -Isrc -Ithird_party/gmcore
 LFLAGS := -nostdlib -Tsdk/lib/sandbox.ld -Wl,-z,noexecstack -Wl,--build-id=none -Wl,-z,max-page-size=4096
-CORE := src/gam.c src/menu.c src/view.c src/font_data.c src/gif.c src/fli.c src/text.c src/font8_data.c src/session.c
+CORE := src/gam.c src/menu.c src/library.c src/thumb.c src/view.c src/font_data.c src/gif.c src/fli.c src/text.c src/font8_data.c src/session.c
 PLAYCORE := src/game.cpp
 GMCORE := third_party/gmcore/gmcore.h third_party/gmcore/gmmon.h
 SDK := sdk/lib/crt0.S sdk/lib/mem.c src/libc.c
