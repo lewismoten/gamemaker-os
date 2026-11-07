@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include "fli.h"
 #include "game.h"
+#include "sound.h"
 #define GS_MAX_CARDS 32u
 #define GS_CARD_Y 40u   /* a 320 x 200 page at x2 fills 640 x 400 from here */
 #define GS_VIEW_X 8u    /* the 312 x 196 play view at x2 is 624 x 392, centered */
@@ -53,6 +54,7 @@ struct gs_session {
   uint8_t from[768], to[768];   /* a fade's ends */
   uint8_t colors[768];          /* PLAYGAME's `colors`: the menu picture's palette, then each level's */
   uint8_t listpal[768]; uint8_t listid; /* a list's NewCols: the palette of its last picture */
+  struct gs_sound sound;        /* SND log lines (sound.h); its dir is set before gs_start */
 };
 /* Opens the game (its .GAM in the folder the reader reads) and queues the
    title pages; 0, or -1 if it cannot be played. */

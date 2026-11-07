@@ -42,6 +42,19 @@ int gp_pending_level(void); /* the level a held 'L' goes to */
    312 x 196 view are 0), and the level's palette (768 bytes, 6-bit VGA). */
 void gp_render(uint8_t *px);
 const uint8_t *gp_palette(void);
+/* Sound, as events (the board has no audio: SND log lines, src/sound.h).
+   The effect the last ticks started (the last one is the one heard, as on the
+   Pocket Player), or -1; it empties the core's queue. */
+int gp_take_sound(void);
+/* The level's .SND file name ("" when it has none) and effect n's Sound
+   Blaster clip name from its table (no extension; "" when the effect has
+   none, or its name starts with a space: PLAYGAME's PC speaker path). */
+const char *gp_sound_file(void);
+const char *gp_voc_name(int n);
+/* The .CMF song slots PLAYGAME plays: the title's, the won and lost pages',
+   and a level's (level is for GP_SONG_LEVEL); "" when empty. */
+enum {GP_SONG_TITLE, GP_SONG_WON, GP_SONG_LOST, GP_SONG_LEVEL};
+const char *gp_song(int slot, int level);
 /* FNV-1a of the 312 x 196 view, row by row: the Pocket Player host test's frameHash. */
 uint32_t gp_frame_hash(void);
 #ifdef __cplusplus
