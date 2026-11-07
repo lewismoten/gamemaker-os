@@ -54,7 +54,8 @@ with a `game.txt`, so it leaves those out; Game-Maker OS lists them.
 - `src/main.c`: packs are listed first, `/sd/POCKET` then `/sd/GAMES`, then the
   folders. A pack or folder holding the same `.GAM` (by CRC-32) as a game
   already listed is skipped, so a card can carry both while it changes over
-  and the pack is the one played. Each pack's `library.json` gives its title and
+  and the pack is the one played (two folders holding the same game are
+  listed once too). Each pack's `library.json` gives its title and
   tab; `LIBRARY.JSL` then adds the company, year and blurb.
 
 ## Volumes (for floppies, later)

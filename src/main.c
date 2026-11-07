@@ -73,8 +73,8 @@ static void add_game(const char *dir, unsigned dn) { /* dn: 1 to 8 (gm_dir_ok) *
   char d[9]; unsigned k = 0; while (k < dn && k < 8) {d[k] = dir[k]; k++;} d[k] = 0;
   uint32_t crc = gm_crc32(0, gamfile, have);
   for (unsigned i = 0; i < menu.count; i++)
-    if (menu.games[i].crc == crc) { /* the same game is packed: the pack is played (a card changing over holds both) */
-      char line[80], *q = put(line, "GMOS skipped folder "); q = put(q, d); q = put(q, ": packed as "); put(q, menu.games[i].dir); say(line); return;
+    if (menu.games[i].crc == crc) { /* listed already: packed (the pack is played; a card changing over holds both) or another folder */
+      char line[80], *q = put(line, "GMOS skipped folder "); q = put(q, d); q = put(q, where[i].packed ? ": packed as " : ": the same game as "); put(q, menu.games[i].dir); say(line); return;
     }
   gm_add(&menu, d, name, title, crc);
 }
