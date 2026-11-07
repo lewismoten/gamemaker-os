@@ -36,6 +36,8 @@ def gmp_lib():
         for f in ('gmos_gmp_pocket', 'gmos_gmp_volumes'): getattr(c, f).argtypes = [C.c_void_p]
         c.gmos_gmp_close.argtypes = [C.c_void_p]
         c.gmp_read.argtypes = [C.c_void_p, C.c_char_p, C.c_void_p, C.c_uint32]; c.gmp_read.restype = C.c_int32
+        c.gmp_entry.argtypes = [C.c_void_p, C.c_char_p, C.c_void_p, C.c_uint32]; c.gmp_entry.restype = C.c_int32
+        c.gm_record_parse.argtypes = [C.c_char_p, C.c_uint32, C.c_void_p]
         c._gmp = True
     return c
 
@@ -47,6 +49,13 @@ class Pack:
     def read(self, name, cap=2 << 20):
         buf = (C.c_uint8 * cap)(); n = self.c.gmp_read(self.g, name.encode(), buf, cap)
         return None if n < 0 else bytes(buf[:n])
+    def entry(self, name, cap=4096):
+        buf = (C.c_uint8 * cap)(); n = self.c.gmp_entry(self.g, name.encode(), buf, cap)
+        return None if n < 0 else bytes(buf[:n])
+    def record(self):
+        """library.json parsed as the board parses it (gm_record_parse): 1 when it is a game's record."""
+        text = self.entry('library.json'); rec = (C.c_uint8 * 4096)()
+        return None if text is None else self.c.gm_record_parse(text, len(text), rec)
 
 def write(name, data):
     OUT.mkdir(parents=True, exist_ok=True); p = OUT / name; p.write_bytes(data); return p
@@ -68,6 +77,7 @@ class Reading(unittest.TestCase):
                 self.assertEqual(p.read(f.name), f.read_bytes(), f.name)
                 self.assertEqual(p.read(f.name.lower()), f.read_bytes(), f.name)       # DOS names are case-blind
             self.assertIsNone(p.read('NOPE.GIF')); self.assertIsNone(p.read('0a1b2c3.b'))  # only dos/ entries are the game's
+            self.assertEqual(p.entry('game.txt'), b'GMP 1\ndice|Roll the Dice|1\n'); self.assertIsNone(p.entry('library.json'))
             whole = (DICE / 'STARTER.FLI').read_bytes()
             self.assertEqual(p.read('STARTER.FLI', 64), whole[:64])                   # a read in part: the first cap bytes
     def test_dos_files_alone(self):
@@ -135,7 +145,7 @@ class RealPacks(unittest.TestCase):
         checked = 0
         for path in sorted(pathlib.Path(packs).glob('*.GMP')):
             with Pack(path) as p:
-                self.assertTrue(p.g, path.name)
+                self.assertTrue(p.g, path.name); self.assertEqual(p.record(), 1, path.name)   # its own library record
                 gam = p.read(p.c.gmos_gmp_gam(p.g).decode()); folder = loose.get(zlib.crc32(gam))
                 if folder is None: continue
                 for f in folder.iterdir():

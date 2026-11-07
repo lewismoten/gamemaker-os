@@ -102,6 +102,8 @@ static void add_pack(const struct sp_pack *pk) {
     if (menu.games[i].crc == crc) {p = put(line, "GMOS skipped "); p = put(p, path); p = put(p, ": the same game as "); put(p, menu.games[i].dir); say(line); return;}
   if (!gm_add(&menu, pk->base, g->gam, title, crc)) return;
   where[menu.count - 1].packed = 1; where[menu.count - 1].pack = *pk;
+  int32_t rec = gmp_entry(g, "library.json", index_text, 4096); /* its own gmp-library record: title and tab without an index */
+  if (rec > 0) gm_library_line(&menu, (const char *)index_text, (uint32_t)rec);
   p = put(line, "GMOS packed "); p = put(p, pk->base); p = put(p, ": "); p = put(p, path); p = put(p, ", ");
   p = num(p, pk->volumes); put(p, pk->volumes == 1 ? " volume" : " volumes"); say(line);
 }

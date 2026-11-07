@@ -41,6 +41,9 @@ int gmp_open(struct gmp *g);
    inflated; the bytes read (at most cap), or -1 when it is missing, too big
    or does not inflate to its stated length. */
 int32_t gmp_read(void *user, const char *name, uint8_t *buf, uint32_t cap);
+/* An entry as it is stored (not inflated), such as library.json, the game's
+   gmp-library record: the bytes read (at most cap), or -1 when it is missing. */
+int32_t gmp_entry(const struct gmp *g, const char *name, uint8_t *buf, uint32_t cap);
 /* The Pocket Player's volume names: "NAME.GMP" for 0, else "NAME.G01" ...
    (base: the name without its extension, 1 to 8 characters); 0, or -1. */
 int gmp_volume_name(const char *base, unsigned volume, char out[13]);

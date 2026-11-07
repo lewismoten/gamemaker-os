@@ -74,6 +74,13 @@ extern "C" int32_t gmp_read(void *user, const char *name, uint8_t *buf, uint32_t
   if (dest == whole) for (uint32_t i = 0; i < n; i++) buf[i] = whole[i];
   return (int32_t)n;
 }
+extern "C" int32_t gmp_entry(const struct gmp *g, const char *name, uint8_t *buf, uint32_t cap) {
+  gm::SmallPak p = pak_of(g);
+  uint32_t off, len;
+  if (!p.find(name, &off, &len)) return -1;
+  uint32_t n = len < cap ? len : cap;
+  return gmp_read_at(g, off, buf, n) ? -1 : (int32_t)n;
+}
 extern "C" int gmp_volume_name(const char *base, unsigned volume, char out[13]) {
   unsigned k = 0;
   while (base[k] && base[k] != '.') {if (k == 8) return -1; out[k] = base[k]; k++;}
