@@ -43,13 +43,14 @@ static void find_gam(const char *path, unsigned pn, char name[13]) {
         for (unsigned i = 0; i < e->name_bytes; i++) name[i] = n[i];
         name[e->name_bytes] = 0; break;
       }
+      if (e->length < sizeof *e || e->length > got - at) break; /* a broken entry: stop, not loop or read past */
       at += e->length;
     }
   }
   sbx_close(fd);
 }
 /* The first .GAM file in /sd/GAMES/<dir>, read far enough for its title. */
-static void add_game(const char *dir, unsigned dn) {
+static void add_game(const char *dir, unsigned dn) { /* dn: 1 to 8 (gm_dir_ok) */
   char path[40], *p = put(path, "/sd/GAMES/"), name[13], title[GM_TITLE_MAX + 1];
   for (unsigned i = 0; i < dn; i++) *p++ = dir[i];
   *p = 0;
@@ -88,7 +89,14 @@ static void find_games(void) {
   while (!sbx_getdents(fd, dents, sizeof dents, &got) && got) {
     for (uint32_t at = 0; at < got;) {
       const sbx_dirent *e = (const sbx_dirent *)(const void *)(dents + at);
-      if (e->type == SBX_DT_DIR) add_game((const char *)(dents + at + sizeof *e), e->name_bytes);
+      if (e->length < sizeof *e || e->length > got - at) break; /* a broken entry: stop, not loop or read past */
+      const char *n = (const char *)(dents + at + sizeof *e);
+      if (e->type == SBX_DT_DIR && gm_dir_ok(n, e->name_bytes)) add_game(n, e->name_bytes);
+      else if (e->type == SBX_DT_DIR && e->name_bytes < 64) { /* path[40] in add_game would overflow on a long name */
+        char line[128], *p = put(line, "GMOS skipped /sd/GAMES/"), *q = p;
+        for (unsigned i = 0; i < e->name_bytes; i++) *q++ = n[i];
+        put(q, ": not a DOS folder name"); say(line);
+      }
       at += e->length;
       heartbeat();
     }
