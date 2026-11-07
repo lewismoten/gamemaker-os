@@ -25,14 +25,14 @@ static int32_t host_read(void *user, const char *name, uint8_t *buf, uint32_t ca
    are its further volumes while they exist (any case). */
 #include "gmp.h"
 struct host_gmp {FILE *f[GMP_VOLUMES_MAX]; struct gmp g;};
-static int host_gmp_at(void *user, unsigned v, uint32_t off, void *buf, uint32_t n) {
+static inline int host_gmp_at(void *user, unsigned v, uint32_t off, void *buf, uint32_t n) {
   FILE *f = ((struct host_gmp *)user)->f[v];
   return !f || fseek(f, (long)off, SEEK_SET) || fread(buf, 1, n, f) != n ? -1 : 0;
 }
-static void host_gmp_close(struct host_gmp *h) {
+static inline void host_gmp_close(struct host_gmp *h) {
   for (unsigned v = 0; v < GMP_VOLUMES_MAX; v++) if (h->f[v]) {fclose(h->f[v]); h->f[v] = 0;}
 }
-static int host_gmp_open(struct host_gmp *h, const char *path) {
+static inline int host_gmp_open(struct host_gmp *h, const char *path) {
   memset(h, 0, sizeof *h);
   size_t n = strlen(path);
   if (n < 4 || n > 1000) return -1;

@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: MIT; GMOS.ELF, the first Game-Maker OS program.
  * Built only against the sandbox-kernel SDK (sdk/). It reports readiness,
- * lists the games in /sd/GAMES (each a folder holding a .GAM file, titled
- * from that file and from the library index /sd/GAMES/LIBRARY.JSL when it
+ * lists the games in /sd/GAMES (each a folder holding a .GAM file, or a game
+ * packed in one .GMP file there or in /sd/POCKET, sdpack.h and gmp.h; titled
+ * from its .GAM and from the library index /sd/GAMES/LIBRARY.JSL when it
  * lists the game), draws the games page on /dev/fb0 (menu.h, view.h: tabs,
  * cards with title screens read from each game's files a card at a time, a
  * details view) and moves through it with /dev/input/event0. The page is
@@ -13,6 +14,7 @@
 #include <sandbox/syscall.h>
 #include "gam.h"
 #include "menu.h"
+#include "sdpack.h"
 #include "session.h"
 #include "thumb.h"
 #include "view.h"
@@ -21,6 +23,9 @@ static uint32_t generation, abi_minor;
 static uint64_t beat;
 static int have_input;
 static struct gm_menu menu;
+/* Where each game of the menu is (by its index in menu.games): a folder (packed 0) or a pack. */
+static struct {uint8_t packed; struct sp_pack pack;} where[GM_MAX_GAMES];
+static struct sp_pack packs[GM_MAX_GAMES];
 static uint8_t dents[2048], gamfile[64 * 1024], index_text[256 * 1024];
 static uint8_t pic_px[GP_W * GP_H], pic_pal[768], big_px[GP_W * GP_H], big_pal[768];
 static int big_id = -1, big_ok;
@@ -85,9 +90,29 @@ static void read_index(void) {
   }
   char line[64], *p = put(line, "GMOS library index: "); p = num(p, matched); put(p, matched == 1 ? " game" : " games"); say(line);
 }
+/* A packed game: its .GAM from the pack, titled from it. A game already listed (the same .GAM) is not listed again. */
+static void add_pack(const struct sp_pack *pk) {
+  char path[40], line[96], *p, title[GM_TITLE_MAX + 1];
+  sp_path(pk, 0, path);
+  struct gmp *g = sp_open(pk);
+  int32_t have = g ? gmp_read(g, g->gam, gamfile, sizeof gamfile) : -1;
+  if (have < 0 || gm_gam_title(gamfile, (uint32_t)have, title) < 0) {p = put(line, "GMOS skipped "); p = put(p, path); put(p, ": not a game pack"); say(line); return;}
+  uint32_t crc = gm_crc32(0, gamfile, (uint32_t)have);
+  for (unsigned i = 0; i < menu.count; i++)
+    if (menu.games[i].crc == crc) {p = put(line, "GMOS skipped "); p = put(p, path); p = put(p, ": the same game as "); put(p, menu.games[i].dir); say(line); return;}
+  if (!gm_add(&menu, pk->base, g->gam, title, crc)) return;
+  where[menu.count - 1].packed = 1; where[menu.count - 1].pack = *pk;
+  p = put(line, "GMOS packed "); p = put(p, pk->base); p = put(p, ": "); p = put(p, path); p = put(p, ", ");
+  p = num(p, pk->volumes); put(p, pk->volumes == 1 ? " volume" : " volumes"); say(line);
+}
+static void find_packs(uint8_t folder) {
+  unsigned n = sp_list(folder, packs, GM_MAX_GAMES, say);
+  for (unsigned i = 0; i < n; i++) {add_pack(&packs[i]); heartbeat();}
+}
 static void find_games(void) {
   uint64_t fd, got;
-  if (sbx_open("/sd/GAMES", 9, SBX_O_RDONLY, &fd)) {say("GMOS no /sd/GAMES folder"); return;}
+  sp_beat = heartbeat;
+  if (sbx_open("/sd/GAMES", 9, SBX_O_RDONLY, &fd)) {say("GMOS no /sd/GAMES folder"); find_packs(SP_FOLDER_POCKET); read_index(); gm_finish(&menu); return;}
   while (!sbx_getdents(fd, dents, sizeof dents, &got) && got) {
     for (uint32_t at = 0; at < got;) {
       const sbx_dirent *e = (const sbx_dirent *)(const void *)(dents + at);
@@ -104,6 +129,8 @@ static void find_games(void) {
     }
   }
   sbx_close(fd);
+  find_packs(SP_FOLDER_GAMES);
+  find_packs(SP_FOLDER_POCKET);
   read_index();
   gm_finish(&menu);
 }
@@ -129,6 +156,13 @@ static int32_t sd_read(void *user, const char *name, uint8_t *buf, uint32_t cap)
   sbx_close(fd);
   heartbeat();
   return (int32_t)have;
+}
+/* game.h's reader for the game g, and its user pointer: the folder's files, or the pack's (opened). */
+static gp_read_fn reader(const struct gm_game *g, void **user) {
+  unsigned i = (unsigned)(g - menu.games);
+  if (!where[i].packed) {*user = (void *)g->dir; return sd_read;}
+  *user = sp_open(&where[i].pack);
+  return *user ? gmp_read : 0;
 }
 static uint64_t clock_ns(void) {uint64_t t = 0; sbx_clock_ns(&t); return t;}
 static uint32_t crc32(const void *data, uint32_t bytes) {
@@ -156,13 +190,14 @@ static struct gs_session game;
    before, and every 5 s the timing: the host tests replay those lines. */
 static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in the game's 640x480x32 */
   char path[24], *p = put(path, "/sd/GAMES/"), gamname[13], line[120];
+  void *user; gp_read_fn read = reader(g, &user);
   p = put(p, g->dir);
-  find_gam(path, (uint32_t)(p - path), gamname);
+  if (where[g - menu.games].packed) put(gamname, g->gam); else find_gam(path, (uint32_t)(p - path), gamname);
   if (abi_minor < 1) {say("GMOS playing needs the kernel's clock (ABI 1.1)"); return;}
   game.say = say;
   snd_dir(&game.sound, g->dir);
   p = put(line, "GMOS play "); p = put(p, g->dir); p = put(p, "/"); put(p, gamname); say(line);
-  if (!gamname[0] || gs_start(&game, sd_read, (void *)g->dir, gamname, clock_ns())) {say("GMOS cannot play it"); return;}
+  if (!gamname[0] || !read || gs_start(&game, read, user, gamname, clock_ns())) {say("GMOS cannot play it"); return;}
   if (screen_mode(PLAY_W, PLAY_H, SBX_FB_XRGB8888)) return;
   static sbx_input_event ev[16]; uint64_t got;
   uint32_t frames = 0, step_max = 0, draw_max = 0, late_max = 0, logged = 0, shown = 0;
@@ -225,7 +260,8 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
 }
 /* The title screen of a game (thumb.h), read from its folder; -1 when it has none. */
 static int title_picture(const struct gm_game *g, uint8_t *px, uint8_t *pal) {
-  return gm_title_picture(sd_read, (void *)g->dir, g->gam, px, pal);
+  void *user; gp_read_fn read = reader(g, &user);
+  return read ? gm_title_picture(read, user, g->gam, px, pal) : -1;
 }
 /* The next card on the page whose title screen is not drawn yet: reads it. 1 when one was read. */
 static int load_next_thumb(void) {
