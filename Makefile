@@ -17,7 +17,7 @@ CORE := src/gam.c src/menu.c src/library.c src/thumb.c src/view.c src/font_data.
 PLAYCORE := src/game.cpp
 GMCORE := third_party/gmcore/gmcore.h third_party/gmcore/gmmon.h
 SDK := sdk/lib/crt0.S sdk/lib/mem.c src/libc.c
-.PHONY: all host test test-asan clean
+.PHONY: all host test test-asan clean js
 all: build/GMOS.ELF
 build:
 	mkdir -p $@
@@ -31,7 +31,7 @@ build/GMOS.ELF: src/main.c build/game.o $(CORE) $(wildcard src/*.h) $(SDK) sdk/l
 # for tests/, and gmplay, which prints the Pocket Player host test's state lines.
 HOSTDIR ?= build/host
 HOSTFLAGS ?= -O1
-host: $(HOSTDIR)/libgmos.so $(HOSTDIR)/gmplay
+host: $(HOSTDIR)/libgmos.so $(HOSTDIR)/gmplay $(HOSTDIR)/jsrun
 $(HOSTDIR):
 	mkdir -p $@
 $(HOSTDIR)/libgmos.so: $(CORE) $(PLAYCORE) $(GMCORE) $(wildcard src/*.h) tests/host/hostio.c Makefile | $(HOSTDIR)
@@ -58,5 +58,34 @@ test-asan:
 	  GMOS_HOST=build/asan $(ASANPY) -m unittest discover -s tests
 $(HOSTDIR)/fuzz: tests/host/fuzz.c tests/host/hostio.h $(HOSTDIR)/libgmos.so | $(HOSTDIR)
 	$(HOSTCC) $(HOSTFLAGS) -std=c11 -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore tests/host/fuzz.c $(HOSTDIR)/libgmos.so -o $@
+# JS.ELF: the JS runtime spike (src/js/, docs/js.md): QuickJS-ng in
+# third_party/quickjs-ng, the element tree, the game element over the same play
+# core, newlib's libc and libm from the toolchain under a fixed heap (src/js/sys.c).
+QJS := quickjs libregexp libunicode dtoa
+QJSFLAGS := -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -Os -ffunction-sections -fdata-sections -D__DJGPP -DJS_HAVE_THREADS=0 -DNDEBUG -Wno-implicit-function-declaration -w
+JSC := src/js/jsrt.c src/js/dom.c src/session.c src/sound.c src/gif.c src/fli.c src/text.c src/thumb.c src/font_data.c src/font8_data.c
+JSFLAGS := -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -Os -ffunction-sections -fdata-sections -std=gnu11 -Wall -Wextra -Werror -Wno-main -Isdk/include -Isrc -Ithird_party/quickjs-ng
+js: build/JS.ELF
+build/js:
+	mkdir -p $@
+build/js/prelude.c: src/js/prelude.js tools/embed_js.py | build/js
+	$(PYTHON) tools/embed_js.py $< $@ jsrt_prelude
+build/js/q_%.o: third_party/quickjs-ng/%.c $(wildcard third_party/quickjs-ng/*.h) Makefile | build/js
+	$(CC) $(QJSFLAGS) -c $< -o $@
+build/js/game.o: $(PLAYCORE) src/game.h $(GMCORE) Makefile | build/js
+	$(CXX) $(PXXFLAGS) -ffunction-sections -fdata-sections -c $(PLAYCORE) -o $@
+build/JS.ELF: src/js/main.c src/js/plat_sbx.c src/js/sys.c $(JSC) build/js/prelude.c $(QJS:%=build/js/q_%.o) build/js/game.o $(wildcard src/js/*.h) $(wildcard src/*.h) sdk/lib/crt0.S sdk/lib/sandbox.ld Makefile
+	$(CC) $(JSFLAGS) -nostartfiles -Tsdk/lib/sandbox.ld -Wl,-z,noexecstack -Wl,--build-id=none -Wl,-z,max-page-size=4096 -Wl,--gc-sections \
+	  sdk/lib/crt0.S src/js/main.c src/js/plat_sbx.c src/js/sys.c $(JSC) build/js/prelude.c $(QJS:%=build/js/q_%.o) build/js/game.o -lm -lc -lgcc -o build/js/JS.full.elf
+	$(TOOLCHAIN)size build/js/JS.full.elf
+	$(TOOLCHAIN)strip -o $@ build/js/JS.full.elf
+# The runtime on the host: tests/host/jsrun.c (tests/test_js.py and the benchmarks).
+$(HOSTDIR)/js_prelude.c: src/js/prelude.js tools/embed_js.py | $(HOSTDIR)
+	$(PYTHON) tools/embed_js.py $< $@ jsrt_prelude
+$(HOSTDIR)/q_%.o: third_party/quickjs-ng/%.c $(wildcard third_party/quickjs-ng/*.h) | $(HOSTDIR)
+	$(HOSTCC) $(HOSTFLAGS) -D_GNU_SOURCE -DNDEBUG -w -c $< -o $@
+$(HOSTDIR)/jsrun: tests/host/jsrun.c $(JSC) $(HOSTDIR)/js_prelude.c $(QJS:%=$(HOSTDIR)/q_%.o) $(PLAYCORE) $(GMCORE) $(wildcard src/js/*.h) $(wildcard src/*.h) Makefile | $(HOSTDIR)
+	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore -c $(PLAYCORE) -o $(HOSTDIR)/js_game.o
+	$(HOSTCC) $(HOSTFLAGS) -std=gnu11 -Wall -Wextra -Werror -Isrc -Ithird_party/quickjs-ng tests/host/jsrun.c $(JSC) $(HOSTDIR)/js_prelude.c $(QJS:%=$(HOSTDIR)/q_%.o) $(HOSTDIR)/js_game.o -lc++ -lm -o $@
 clean:
 	rm -rf build

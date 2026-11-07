@@ -1,0 +1,3 @@
+quickjs-ng v0.18.0 (MIT)
+https://github.com/quickjs-ng/quickjs/releases/tag/v0.18.0
+Files: the engine sources only (quickjs, libregexp, libunicode, dtoa, their headers, LICENSE), unchanged.
