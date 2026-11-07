@@ -71,7 +71,12 @@ static void add_game(const char *dir, unsigned dn) { /* dn: 1 to 8 (gm_dir_ok) *
   sbx_close(fd);
   if (gm_gam_title(gamfile, have, title) < 0) return;
   char d[9]; unsigned k = 0; while (k < dn && k < 8) {d[k] = dir[k]; k++;} d[k] = 0;
-  gm_add(&menu, d, name, title, gm_crc32(0, gamfile, have));
+  uint32_t crc = gm_crc32(0, gamfile, have);
+  for (unsigned i = 0; i < menu.count; i++)
+    if (menu.games[i].crc == crc) { /* the same game is packed: the pack is played (a card changing over holds both) */
+      char line[80], *q = put(line, "GMOS skipped folder "); q = put(q, d); q = put(q, ": packed as "); put(q, menu.games[i].dir); say(line); return;
+    }
+  gm_add(&menu, d, name, title, crc);
 }
 /* /sd/GAMES/LIBRARY.JSL (or /sd/OS/LIBRARY.JSL, where the kernel's USB PUTF can
    install it), a line at a time: the titles, categories and blurbs it gives. */
@@ -90,7 +95,7 @@ static void read_index(void) {
   }
   char line[64], *p = put(line, "GMOS library index: "); p = num(p, matched); put(p, matched == 1 ? " game" : " games"); say(line);
 }
-/* A packed game: its .GAM from the pack, titled from it. A game already listed (the same .GAM) is not listed again. */
+/* A packed game: its .GAM from the pack, titled from it. A game already packed (the same .GAM) is not listed again. */
 static void add_pack(const struct sp_pack *pk) {
   char path[40], line[96], *p, title[GM_TITLE_MAX + 1];
   sp_path(pk, 0, path);
@@ -114,7 +119,9 @@ static void find_packs(uint8_t folder) {
 static void find_games(void) {
   uint64_t fd, got;
   sp_beat = heartbeat;
-  if (sbx_open("/sd/GAMES", 9, SBX_O_RDONLY, &fd)) {say("GMOS no /sd/GAMES folder"); find_packs(SP_FOLDER_POCKET); read_index(); gm_finish(&menu); return;}
+  find_packs(SP_FOLDER_POCKET); /* packs first: a folder holding the same game is then left out */
+  find_packs(SP_FOLDER_GAMES);
+  if (sbx_open("/sd/GAMES", 9, SBX_O_RDONLY, &fd)) {say("GMOS no /sd/GAMES folder"); read_index(); gm_finish(&menu); return;}
   while (!sbx_getdents(fd, dents, sizeof dents, &got) && got) {
     for (uint32_t at = 0; at < got;) {
       const sbx_dirent *e = (const sbx_dirent *)(const void *)(dents + at);
@@ -131,8 +138,6 @@ static void find_games(void) {
     }
   }
   sbx_close(fd);
-  find_packs(SP_FOLDER_GAMES);
-  find_packs(SP_FOLDER_POCKET);
   read_index();
   gm_finish(&menu);
 }

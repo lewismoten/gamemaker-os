@@ -51,9 +51,10 @@ with a `game.txt`, so it leaves those out; Game-Maker OS lists them.
   pack's index is read into memory once when it is opened; its data is read
   forward through the kernel's file API, which has no seek yet (a read behind
   the last one opens the file again).
-- `src/main.c`: packs are listed after the folders. A pack holding the same
-  `.GAM` (by CRC-32) as a game already listed is skipped, so a card can carry
-  both while it changes over. Each pack's `library.json` gives its title and
+- `src/main.c`: packs are listed first, `/sd/POCKET` then `/sd/GAMES`, then the
+  folders. A pack or folder holding the same `.GAM` (by CRC-32) as a game
+  already listed is skipped, so a card can carry both while it changes over
+  and the pack is the one played. Each pack's `library.json` gives its title and
   tab; `LIBRARY.JSL` then adds the company, year and blurb.
 
 ## Volumes (for floppies, later)
