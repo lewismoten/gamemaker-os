@@ -150,6 +150,18 @@ class Play(unittest.TestCase):
         self.assertTrue(all(p == 0 for p in px[436 * W:]))
         self.assertTrue(all(px[y * W + x] == 0 for y in range(44, 436, 7) for x in list(range(8)) + list(range(632, 640))))
         self.assertGreater(len(set(px[44 * W:436 * W])), 4)
+    def test_same_frames_as_the_board(self):
+        # GMOS on the Pi Zero W (kernel generation 15): the CRC-32 of the whole
+        # 640x480 surface it logged for the title card, the level's intro card
+        # and the play view after 18 ticks with no game key down.
+        crc = lambda px: zlib.crc32(struct.pack(f'<{W*H}I', *px))
+        s = Session(); self.assertEqual(crc(s.frame()), 1276733601)
+        s.step(12_000_000_000); self.assertEqual(crc(s.frame()), 334454467)
+        t0 = s.to_play(); s.step(t0 + tick_ns(1)); self.assertEqual(crc(s.frame()), 4226055335)
+        png(OUT / 'play-board-tick1.png', s.frame())
+        for k in range(2, 19): s.step(t0 + tick_ns(k))
+        self.assertEqual(crc(s.frame()), 3551797356)
+        png(OUT / 'play-board-tick18.png', s.frame())
     def test_esc_leaves(self):
         s = Session(); t0 = s.to_play(); s.key(RIGHT, 1); s.step(t0 + tick_ns(1))
         self.assertEqual(s.key(ESC, 1), GS_EXIT); self.assertEqual(s.phase(), GS_DONE)

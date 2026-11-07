@@ -119,7 +119,7 @@ static void play(uint32_t *px, const struct gm_game *g) {
   static sbx_input_event ev[16]; uint64_t got;
   uint32_t frames = 0, step_max = 0, draw_max = 0, late_max = 0, logged = 0, cards = 0;
   uint64_t since = clock_ns();
-  int r = GS_DRAW;
+  int r = GS_DRAW, started = 0;
   for (;;) {
     heartbeat();
     if (r & GS_DRAW) {
@@ -136,6 +136,7 @@ static void play(uint32_t *px, const struct gm_game *g) {
       }
     }
     if (r & GS_EXIT) break;
+    if (started) {game.t0 = clock_ns(); game.ticks = 0; started = 0;} /* a level's clock starts once its files are read and its first frame is up */
     uint64_t wake = gs_wake(&game, clock_ns());
     sbx_sleep_until(wake);
     int32_t s = -SBX_EAGAIN;
@@ -155,11 +156,12 @@ static void play(uint32_t *px, const struct gm_game *g) {
     if (!have_input) open_input();
     uint64_t t = clock_ns();
     if (game.phase == GS_PLAY) {uint64_t due = gs_wake(&game, t); if (t > due) {uint32_t l = (uint32_t)((t - due) / 1000u); if (l > late_max) late_max = l;}}
-    uint32_t before = game.total_ticks;
+    uint32_t before = game.total_ticks; int was = game.phase;
     r = gs_step(&game, t);
     uint32_t dt = (uint32_t)((clock_ns() - t) / 1000u); if (game.ran && dt > step_max) step_max = dt;
-    for (uint32_t k = before + 1; k <= game.total_ticks && logged < 20000; k++, logged++) {
-      p = put(line, "GMOS t "); p = num(p, k); p = put(p, " lv "); p = num(p, (uint32_t)gp_level() + 1); p = put(p, " h "); num(p, gp_frame_hash()); say(line);
+    if (was != GS_PLAY && game.phase == GS_PLAY) started = 1;
+    if (game.total_ticks != before && logged++ < 20000) { /* the view after the step's last tick (a late step runs up to 4) */
+      p = put(line, "GMOS t "); p = num(p, game.total_ticks); p = put(p, " lv "); p = num(p, (uint32_t)gp_level() + 1); p = put(p, " h "); num(p, gp_frame_hash()); say(line);
     }
     if (clock_ns() - since >= 5000000000ull) {
       p = put(line, "GMOS 5 s: "); p = num(p, frames); p = put(p, " frames, tick "); p = num(p, game.total_ticks);
