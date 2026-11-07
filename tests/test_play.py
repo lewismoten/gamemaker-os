@@ -6,10 +6,10 @@ build/host/. The fixture is the Starter "Roll the Dice" (tests/games/DICE);
 the Pocket Player's own host test, run on its packed copy of the same game,
 wrote tests/data/dice-pocket.txt and dice-cards.txt (tools/pocket_reference.py)."""
 import ctypes as C
-import pathlib, struct, subprocess, unittest, zlib
+import os, pathlib, struct, subprocess, unittest, zlib
 from test_gmos import png, W, H
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-OUT = ROOT / 'build/host'
+OUT = ROOT / os.environ.get('GMOS_HOST', 'build/host')  # make test-asan: build/asan
 DICE = ROOT / 'tests/games/DICE'
 DATA = ROOT / 'tests/data'
 TICK_NS10 = 549254157
@@ -31,7 +31,7 @@ _lib = None
 def lib():
     global _lib
     if _lib is None:
-        subprocess.run(['make', '-s', '-C', str(ROOT), 'host'], check=True)
+        if not os.environ.get('GMOS_HOST'): subprocess.run(['make', '-s', '-C', str(ROOT), 'host'], check=True)
         c = C.CDLL(str(OUT / 'libgmos.so'))
         c.gp_gif.argtypes = [C.c_char_p, C.c_uint32, C.c_void_p, C.c_void_p]
         c.gp_frame_hash.restype = C.c_uint32
