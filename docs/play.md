@@ -194,9 +194,32 @@ at most 24.4 ms and a wake-up at most 4.5 ms late.
   the moments a level let go of them) on the host and compares the view hash of
   each tick; the table above gives the results.
 
+## Sound events
+
+The board has no audio driver yet, so a game's sounds go out on the USB log as
+`SND` lines (`src/sound.h`, from the session in `src/session.c`), for a page on
+the computer at the other end to play from its own copy of the game's files
+(the Sandbox Edition's Pi remote, `#/pi-remote`, with its Pi sound switch on):
+
+```text
+SND game DICE DICE.GAM            a game starts: its /sd/GAMES folder and .GAM
+SND music start DICE/DICE.CMF     PlaySong: the title's song, each level's, won or lost
+SND music stop                    a slot with no song
+SND voc DICE/JUMP.VOC             an effect with a Sound Blaster clip in its .SND
+SND beep DICE/DICE.SND 9          an effect on the PC speaker: tune 9 of that .SND
+SND stopall                       the game ends (or Esc) ...
+SND end                           ... and the list comes back
+```
+
+Effects are taken from the core's queue after every tick: one line a tick at
+most (the last effect started, the one heard), and the same effect again within
+3 ticks is left out. A log write never waits for the USB side. Each line is
+under 80 characters. `tests/test_sound.py` checks them.
+
 ## Next
 
-- Sound: PC speaker effects first (the core already queues them), then Sound
+- Sound on the board itself: PC speaker effects first (the core already queues
+  them, and the session already reports them as `SND` lines), then Sound
   Blaster clips and music.
 - Real input: a USB keyboard or gamepad, or a remote (HDMI-CEC, IR), in place of
   the synthetic device.

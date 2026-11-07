@@ -184,10 +184,11 @@ static int begin_card(struct gs_session *s, const struct gs_card *c, uint64_t no
 }
 static int cards_done(struct gs_session *s, uint64_t now) {
   s->now_card = 0;
-  if (s->after == GS_DONE) {s->phase = GS_DONE; return GS_EXIT;}
+  if (s->after == GS_DONE) {snd_end(&s->sound); s->phase = GS_DONE; return GS_EXIT;}
   int ok = s->begun ? gp_finish() : gp_begin();
   s->begun = 1;
-  if (ok) {say2(s, "level files missing", ""); s->phase = GS_DONE; return GS_EXIT;}
+  if (ok) {say2(s, "level files missing", ""); snd_end(&s->sound); s->phase = GS_DONE; return GS_EXIT;}
+  snd_music(&s->sound, gp_song(GP_SONG_LEVEL, gp_level())); /* loadscene plays the level's song */
   char line[24]; num(line, gp_level() + 1); say2(s, "level ", line);
   render_play(s);
   copy(s->colors, gp_palette(), 768); /* s.colors = w.palette */
@@ -202,9 +203,11 @@ static void level_change(struct gs_session *s, char r) {
   s->ncards = s->card = 0;
   if (r == 'W') {
     say2(s, "won", "");
+    snd_music(&s->sound, gp_song(GP_SONG_WON, 0));
     queue(s, gp_graphic(GP_EXIT, from)); queue(s, gp_graphic(GP_WON, 0)); s->after = GS_DONE;
   } else if (r == 'D' && gp_lives() <= 0) {
     say2(s, "game over", "");
+    snd_music(&s->sound, gp_song(GP_SONG_LOST, 0));
     queue(s, gp_graphic(GP_LOST, 0)); s->after = GS_DONE;
   } else if (r == 'L') {
     queue(s, gp_graphic(GP_EXIT, from)); queue(s, gp_graphic(GP_INTRO, gp_pending_level())); s->after = GS_PLAY;
@@ -284,6 +287,9 @@ int gs_start(struct gs_session *s, gp_read_fn read, void *user, const char *gam_
   zero(s->px, sizeof s->px); zero(s->pal, 768); zero(s->colors, 768); zero(s->listpal, 768);
   s->levels = gp_open(read, user, gam_name);
   if (s->levels < 0) {say2(s, "cannot read ", gam_name); return -1;}
+  s->sound.say = s->say;
+  snd_game(&s->sound, gam_name);
+  snd_music(&s->sound, gp_song(GP_SONG_TITLE, 0));
   /* PLAYGAME's menu sets `colors` to its picture's palette before play */
   const char *menu = gp_graphic(GP_MENU, 0);
   int32_t x, y, n = ext_is(menu, "gif") || ext_is(menu, "bkd") ? read_picture(s, menu, ext_is(menu, "bkd"), &x, &y) : -1;
@@ -295,7 +301,8 @@ int gs_start(struct gs_session *s, gp_read_fn read, void *user, const char *gam_
   if (intro < s->ncards) s->cards[intro].clear = 1; /* m.screen.clear() before the first scene */
   s->after = GS_PLAY; s->phase = GS_CARDS; next_from(s, now_ns);
   run_cards(s, now_ns);
-  return s->phase == GS_DONE ? -1 : 0;
+  if (s->phase == GS_DONE) {snd_end(&s->sound); return -1;}
+  return 0;
 }
 int gs_scan(uint16_t code) {
   switch (code) {
@@ -316,7 +323,7 @@ int gs_scan(uint16_t code) {
 int gs_event(struct gs_session *s, uint16_t type, uint16_t code, int32_t value) {
   if (type != 1 || s->phase == GS_DONE) return 0;
   if (code == 1) {
-    if (value == 1) {gp_release_all(); say2(s, "back to the list (Esc)", ""); s->phase = GS_DONE; return GS_EXIT;}
+    if (value == 1) {gp_release_all(); say2(s, "back to the list (Esc)", ""); snd_end(&s->sound); s->phase = GS_DONE; return GS_EXIT;}
     return 0;
   }
   if (s->phase == GS_CARDS) {if (value == 1 && s->stage != GS_LEVEL_IN && s->keys < KEY_BUFFER) s->keys++; return 0;}
@@ -332,6 +339,7 @@ int gs_step(struct gs_session *s, uint64_t now) {
   while (s->ticks < due && s->ran < 4) {
     char r = gp_tick();
     s->ticks++; s->total_ticks++; s->ran++;
+    snd_effect(&s->sound, s->total_ticks);
     if (r) { /* the level fades out from the frame of this tick */
       render_play(s);
       s->change = r; s->phase = GS_CARDS;

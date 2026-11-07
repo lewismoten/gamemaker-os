@@ -19,7 +19,7 @@ namespace {
 using gm::BLOCK_BYTES;
 constexpr uint32_t GAM_CAP = 65536, MAP_BYTES = gm::MLEN * gm::MWID * 2 + gm::LASTMM * 10;
 constexpr int SCENE = 283, HEAD = 262, NOSCENE = 0xffff, ADVTYPE = 10;
-constexpr int F_PAL = 0, F_MAP = 1, F_BBL = 2, F_MON = 3, F_MBL = 4, F_CHR = 5, F_CBL = 6, F_SND = 7, F_INTRO = 9, F_EXIT = 10;
+constexpr int F_PAL = 0, F_MAP = 1, F_BBL = 2, F_MON = 3, F_MBL = 4, F_CHR = 5, F_CBL = 6, F_SND = 7, F_SONG = 8, F_INTRO = 9, F_EXIT = 10;
 
 gp_read_fn reader;
 void *readerUser;
@@ -241,6 +241,34 @@ extern "C" const char *gp_graphic(int slot, int level) {
     case GP_INTRO: return level >= 0 && level < nplay ? fileOf(play[level], F_INTRO) : "";
     case GP_EXIT: return level >= 0 && level < nplay ? fileOf(play[level], F_EXIT) : "";
     case GP_MENU: return fileOf(0, 2);
+  }
+  return "";
+}
+extern "C" int gp_take_sound(void) {
+  if (!w || !w->nsnd) return -1;
+  int n = w->sndQ[w->nsnd - 1];
+  w->nsnd = 0;
+  return n;
+}
+extern "C" const char *gp_sound_file(void) { return w && w->snd ? sndName : ""; }
+// The .snd's 30 clip names (9 bytes each) follow its 30 x 72 bytes of PC speaker tunes (code/GM/SOUND.H).
+extern "C" const char *gp_voc_name(int n) {
+  static char v[10];
+  v[0] = 0;
+  if (!w || !w->snd || n < 0 || n >= gm::LASTSND || sndN < gm::LASTSND * 72 + (n + 1) * 9) return v;
+  const uint8_t *at = snd + gm::LASTSND * 72 + n * 9;
+  int k = 0;
+  while (k < 9 && at[k]) { v[k] = (char)at[k]; k++; }
+  v[k] = 0;
+  if (v[0] == ' ') v[0] = 0;
+  return v;
+}
+extern "C" const char *gp_song(int slot, int level) {
+  switch (slot) {
+    case GP_SONG_TITLE: return fileOf(0, 1);
+    case GP_SONG_WON: return fileOf(1, 1);
+    case GP_SONG_LOST: return fileOf(1, 3);
+    case GP_SONG_LEVEL: return level >= 0 && level < nplay ? fileOf(play[level], F_SONG) : "";
   }
   return "";
 }
