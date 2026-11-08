@@ -6,6 +6,7 @@ AI models used on this repository:
 
 | Model | Tool | What it did |
 | --- | --- | --- |
+| GPT-6.1 Sol (OpenAI) | Hermes Agent (openai-codex) | Isolated unlinked PC-speaker PCM producer, rational-clock and oscillator tests, host/ARM qualification and documentation (2026-11-08); no live dispatch or HDMI output |
 | Claude Opus 5.5 (Anthropic) | Claude Code | Wrote the README (2026-11-06) |
 | Claude Opus 5.5 (Anthropic) | Claude Code | First program GMOS.ELF: games list, .GAM title reader, bitmap font (lowercase and punctuation drawn new), layout, input handling, host tests, build notes, board runs (2026-11-07) |
 | Claude Opus 5.5 (Anthropic) | Claude Code | Playing games: the DOS file loader for the shared play core, the GIF port, the session (cards, ticks, keys), the clock and sleep in the main loop, host tests against the Pocket Player, the board driver and check, docs (2026-11-07) |
@@ -15,6 +16,9 @@ AI models used on this repository:
 | Claude Sonnet 5.5 (Anthropic) | Claude Code | JS.ELF spike: the DOM-like element tree, the QuickJS-ng bindings and prelude, the game element and screen modes, HELLO and BENCH apps, host runner and tests, docs/js.md (2026-11-07) |
 
 ## Third-party code
+
+- `src/pcspeaker.c`: format, 36-step timing and speaker level behavior follow RSD's `code/GM/SOUND.H` (Oliver Stone) and `PLAYGAME.C`, plus Sandbox Edition's `formats/sound.ts`, `audio/cmfPlayer.ts` and `audio/engine.ts` at commit `5353512a5b8e87e72321c8a0ba87c5443ef878eb` (MIT, copyright (c) 2014 gandrewstone; (c) 2026 Lewis Moten modifications). The integer oscillator/rational-clock implementation is original here, not a browser oscillator port. This producer remains unlinked. See `docs/pcspeaker-host.md` for source coordinates and fidelity limits.
+
 
 - `sdk/`: the sandbox-kernel SDK (headers, `crt0.S`, `mem.c`, link map), MIT, copyright (c) 2026 Lewis Moten; the commit is in `sdk/PINNED`.
 - `tools/font.txt`: the capitals, digits and `- : . /` come from sandbox-kernel's 5x7 status font (MIT, same author).
