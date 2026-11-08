@@ -141,9 +141,20 @@ static void mixer_cases(void) {
  assert(voc_speaker_render(&v,&p,NULL,0)==0);
  puts("saturating stereo mixer, independent voices, split buffers and rejection atomicity: PASS");
 }
+static void rate_extremes(void) {
+ const uint8_t data[]={255,0,255};
+ graph_begin();block(1,data,3);assert(graph_ready()==0);
+ assert(v.rate==1000000 && v.frames==1);
+ uint8_t out[8];assert(voc_render(&v,out,2)==0);
+ assert(s16(out)==26009 && s16(out+4)==0);
+ const uint8_t slow[]={0,0,0,255};
+ graph_begin();block(1,slow,4);assert(graph_ready()==0);
+ assert(v.rate==3906 && v.frames==24);
+ puts("time constants0/255, sub-frame clip minimum and downsampling: PASS");
+}
 int main(void) {
  uint8_t out[1920*4];
- headers();malformed();graph_cases();limits();mixer_cases();
+ headers();malformed();graph_cases();limits();mixer_cases();rate_extremes();
  assert(voc_begin(&v,tiny,sizeof(tiny))==0);
  while (voc_prepare(&v,1)==VOC_PENDING) {}
  assert(v.status==0 && v.rate==8000 && v.samples==4 && v.frames==24);

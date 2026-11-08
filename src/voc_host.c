@@ -33,6 +33,7 @@ int voc_prepare(struct voc_host *v,unsigned budget) {
         if (!type) {
             if(p!=v->bytes || !v->samples || !v->rate || v->repeating)return v->status=VOC_INVALID;
             v->frames=(uint32_t)((uint64_t)v->samples*PC_RATE/v->rate);
+            if(!v->frames)v->frames=1; /* vocBuffer's minimum one output frame */
             v->status=0;break;
         }
         if(v->bytes-p<3)return v->status=VOC_INVALID;
