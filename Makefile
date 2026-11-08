@@ -35,13 +35,16 @@ build/GMOS.ELF: src/main.c src/sdpack.c build/game.o build/gmp.o $(CORE) $(wildc
 # for tests/, and gmplay, which prints the Pocket Player host test's state lines.
 HOSTDIR ?= build/host
 HOSTFLAGS ?= -O1
-host: $(HOSTDIR)/libgmos.so $(HOSTDIR)/gmplay $(HOSTDIR)/jsrun
+host: $(HOSTDIR)/libgmos.so $(HOSTDIR)/libsdpack.so $(HOSTDIR)/gmplay $(HOSTDIR)/jsrun
 $(HOSTDIR):
 	mkdir -p $@
 $(HOSTDIR)/libgmos.so: $(CORE) $(PLAYCORE) $(GMCORE) $(GMPCORE) $(wildcard src/*.h) tests/host/hostio.c tests/host/hostio.h Makefile | $(HOSTDIR)
 	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -fPIC -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore -c $(PLAYCORE) -o $(HOSTDIR)/game.o
 	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -fPIC -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore -Ithird_party/puff -c src/gmp.cpp -o $(HOSTDIR)/gmp.o
 	$(HOSTCC) -shared -fPIC $(HOSTFLAGS) -std=c11 -Wall -Wextra -Werror -Isrc -Ithird_party/puff $(CORE) tests/host/hostio.c $(HOSTDIR)/game.o $(HOSTDIR)/gmp.o -lc++ -o $@
+# Board pack reader with a host transport shim; gmp.o is built by libgmos above.
+$(HOSTDIR)/libsdpack.so: $(HOSTDIR)/libgmos.so src/sdpack.c tests/host/sdpack.c tests/host/sdpack/sandbox/syscall.h $(wildcard sdk/include/sandbox/*.h) Makefile
+	$(HOSTCC) -shared -fPIC $(HOSTFLAGS) -std=c11 -Wall -Wextra -Werror -Itests/host/sdpack -Isdk/include -Isrc -Ithird_party/puff src/sdpack.c tests/host/sdpack.c third_party/puff/puff.c $(HOSTDIR)/gmp.o -lc++ -o $@
 $(HOSTDIR)/gmplay: tests/host/gmplay.cpp tests/host/hostio.h $(PLAYCORE) $(GMCORE) $(GMPCORE) src/game.h Makefile | $(HOSTDIR)
 	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore -Ithird_party/puff -c src/gmp.cpp -o $(HOSTDIR)/gmplay_gmp.o
 	$(HOSTCC) $(HOSTFLAGS) -std=c11 -Wall -Wextra -Werror -c third_party/puff/puff.c -o $(HOSTDIR)/gmplay_puff.o
