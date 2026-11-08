@@ -20,5 +20,6 @@ void sp_set_abi(unsigned major, unsigned minor);
 struct gmp *sp_open(const struct sp_pack *p);
 /* Called while long reads go on (the kernel's heartbeat). */
 extern void (*sp_beat)(void);
+extern uint32_t sp_io_errors; /* monotonic; missing entries aren't I/O failures */
 /* "/sd/GAMES/DICE.GMP", or a further volume's name. */
 void sp_path(const struct sp_pack *p, unsigned volume, char out[40]);

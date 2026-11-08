@@ -1,2 +1,3 @@
-sandbox-kernel 507088522d6db1d50b6cf23991d1f44f493eac65
-https://github.com/lewismoten/sandbox-kernel/tree/507088522d6db1d50b6cf23991d1f44f493eac65/sdk
+sandbox-kernel ea69df9ac5d07c750cbac1045fa268d895cbd6d7
+https://github.com/lewismoten/sandbox-kernel/tree/ea69df9ac5d07c750cbac1045fa268d895cbd6d7/sdk
+Local-only signed feature/scan-speed commit; import the accompanying kernel bundle. Not yet published to GitHub.

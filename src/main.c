@@ -18,6 +18,9 @@
 #include "session.h"
 #include "thumb.h"
 #include "view.h"
+#ifndef GMOS_SCAN_VERBOSE
+#define GMOS_SCAN_VERBOSE 0
+#endif
 static uint64_t log_fd, fb_fd, in_fd;
 static uint32_t generation, abi_minor;
 static uint64_t beat;
@@ -33,10 +36,21 @@ static unsigned length(const char *s) {unsigned n = 0; while (s[n]) n++; return 
 static char *put(char *p, const char *s) {while (*s) *p++ = *s++; *p = 0; return p;}
 static char *num(char *p, uint32_t n) {char t[11]; int k = 0; do t[k++] = (char)('0' + n % 10); while (n /= 10); while (k) *p++ = t[--k]; *p = 0; return p;}
 static void say(const char *s) {sbx_log(log_fd, s, length(s));}
+/* Serial logs are synchronous. Keep entry-by-entry diagnostics opt-in, not
+ * proportional to the card's folder/duplicate count during normal startup. */
+static unsigned scan_detail_count;
+static void scan_say(const char *s) {scan_detail_count++; if (GMOS_SCAN_VERBOSE) say(s);}
+static void scan_summary(void) {
+  if (!GMOS_SCAN_VERBOSE && scan_detail_count) {
+    char line[80], *p = put(line, "GMOS scan: "); p = num(p, scan_detail_count);
+    put(p, " detail messages suppressed (SCAN_VERBOSE=1 to show)"); say(line);
+  }
+}
 static void heartbeat(void) {sbx_health(generation, ++beat);}
 static int ends_with_gam(const char *s, unsigned n) {
   return n > 4 && s[n - 4] == '.' && s[n - 3] == 'G' && s[n - 2] == 'A' && s[n - 1] == 'M';
 }
+#include "scan_store.h"
 /* The name of the first .GAM file in the folder `path` ("" if none). */
 static void find_gam(const char *path, unsigned pn, char name[13]) {
   uint64_t fd, got; static uint8_t list[512];
@@ -58,35 +72,55 @@ static void find_gam(const char *path, unsigned pn, char name[13]) {
 }
 /* The first .GAM file in /sd/GAMES/<dir>, read far enough for its title. */
 static void add_game(const char *dir, unsigned dn) { /* dn: 1 to 8 (gm_dir_ok) */
-  char path[40], *p = put(path, "/sd/GAMES/"), name[13], title[GM_TITLE_MAX + 1];
+  char path[40], *p = put(path, "/sd/GAMES/"), name[13];
+  uint8_t key[16];struct cache_source source={0};
   for (unsigned i = 0; i < dn; i++) *p++ = dir[i];
   *p = 0;
   uint64_t fd, got;
-  find_gam(path, (uint32_t)(p - path), name);
+  int keyed=cache_find_gam(path,name,key);
+  if(!keyed)find_gam(path, (uint32_t)(p - path), name);
   if (!name[0]) return; /* not a game folder */
   *p++ = '/'; p = put(p, name);
-  if (sbx_open(path, (uint32_t)(p - path), SBX_O_RDONLY, &fd)) return;
-  uint32_t have = 0;
-  while (have < sizeof gamfile && !sbx_read(fd, gamfile + have, sizeof gamfile - have, &got) && got) have += (uint32_t)got;
-  sbx_close(fd);
-  if (gm_gam_title(gamfile, have, title) < 0) return;
+  if(!(keyed&&cache_source_get(path,key,sizeof key,&source)&&!source.record_bytes&&cache_same(source.gam,name))){
+    source=(struct cache_source){0};
+    if (sbx_open(path, (uint32_t)(p - path), SBX_O_RDONLY, &fd)) return;
+    uint32_t have = 0;int status=0;
+    while (have < sizeof gamfile && !(status=sbx_read(fd, gamfile + have, sizeof gamfile - have, &got)) && got) have += (uint32_t)got;
+    sbx_close(fd);
+    if(status)cache_enabled=0; /* don't persist a partial I/O result */
+    put(source.gam,name);
+    if(gm_gam_title(gamfile,have,source.title)>=0){source.valid=1;source.crc=gm_crc32(0,gamfile,have);}
+  }
+  if(keyed)cache_source_put(path,key,sizeof key,&source,0);
+  if(!source.valid)return;
   char d[9]; unsigned k = 0; while (k < dn && k < 8) {d[k] = dir[k]; k++;} d[k] = 0;
-  uint32_t crc = gm_crc32(0, gamfile, have);
+  uint32_t crc = source.crc;
   for (unsigned i = 0; i < menu.count; i++)
     if (menu.games[i].crc == crc) { /* listed already: packed (the pack is played; a card changing over holds both) or another folder */
-      char line[80], *q = put(line, "GMOS skipped folder "); q = put(q, d); q = put(q, where[i].packed ? ": packed as " : ": the same game as "); put(q, menu.games[i].dir); say(line); return;
+      char line[80], *q = put(line, "GMOS skipped folder "); q = put(q, d); q = put(q, where[i].packed ? ": packed as " : ": the same game as "); put(q, menu.games[i].dir); scan_say(line); return;
     }
-  gm_add(&menu, d, name, title, crc);
+  gm_add(&menu, d, name, source.title, crc);
 }
 /* /sd/GAMES/LIBRARY.JSL (or /sd/OS/LIBRARY.JSL, where the kernel's USB PUTF can
    install it), a line at a time: the titles, categories and blurbs it gives. */
 static void read_index(void) {
   uint64_t fd, got; uint32_t have = 0, matched = 0;
-  if (sbx_open("/sd/GAMES/LIBRARY.JSL", 21, SBX_O_RDONLY, &fd) && sbx_open("/sd/OS/LIBRARY.JSL", 18, SBX_O_RDONLY, &fd)) {
-    say("GMOS no library index; titles from the .GAM files"); return;
+  const char *path="/sd/GAMES/LIBRARY.JSL";const uint8_t *key=cache_file_key(0,"LIBRARY.JSL");
+  if(!key){path="/sd/OS/LIBRARY.JSL";key=cache_file_key(2,"LIBRARY.JSL");}
+  const uint8_t *cached=key?gc_get(&scan_cache,path,key,16,&have):0;
+  if(cached&&have<=sizeof index_text)cache_copy(index_text,cached,have);
+  else {
+    have=0;path="/sd/GAMES/LIBRARY.JSL";
+    if(sbx_open(path,21,SBX_O_RDONLY,&fd)){
+      path="/sd/OS/LIBRARY.JSL";
+      if(sbx_open(path,18,SBX_O_RDONLY,&fd)){say("GMOS no library index; titles from the .GAM files");return;}
+    }
+    int status=0;
+    while (have < sizeof index_text && !(status=sbx_read(fd, index_text + have, sizeof index_text - have, &got)) && got) have += (uint32_t)got;
+    sbx_close(fd);if(status)cache_enabled=0;
+    key=cache_file_key(path[4]=='G'?0:2,"LIBRARY.JSL");
   }
-  while (have < sizeof index_text && !sbx_read(fd, index_text + have, sizeof index_text - have, &got) && got) have += (uint32_t)got;
-  sbx_close(fd);
+  if(key&&cache_enabled)gc_add(&scan_cache,path,key,16,index_text,have);
   for (uint32_t at = 0; at < have;) {
     uint32_t end = at; while (end < have && index_text[end] != '\n') end++;
     matched += (uint32_t)gm_library_line(&menu, (const char *)index_text + at, end - at);
@@ -97,31 +131,50 @@ static void read_index(void) {
 }
 /* A packed game: its .GAM from the pack, titled from it. A game already packed (the same .GAM) is not listed again. */
 static void add_pack(const struct sp_pack *pk) {
-  char path[40], line[96], *p, title[GM_TITLE_MAX + 1];
+  char path[40], line[96], *p;
+  struct cache_source source={0};uint8_t key[256];
   sp_path(pk, 0, path);
-  struct gmp *g = sp_open(pk);
-  int32_t have = g ? gmp_read(g, g->gam, gamfile, sizeof gamfile) : -1;
-  if (have < 0 || gm_gam_title(gamfile, (uint32_t)have, title) < 0) {p = put(line, "GMOS skipped "); p = put(p, path); put(p, ": not a game pack"); say(line); return;}
-  uint32_t crc = gm_crc32(0, gamfile, (uint32_t)have);
+  int keyed=cache_pack_key(pk,key),reused=keyed&&cache_source_get(path,key,sizeof key,&source);
+  struct gmp *g=0;
+  if(!reused){
+    uint32_t errors=sp_io_errors;
+    source=(struct cache_source){0};g=sp_open(pk);
+    int32_t have=g?gmp_read(g,g->gam,gamfile,sizeof gamfile):-1;
+    if(have<0||gm_gam_title(gamfile,(uint32_t)have,source.title)<0){
+      if(sp_io_errors!=errors)cache_enabled=0;
+      if(keyed)cache_source_put(path,key,sizeof key,&source,0);
+      p=put(line,"GMOS skipped ");p=put(p,path);put(p,": not a game pack");scan_say(line);return;
+    }
+    source.valid=1;
+    source.crc=gm_crc32(0,gamfile,(uint32_t)have);
+    for(unsigned i=0;i<12&&g->gam[i];i++)source.gam[i]=g->gam[i];
+    if(keyed){int32_t rec=gmp_entry(g,"library.json",index_text,4096);if(rec>0)source.record_bytes=(uint32_t)rec;}
+    if(sp_io_errors!=errors)cache_enabled=0; /* retry transient library read failures next startup */
+  }
+  if(keyed)cache_source_put(path,key,sizeof key,&source,reused?cache_value+sizeof source:index_text);
+  if(!source.valid){p=put(line,"GMOS skipped ");p=put(p,path);put(p,": not a game pack");scan_say(line);return;}
+  uint32_t crc=source.crc;
   for (unsigned i = 0; i < menu.count; i++)
-    if (menu.games[i].crc == crc) {p = put(line, "GMOS skipped "); p = put(p, path); p = put(p, ": the same game as "); put(p, menu.games[i].dir); say(line); return;}
-  if (!gm_add(&menu, pk->base, g->gam, title, crc)) return;
+    if (menu.games[i].crc == crc) {p = put(line, "GMOS skipped "); p = put(p, path); p = put(p, ": the same game as "); put(p, menu.games[i].dir); scan_say(line); return;}
+  if (!gm_add(&menu, pk->base, source.gam, source.title, crc)) return;
   where[menu.count - 1].packed = 1; where[menu.count - 1].pack = *pk;
-  int32_t rec = gmp_entry(g, "library.json", index_text, 4096); /* its own gmp-library record: title and tab without an index */
-  if (rec > 0) gm_library_line(&menu, (const char *)index_text, (uint32_t)rec);
+  if(keyed){if(source.record_bytes)gm_library_line(&menu,(const char *)(reused?cache_value+sizeof source:index_text),source.record_bytes);}
+  else {int32_t rec=gmp_entry(g,"library.json",index_text,4096);if(rec>0)gm_library_line(&menu,(const char *)index_text,(uint32_t)rec);}
   p = put(line, "GMOS packed "); p = put(p, pk->base); p = put(p, ": "); p = put(p, path); p = put(p, ", ");
-  p = num(p, pk->volumes); put(p, pk->volumes == 1 ? " volume" : " volumes"); say(line);
+  p = num(p, pk->volumes); put(p, pk->volumes == 1 ? " volume" : " volumes"); scan_say(line);
 }
 static void find_packs(uint8_t folder) {
-  unsigned n = sp_list(folder, packs, GM_MAX_GAMES, say);
+  unsigned n = sp_list(folder, packs, GM_MAX_GAMES, scan_say);
   for (unsigned i = 0; i < n; i++) {add_pack(&packs[i]); heartbeat();}
 }
 static void find_games(void) {
   uint64_t fd, got;
+  scan_detail_count = 0;
+  cache_begin();
   sp_beat = heartbeat;
   find_packs(SP_FOLDER_POCKET); /* packs first: a folder holding the same game is then left out */
   find_packs(SP_FOLDER_GAMES);
-  if (sbx_open("/sd/GAMES", 9, SBX_O_RDONLY, &fd)) {say("GMOS no /sd/GAMES folder"); read_index(); gm_finish(&menu); return;}
+  if (sbx_open("/sd/GAMES", 9, SBX_O_RDONLY, &fd)) {say("GMOS no /sd/GAMES folder"); scan_summary(); read_index(); gm_finish(&menu); cache_end(); return;}
   while (!sbx_getdents(fd, dents, sizeof dents, &got) && got) {
     for (uint32_t at = 0; at < got;) {
       const sbx_dirent *e = (const sbx_dirent *)(const void *)(dents + at);
@@ -131,15 +184,17 @@ static void find_games(void) {
       else if (e->type == SBX_DT_DIR && e->name_bytes < 64) { /* path[40] in add_game would overflow on a long name */
         char line[128], *p = put(line, "GMOS skipped /sd/GAMES/"), *q = p;
         for (unsigned i = 0; i < e->name_bytes; i++) *q++ = n[i];
-        put(q, ": not a DOS folder name"); say(line);
+        put(q, ": not a DOS folder name"); scan_say(line);
       }
       at += e->length;
       heartbeat();
     }
   }
   sbx_close(fd);
+  scan_summary();
   read_index();
   gm_finish(&menu);
+  cache_end();
 }
 static void open_input(void) {
   sbx_input_info info; sbx_input_state st;
