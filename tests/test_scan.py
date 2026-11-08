@@ -51,6 +51,36 @@ class Scan(unittest.TestCase):
     def index(self, text):
         (self.card/'GAMES/LIBRARY.JSL').write_text(text)
 
+    def test_long_nested_folder_zip_sfx_and_noise_are_discovered(self):
+        import zipfile
+        import io
+        self.dice('Long folder name with spaces')
+        self.assertEqual(self.scan()['games'], 1)
+        shutil.rmtree(self.card/'GAMES/Long folder name with spaces')
+        (self.card/'GAMES/Collection').mkdir()
+        self.dice('Collection/Long nested folder')
+        self.assertEqual(self.scan()['games'], 1)
+        shutil.rmtree(self.card/'GAMES/Collection')
+        for suffix, stub in [('ZIP', b''), ('EXE', b'MZ'+bytes(1022))]:
+            b=io.BytesIO()
+            with zipfile.ZipFile(b,'w',zipfile.ZIP_DEFLATED) as z:
+                for p in (ROOT/'tests/games/DICE').iterdir(): z.writestr('Wrapper folder/'+p.name,p.read_bytes())
+            path=self.card/'GAMES'/('Long archive name.'+suffix)
+            path.write_bytes(stub+b.getvalue())
+            self.assertEqual(self.scan()['games'], 1, suffix)
+            path.unlink()
+        for noise in ('._DICE', '.Trashes', '.Spotlight-V100', '.fseventsd', 'System Volume Information', '__MACOSX'):
+            self.dice(noise)
+        self.assertEqual(self.scan()['games'], 0)
+
+    def test_depth_two_game_is_found_beneath_an_existing_game(self):
+        self.dice('PARENT')
+        nested=self.dice('PARENT/NESTED')
+        p=nested/'DICE.GAM';data=bytearray(p.read_bytes());data[-1]^=53;p.write_bytes(data)
+        d=self.scan()
+        self.assertEqual(d['games'],2)
+        self.assertEqual({g['source_path'] for g in d['list']},{'/sd/GAMES/PARENT','/sd/GAMES/PARENT/NESTED'})
+
     def test_per_entry_logs_are_bounded_by_default(self):
         self.dice()
         for i in range(140):
@@ -137,6 +167,45 @@ class PersistentScan(Scan):
     def scan(self):
         env = dict(os.environ, GMOS_SCAN_CACHE='1')
         return json.loads(subprocess.check_output([str(self.probe), str(self.card)], env=env))
+
+    def test_zip_cache_changes_duplicates_and_invalid_recovery(self):
+        import io, zipfile
+        def make_zip(gam):
+            b=io.BytesIO()
+            with zipfile.ZipFile(b,'w',zipfile.ZIP_DEFLATED) as z: z.writestr('DICE.GAM',gam)
+            return b.getvalue()
+        gam=(ROOT/'tests/games/DICE/DICE.GAM').read_bytes()
+        archive=self.card/'GAMES/A long archive.ZIP';archive.write_bytes(make_zip(gam))
+        self.assertEqual(self.scan()['games'],1)
+        warm=self.scan();self.assertEqual(warm['crc_calls'],0)
+        self.assertEqual(warm['list'][0]['source_path'],'/sd/GAMES/A long archive.ZIP')
+        self.dice('Long loose duplicate')
+        self.assertEqual(self.scan()['list'][0]['packed'],0)
+        shutil.rmtree(self.card/'GAMES/Long loose duplicate')
+        self.assertEqual(self.scan()['list'][0]['packed'],2)
+        changed=bytearray(gam);changed[-1]^=77;archive.write_bytes(make_zip(changed))
+        self.assertEqual(self.scan()['crc_calls'],1)
+        self.assertEqual(self.scan()['crc_calls'],0)
+        archive.write_bytes(b'broken ZIP')
+        self.assertEqual(self.scan()['games'],0)
+        archive.write_bytes(make_zip(gam))
+        self.assertEqual(self.scan()['games'],1)
+        archive.unlink();self.assertEqual(self.scan()['games'],0)
+
+    def test_long_gam_cache_exact_paths_and_no_truncated_join(self):
+        folder=self.dice('Long Game Folder')
+        (folder/'DICE.GAM').rename(folder/'Long Metadata Filename.gam')
+        cold=self.scan();warm=self.scan()
+        self.assertEqual(cold['list'],warm['list'])
+        self.assertEqual(warm['crc_calls'],0)
+        self.assertEqual(warm['list'][0]['source_gam'],'Long Metadata Filename.gam')
+        self.dice('x'*240) # folder path fits, joined GAM path does not
+        self.assertEqual(self.scan()['games'],1)
+        cache=self.card/'OS/CACHE/GAMES.IDX'
+        old=bytearray(cache.read_bytes());old[:4]=b'GMI1'
+        import struct,zlib
+        struct.pack_into('<I',old,12,zlib.crc32(old[:12]+old[16:]));cache.write_bytes(old)
+        self.assertEqual(self.scan()['crc_calls'],1) # old namespace is not replayed
 
     def test_warm_restart_reuses_candidates_without_gam_reads(self):
         self.dice('FIRST'); self.dice('SECOND')

@@ -1,3 +1,4 @@
-sandbox-kernel ea69df9ac5d07c750cbac1045fa268d895cbd6d7
-https://github.com/lewismoten/sandbox-kernel/tree/ea69df9ac5d07c750cbac1045fa268d895cbd6d7/sdk
-Local-only signed feature/scan-speed commit; import the accompanying kernel bundle. Not yet published to GitHub.
+sandbox-kernel 3010a7c4c66f76bbef61fe21ccf0545cfe1ea39d
+https://github.com/lewismoten/sandbox-kernel
+Local-only signed feature/drag-drop commit; import accompanying kernel bundle. Not yet published to GitHub.
+ABI1.5 opt-in call20; calls11/18 unchanged.

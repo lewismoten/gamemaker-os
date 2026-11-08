@@ -16,6 +16,7 @@ int32_t sbx_read(uint64_t,void*,uint32_t,uint64_t*);
 int32_t sbx_close(uint64_t);
 int32_t sbx_getdents(uint64_t,void*,uint32_t,uint64_t*);
 int32_t sbx_getdents_meta(uint64_t,void*,uint32_t,uint64_t*);
+int32_t sbx_getdents_long_meta(uint64_t,void*,uint32_t,uint64_t*);
 int32_t sbx_write(uint64_t,const void*,uint32_t,uint64_t*);
 int32_t sbx_fsync(uint64_t);
 int32_t sbx_rename(const char*,uint32_t,const char*,uint32_t);
@@ -24,7 +25,7 @@ int32_t sbx_health(uint32_t,uint64_t);
 int32_t sbx_log(uint64_t,const char*,uint32_t);
 ''')
 # Rename definitions only, so original calls pass through inclusive timers.
-protos='static void find_gam(const char*,unsigned,char[13]);\nstatic void add_game(const char*,unsigned);\nstatic void read_index(void);\nstatic void add_pack(const struct sp_pack*);\nstatic void find_packs(uint8_t);\n'
+protos='static void find_gam(const char*,unsigned,char[256]);\nstatic void add_game(const char*,unsigned);\nstatic void read_index(void);\nstatic void add_pack(const struct sp_pack*);\nstatic void find_packs(uint8_t);\n'
 for name in ['find_gam','add_game','read_index','add_pack','find_packs']:
  scan=scan.replace('static void '+name+'(', 'static void '+name+'_impl(',1)
 # Declarations follow real headers, before scanner's first declaration.
@@ -52,7 +53,7 @@ static uint64_t opens,dir_opens,file_opens,read_calls,read_bytes,dent_calls,dent
 static uint64_t io_ns,crc_ns,crc_calls,crc_bytes,lib_ns,lib_calls;
 static uint64_t phase_ns[5],phase_calls[5];
 '''+scan+r'''
-static void find_gam(const char*p,unsigned n,char b[13]){uint64_t t=ns();find_gam_impl(p,n,b);phase_ns[0]+=ns()-t;phase_calls[0]++;}
+static void find_gam(const char*p,unsigned n,char b[256]){uint64_t t=ns();find_gam_impl(p,n,b);phase_ns[0]+=ns()-t;phase_calls[0]++;}
 static void add_game(const char*p,unsigned n){uint64_t t=ns();add_game_impl(p,n);phase_ns[1]+=ns()-t;phase_calls[1]++;}
 static void read_index(void){uint64_t t=ns();read_index_impl();phase_ns[2]+=ns()-t;phase_calls[2]++;}
 static void add_pack(const struct sp_pack*p){uint64_t t=ns();add_pack_impl(p);phase_ns[3]+=ns()-t;phase_calls[3]++;}
@@ -88,13 +89,14 @@ static int32_t host_dents(uint64_t h,void*b,uint32_t cap,uint64_t*got,int meta){
 }
 int32_t sbx_getdents(uint64_t h,void*b,uint32_t n,uint64_t*g){return host_dents(h,b,n,g,0);}
 int32_t sbx_getdents_meta(uint64_t h,void*b,uint32_t n,uint64_t*g){return host_dents(h,b,n,g,1);}
+int32_t sbx_getdents_long_meta(uint64_t h,void*b,uint32_t n,uint64_t*g){return host_dents(h,b,n,g,1);}
 int32_t sbx_write(uint64_t h,const void*b,uint32_t n,uint64_t*g){ssize_t r=write(handles[h].f,b,n);if(r<0)return -5;*g=r;return 0;}
 int32_t sbx_fsync(uint64_t h){return fsync(handles[h].f)?-5:0;}
 int32_t sbx_rename(const char*a,uint32_t an,const char*b,uint32_t bn){char ap[4096],bp[4096];if(!getenv("GMOS_SCAN_CACHE"))return -30;snprintf(ap,sizeof ap,"%s%.*s",root,(int)an-3,a+3);snprintf(bp,sizeof bp,"%s%.*s",root,(int)bn-3,b+3);return rename(ap,bp)?-5:0;}
 int32_t sbx_log(uint64_t h,const char*b,uint32_t n){(void)h;(void)b;logs++;log_bytes+=n;return 0;}
 int32_t sbx_health(uint32_t g,uint64_t s){(void)g;(void)s;healths++;return 0;}
 static void jstr(const char*s){putchar('"');for(;*s;s++){unsigned char c=*s;if(c=='"'||c=='\\')printf("\\%c",c);else if(c<32||c>=127)printf("\\u%04x",c);else putchar(c);}putchar('"');}
-int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;i++)handles[i].f=-1;abi_minor=getenv("GMOS_SCAN_CACHE")?4:3;sp_set_abi(1,abi_minor);uint64_t t=ns();find_games();t=ns()-t;
+int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;i++)handles[i].f=-1;abi_minor=getenv("GMOS_SCAN_CACHE")?5:3;if(getenv("GMOS_SCAN_ABI"))abi_minor=(unsigned)atoi(getenv("GMOS_SCAN_ABI"));sp_set_abi(1,abi_minor);uint64_t t=ns();find_games();t=ns()-t;
  printf("{\"elapsed_ns\":%llu,\"games\":%u,\"menu_crc\":%u,\"where_crc\":%u",(unsigned long long)t,menu.count,__real_gm_crc32(0,(const uint8_t*)&menu,sizeof menu),__real_gm_crc32(0,(const uint8_t*)where,sizeof where));
  #define FIELD(x) printf(",\"" #x "\":%llu",(unsigned long long)x)
  FIELD(opens);FIELD(dir_opens);FIELD(file_opens);FIELD(read_calls);FIELD(read_bytes);FIELD(dent_calls);FIELD(dent_entries);FIELD(logs);FIELD(log_bytes);FIELD(healths);FIELD(seeks);FIELD(io_ns);FIELD(crc_ns);FIELD(crc_calls);FIELD(crc_bytes);FIELD(lib_ns);FIELD(lib_calls);
@@ -104,7 +106,8 @@ int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;
   printf("%s{\"dir\":",j?",":"");jstr(g->dir);printf(",\"gam\":");jstr(g->gam);
   printf(",\"title\":");jstr(g->title);printf(",\"company\":");jstr(g->company);printf(",\"blurb\":");jstr(g->blurb);
   printf(",\"storage\":%u,\"crc\":%u,\"cat\":%u,\"course\":%d,\"year\":%d,\"packed\":%u",i,g->crc,g->cat,g->course,g->year,where[i].packed);
-  if(where[i].packed){const struct sp_pack*p=&where[i].pack;printf(",\"pack_folder\":%u,\"pack_base\":",p->folder);jstr(p->base);printf(",\"volume_sizes\":[");for(unsigned v=0;v<p->volumes;v++)printf("%s%u",v?",":"",p->size[v]);printf("]");}
+  printf(",\"source_path\":");jstr(where[i].path);printf(",\"source_gam\":");jstr(where[i].gam);
+  if(where[i].packed==1){const struct sp_pack*p=&where[i].pack;printf(",\"pack_folder\":%u,\"pack_base\":",p->folder);jstr(p->base);printf(",\"volume_sizes\":[");for(unsigned v=0;v<p->volumes;v++)printf("%s%u",v?",":"",p->size[v]);printf("]");}
   printf("}");
  }puts("]}");for(int i=1;i<64;i++)if(handles[i].d||handles[i].f>=0)sbx_close(i);return 0;}
 '''
@@ -113,10 +116,11 @@ extra=shlex.split(os.environ.get('GMOS_SCAN_CFLAGS',''))
 flags=['-O2',*extra,'-ffunction-sections','-fdata-sections','-I'+str(out),'-I'+str(repo/'sdk/include'),'-I'+str(repo/'src'),'-I'+str(repo/'third_party/gmcore'),'-I'+str(repo/'third_party/puff')]
 commands=[]
 units=[('probe','probe.c','cc'),('sdpack',str(repo/'src/sdpack.c'),'cc'),('menu',str(repo/'src/menu.c'),'cc'),('library',str(repo/'src/library.c'),'cc'),('gam',str(repo/'src/gam.c'),'cc'),('gmp',str(repo/'src/gmp.cpp'),'c++'),('puff',str(repo/'third_party/puff/puff.c'),'cc')]
+units += [('zip',str(repo/'src/zip.c'),'cc'),('sdzip',str(repo/'src/sdzip.c'),'cc'),('asset_scratch',str(repo/'src/asset_scratch.c'),'cc')]
 if (repo/'src/scan_cache.c').exists(): units.append(('scan_cache',str(repo/'src/scan_cache.c'),'cc'))
 for name,src,compiler in units:
  wrap={'probe':['-Dgm_crc32=__wrap_gm_crc32','-Dgm_library_line=__wrap_gm_library_line'],
-       'library':['-Dgm_crc32=__real_gm_crc32'],'menu':['-Dgm_library_line=__real_gm_library_line']}.get(name,[])
+       'library':['-Dgm_crc32=__real_gm_crc32'],'zip':['-Dgm_crc32=__real_gm_crc32'],'menu':['-Dgm_library_line=__real_gm_library_line']}.get(name,[])
  cmd=[compiler,*flags,*wrap,'-c',src,'-o',name+'.o'];commands.append(cmd);subprocess.run(cmd,cwd=out,check=True)
 gcflag='-Wl,-dead_strip' if sys.platform=='darwin' else '-Wl,--gc-sections'
 cmd=['c++',*extra,gcflag,*[str(out/(x+'.o')) for x,_,_ in units],'-o',str(out/'scan-probe')];commands.append(cmd);subprocess.run(cmd,check=True)

@@ -16,6 +16,10 @@ int32_t sbx_getdents(uint64_t fd, void *p, uint32_t n, uint64_t *done) {
   sbx_dirents_rec r = {H(sbx_dirents_rec), fd, (uintptr_t)p, n, 0};
   int32_t s = dispatch(SBX_CALL_GETDENTS, &r, sizeof r); if (!s) *done = r.transferred; return s;
 }
+int32_t sbx_getdents_long_meta(uint64_t fd, void *p, uint32_t n, uint64_t *done) {
+  sbx_dirents_rec r = {H(sbx_dirents_rec), fd, (uintptr_t)p, n, 0};
+  int32_t s = dispatch(SBX_CALL_GETDENTS_LONG_META, &r, sizeof r); if (!s) *done = r.transferred; return s;
+}
 int32_t sbx_close(uint64_t fd) {
   sbx_close_rec r = {H(sbx_close_rec), fd}; return dispatch(SBX_CALL_CLOSE, &r, sizeof r);
 }

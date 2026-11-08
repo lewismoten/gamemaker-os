@@ -22,6 +22,12 @@ The first target is a Raspberry Pi Zero W v1.1 with a Waveshare 2.13 inch e-Pape
 
 ## Build
 
+Desktop card copying now supports long-named loose game folders, stored/deflated
+ZIP games and plain-ZIP self-extracting EXEs (read as archives, never executed),
+alongside GMP packs. The paired ABI 1.5 kernel is required for long names.
+See [copying games and verification limits](docs/drag-drop.md). This candidate
+is host-qualified; its new FAT-card/Pi workflow still needs hardware acceptance.
+
 `GMOS.ELF` is built only against the sandbox-kernel SDK, vendored in `sdk/` at the kernel commit named in `sdk/PINNED`, and the shared play core in `third_party/gmcore` (commit in its `PINNED`). `make` builds it with the Arm GNU toolchain; `make test` runs the host tests and renders the list and a game to PNG files in `build/host/`. See [docs/build.md](docs/build.md) for installing it on a card and driving it over USB.
 
 ## Plan

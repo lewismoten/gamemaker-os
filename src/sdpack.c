@@ -7,7 +7,8 @@ static struct {struct sp_pack pack; struct gmp g; uint64_t fd; int open; unsigne
 void (*sp_beat)(void);
 uint32_t sp_io_errors;
 static int have_seek; /* opt in only after inspecting the running kernel */
-void sp_set_abi(unsigned major, unsigned minor) {have_seek = major == 1 && minor >= 3;}
+static int have_long;
+void sp_set_abi(unsigned major, unsigned minor) {have_seek = major == 1 && minor >= 3;have_long=major==1&&minor>=5;}
 static char upper(char c) {return c >= 'a' && c <= 'z' ? (char)(c - 32) : c;}
 void sp_path(const struct sp_pack *p, unsigned volume, char out[40]) {
   const char *f = p->folder == SP_FOLDER_POCKET ? "/sd/POCKET/" : "/sd/GAMES/";
@@ -31,17 +32,40 @@ static int volume_of(const char *n, unsigned len, char base[9]) {
   return v >= 1 && v < (int)GMP_VOLUMES_MAX ? v : -1;
 }
 static int same(const char *a, const char *b) {while (*a && *a == *b) {a++; b++;} return *a == *b;}
+/* Use long names directly for ordinary volumes; only a renamed long GMP
+ * needs a lazy alias cursor. This avoids doubling every directory scan. */
+struct aliases {uint64_t fd,got;uint32_t at,index;int opened;};
+static int alias_volume(const char *path,unsigned pn,unsigned ordinal,const sbx_dirent *entry,struct aliases *c,char base[9]) {
+  _Alignas(8) static uint8_t names[2048];
+  if(!c->opened){if(sbx_open(path,pn,SBX_O_RDONLY,&c->fd))return -2;c->opened=1;}
+  while(c->index<ordinal){
+    if(c->at==c->got){c->at=0;if(sbx_getdents(c->fd,names,sizeof names,&c->got)||!c->got)return -2;}
+    if(c->got-c->at<8)return -2;
+    const sbx_dirent *e=(const sbx_dirent *)(const void *)(names+c->at);
+    if(e->length<8||e->length>c->got-c->at||e->name_bytes>e->length-8)return -2;
+    c->at+=e->length;c->index++;
+    if(c->index==ordinal){if(e->type!=entry->type||e->size!=entry->size)return -2;return volume_of((const char *)e+8,e->name_bytes,base);}
+  }
+  return -2;
+}
 unsigned sp_list(uint8_t folder, struct sp_pack *packs, unsigned max, void (*say)(const char *)) {
   static struct {char base[9]; uint8_t v; uint32_t size;} vols[256];
   unsigned nv = 0, np = 0; uint64_t fd, got;
   const char *path = folder == SP_FOLDER_POCKET ? "/sd/POCKET" : "/sd/GAMES";
   if (sbx_open(path, folder == SP_FOLDER_POCKET ? 10 : 9, SBX_O_RDONLY, &fd)) return 0;
-  while (!sbx_getdents(fd, list, sizeof list, &got) && got) {
+  struct aliases aliases={0};unsigned ordinal=0,head=have_long?24:8;int failed=0,status;
+  while (!(status=have_long?sbx_getdents_long_meta(fd,list,sizeof list,&got):sbx_getdents(fd, list, sizeof list, &got)) && got) {
     for (uint32_t at = 0; at < got;) {
       const sbx_dirent *e = (const sbx_dirent *)(const void *)(list + at);
-      if (e->length < sizeof *e || e->length > got - at) break; /* a broken entry: stop, not loop or read past */
-      const char *n = (const char *)(list + at + sizeof *e);
+      if(got-at<head||e->length<head||e->length>got-at||e->name_bytes>e->length-head){failed=1;break;}
+      const char *n = (const char *)(list + at + head);ordinal++;
+      if(e->name_bytes>=2&&n[0]=='.'&&n[1]=='_'){at+=e->length;continue;}
       char base[9]={0}; int v = e->type == SBX_DT_FILE ? volume_of(n, e->name_bytes, base) : -1;
+      unsigned nb=e->name_bytes;
+      if(have_long&&v<0&&e->type==SBX_DT_FILE&&nb>4&&n[nb-4]=='.'&&upper(n[nb-3])=='G'&&
+         ((upper(n[nb-2])=='M'&&upper(n[nb-1])=='P')||(n[nb-2]>='0'&&n[nb-2]<='9'&&n[nb-1]>='0'&&n[nb-1]<='9'))){
+        v=alias_volume(path,folder==SP_FOLDER_POCKET?10:9,ordinal,e,&aliases,base);if(v==-2){failed=1;break;}
+      }
       if (v == 0 && np < max) {
         struct sp_pack *p = &packs[np++];
         p->folder = folder; p->volumes = 1; p->size[0] = e->size;
@@ -52,8 +76,11 @@ unsigned sp_list(uint8_t folder, struct sp_pack *packs, unsigned max, void (*say
       }
       at += e->length;
     }
+    if(failed)break;
   }
   sbx_close(fd);
+  if(aliases.opened)sbx_close(aliases.fd);
+  if(failed||status){sp_io_errors++;return 0;}
   for (unsigned i = 0; i < np; i++) /* further volumes, in order while there is no gap */
     for (int found = 1; found && packs[i].volumes < GMP_VOLUMES_MAX;) {
       found = 0;
