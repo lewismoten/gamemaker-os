@@ -48,9 +48,11 @@ with a `game.txt`, so it leaves those out; Game-Maker OS lists them.
   (the largest DOS file in the Sandbox games is 658 KB), and an entry must
   inflate to exactly its stated length.
 - `src/sdpack.c`: on the board, the packs in `/sd/GAMES` and `/sd/POCKET`. A
-  pack's index is read into memory once when it is opened; its data is read
-  forward through the kernel's file API, which has no seek yet (a read behind
-  the last one opens the file again).
+  pack's index is cached once when it fits in the first volume; its data uses
+  bounded absolute seek within the open volume on kernels with ABI 1.3.
+  Older kernels retain forward reads and reopen/replay for backward access.
+  Changing volumes still opens the appropriate file. See [file-seek.md](file-seek.md)
+  for the compatibility contract and reproducible tests/counters.
 - `src/main.c`: packs are listed first, `/sd/POCKET` then `/sd/GAMES`, then the
   folders. A pack or folder holding the same `.GAM` (by CRC-32) as a game
   already listed is skipped, so a card can carry both while it changes over
@@ -67,7 +69,8 @@ volume and end in the next. The board finds the further volumes in the same
 folder listing (the listing gives each file's size) and stops at the first
 missing number. Today every pack is one volume; nothing in the format changes
 for a split pack: a splitter cuts the bytes of one `.GMP` at the floppy's size.
-The index has to fit in `NAME.GMP`. What a splitter should add is in the
+The initial 8-byte header must fit in `NAME.GMP`; the index may span volumes
+(the split dice fixture exercises that path). What a splitter should add is in the
 Sandbox Edition's format notes (a volume count and the whole set's size, so a
 stray `NAME.G01` from another game is caught); the Pocket Player would need the
 same volume layer under its `SmallPak::readAt`.

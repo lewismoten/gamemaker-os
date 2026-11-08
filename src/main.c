@@ -303,6 +303,7 @@ static void show_list(uint16_t *px) {
 int main(const sbx_startup *start) {
   char line[128], *p;
   generation = start->generation; abi_minor = start->minor;
+  sp_set_abi(start->major, start->minor);
   if (sbx_open("/dev/log", 8, SBX_O_WRONLY, &log_fd)) return 3;
   heartbeat(); /* readiness: the kernel wants it within 10 s */
   p = put(line, "GMOS hello, ABI "); p = num(p, start->major); p = put(p, "."); p = num(p, start->minor);

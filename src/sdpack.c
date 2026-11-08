@@ -5,6 +5,8 @@ static uint8_t list[2048], skip[64 * 1024], table[8 + 40 * GMP_ENTRIES_MAX];
 /* The open pack: its file (at pos of volume), and its header and index read once (table_n bytes). */
 static struct {struct sp_pack pack; struct gmp g; uint64_t fd; int open; unsigned volume; uint32_t pos, table_n;} cur;
 void (*sp_beat)(void);
+static int have_seek; /* opt in only after inspecting the running kernel */
+void sp_set_abi(unsigned major, unsigned minor) {have_seek = major == 1 && minor >= 3;}
 static char upper(char c) {return c >= 'a' && c <= 'z' ? (char)(c - 32) : c;}
 void sp_path(const struct sp_pack *p, unsigned volume, char out[40]) {
   const char *f = p->folder == SP_FOLDER_POCKET ? "/sd/POCKET/" : "/sd/GAMES/";
@@ -61,18 +63,32 @@ unsigned sp_list(uint8_t folder, struct sp_pack *packs, unsigned max, void (*say
   return np;
 }
 static void close_cur(void) {if (cur.open) sbx_close(cur.fd); cur.open = 0;}
+static int open_volume(unsigned v) {
+  char path[40]; close_cur(); sp_path(&cur.pack, v, path);
+  unsigned k = 0; while (path[k]) k++;
+  if (sbx_open(path, k, SBX_O_RDONLY, &cur.fd)) return -1;
+  cur.open = 1; cur.volume = v; cur.pos = 0;
+  return 0;
+}
 static int read_at(void *user, unsigned v, uint32_t off, void *buf, uint32_t n) {
   (void)user;
+  if (v >= cur.pack.volumes || v >= GMP_VOLUMES_MAX ||
+      off > cur.pack.size[v] || n > cur.pack.size[v] - off) return -1;
   if (!v && off <= cur.table_n && n <= cur.table_n - off) { /* the index, from memory */
     for (uint32_t i = 0; i < n; i++) ((uint8_t *)buf)[i] = table[off + i];
     return 0;
   }
-  if (!cur.open || cur.volume != v || off < cur.pos) {
-    char path[40]; close_cur(); sp_path(&cur.pack, v, path);
-    unsigned k = 0; while (path[k]) k++;
-    if (sbx_open(path, k, SBX_O_RDONLY, &cur.fd)) return -1;
-    cur.open = 1; cur.volume = v; cur.pos = 0;
+  if (!cur.open || cur.volume != v) {
+    if (open_volume(v)) return -1;
   }
+  if (have_seek && off != cur.pos) {
+    uint64_t position;
+    int32_t status = sbx_seek(cur.fd, off, &position);
+    if (!status) cur.pos = (uint32_t)position;
+    else if (status == -SBX_ENOSYS) have_seek = 0; /* defensive old-kernel fallback */
+    else return -1; /* failed seek leaves the actual and cached cursor unchanged */
+  }
+  if (off < cur.pos && open_volume(v)) return -1; /* ABI <= 1.2: rewind by reopening */
   uint64_t got;
   while (cur.pos < off) { /* forward to off */
     uint32_t take = off - cur.pos < sizeof skip ? off - cur.pos : (uint32_t)sizeof skip;
