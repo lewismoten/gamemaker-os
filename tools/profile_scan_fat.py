@@ -68,6 +68,9 @@ if 'asset_readdir_long' not in (kernel/'include/assets.h').read_text():
 struct asset_long_dirent {char name[256];struct asset_dirent short_entry;};
 static int asset_readdir_long(int h,struct asset_long_dirent *d,uint32_t m[3]){int r=asset_readdir_meta(h,&d->short_entry,m);if(r>0)strcpy(d->name,d->short_entry.name);return r;}
 static FILE *disk;''')
+if 'asset_readdir_long_batch' in (kernel/'include/assets.h').read_text():
+ transport=transport.replace('dent_calls++;uint32_t at=0;', 'struct asset_dir_sector sector;sector.lba=~0u;dent_calls++;uint32_t at=0;')
+ transport=transport.replace('int r=asset_readdir_long((int)h,&d,m);', 'int r=meta==2?asset_readdir_long_batch((int)h,&d,m,&sector):asset_readdir_long((int)h,&d,m);')
 source=source[:a]+transport+source[b:]
 source=source.replace('root=argv[1];','root=argv[1];disk=fopen(root,"r+b");if(!disk)return 3;if(asset_mount())return 4;',1)
 source=source.replace('FIELD(opens);','FIELD(fat_reads);FIELD(fat_writes);FIELD(opens);',1)

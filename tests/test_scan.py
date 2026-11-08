@@ -73,6 +73,52 @@ class Scan(unittest.TestCase):
             self.dice(noise)
         self.assertEqual(self.scan()['games'], 0)
 
+    def test_gam_titles_and_extensionless_long_name_fallback(self):
+        import io, zipfile
+        original = bytearray((ROOT/'tests/games/DICE/DICE.GAM').read_bytes())
+        offset, width = (285, 20) if original[:2] == b'GM' else (6, 15)
+        def gam(title):
+            data = bytearray(original)
+            data[offset:offset+width] = title.ljust(width, b'\0')
+            return data
+        def archive(path, payload, member='Metadata.gam', stub=b''):
+            b = io.BytesIO()
+            with zipfile.ZipFile(b, 'w', zipfile.ZIP_DEFLATED) as z:
+                z.writestr(member, payload)
+            path.write_bytes(stub+b.getvalue())
+        for filename, title, expected, stub in (
+            ('Misleading archive.zip', b'Actual GAM Title', 'Actual GAM Title', b''),
+            ('BREAKOUT.ZIP', b'', 'BREAKOUT', b''),
+            ('Breakout The Rescue.zip', b'', 'Breakout The Rescue', b''),
+            ('Another.long.name.ExE', b'', 'Another.long.name', b'MZ'+bytes(1022))):
+            with self.subTest(filename=filename):
+                path = self.card/'GAMES'/filename
+                archive(path, gam(title), stub=stub)
+                cold, warm = self.scan(), self.scan()
+                self.assertEqual(cold['games'], 1)
+                self.assertEqual(cold['list'][0]['title'], expected)
+                self.assertEqual(warm['list'], cold['list'])
+                self.assertEqual(warm['list'][0]['source_path'], '/sd/GAMES/'+filename)
+                path.unlink()
+        for folder_name, title, expected in (
+            ('Collection/Long Raw Folder.game', b'', 'Long Raw Folder'),
+            ('Another long raw folder', b'Real Raw Title', 'Real Raw Title')):
+            folder = self.card/'GAMES'/folder_name
+            folder.mkdir(parents=True)
+            (folder/'Metadata.gam').write_bytes(gam(title))
+            cold, warm = self.scan(), self.scan()
+            self.assertEqual(cold['games'], 1)
+            self.assertEqual(cold['list'][0]['title'], expected)
+            self.assertEqual(warm['list'], cold['list'])
+            shutil.rmtree(folder)
+        path = self.card/'GAMES/Broken.zip'
+        for payload, member in ((b'bad', 'Metadata.gam'), (gam(b''), 'NoGame.txt')):
+            archive(path, payload, member)
+            self.assertEqual(self.scan()['games'], 0)
+            self.assertEqual(self.scan()['games'], 0)
+        archive(path, gam(b'Recovered'))
+        self.assertEqual(self.scan()['list'][0]['title'], 'Recovered')
+
     def test_depth_two_game_is_found_beneath_an_existing_game(self):
         self.dice('PARENT')
         nested=self.dice('PARENT/NESTED')
