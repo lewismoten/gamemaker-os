@@ -73,9 +73,10 @@ usb_kernel.py <port> key esc                            # quit
 A packed game is one file: `put DICE.GMP --name POCKET/DICE.GMP` (or
 `GAMES/DICE.GMP`), up to 1 MiB; see [gmp.md](gmp.md).
 
-Folder and file names must be 8.3 and are sent in upper case. Games can also be
-copied onto the card from any computer into a `GAMES` folder; long folder names
-need the kernel's long-name support, which comes later.
+USB `put`/`putgame` retains its 8.3 uppercase installation contract. Desktop
+copying is different: with the paired ABI 1.5 kernel, copy loose game folders,
+stored/deflated ZIPs or plain-ZIP SFX EXEs into `GAMES`, keeping long names.
+See [drag-drop.md](drag-drop.md) for layouts, bounds and qualification status.
 
 ## What it does
 

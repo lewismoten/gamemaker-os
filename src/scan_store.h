@@ -10,12 +10,24 @@ static uint32_t cache_hits, cache_misses;
 struct cache_file {char name[13];uint8_t key[16];};
 static struct cache_file cache_files[3][512]; /* GAMES, POCKET, OS */
 static unsigned cache_counts[3];
-struct cache_source {uint32_t crc,record_bytes,valid;char gam[13],title[GM_TITLE_MAX+1];uint8_t reserved[2];};
-_Static_assert(sizeof(struct cache_source)==48,"cache source wire layout");
+struct cache_source {uint32_t crc,record_bytes,valid;char gam[256],title[GM_TITLE_MAX+1];uint8_t reserved[3];};
+_Static_assert(sizeof(struct cache_source)==292,"cache source wire layout");
 static uint8_t cache_value[sizeof(struct cache_source)+4096];
+static uint8_t cache_wire[34+255+4096];
 static void cache_copy(void *out,const void *in,unsigned n) {uint8_t *a=out;const uint8_t *b=in;while(n--)*a++=*b++;}
 static int cache_equal(const void *a,const void *b,unsigned n) {const uint8_t *p=a,*q=b;while(n--)if(*p++!=*q++)return 0;return 1;}
 static int cache_same(const char *a,const char *b) {while(*a&&*a==*b){a++;b++;}return *a==*b;}
+static int scan_list(uint64_t fd,void *out,uint32_t cap,uint64_t *got) {
+ return abi_minor>=5?sbx_getdents_long_meta(fd,out,cap,got):abi_minor>=4?sbx_getdents_meta(fd,out,cap,got):sbx_getdents(fd,out,cap,got);
+}
+static unsigned scan_head(void) {return abi_minor>=4?24:8;}
+static int scan_dent(const sbx_dirent *e,uint32_t left) {
+ return left>=scan_head()&&e->length>=scan_head()&&e->length<=left&&!(e->length&7u)&&e->name_bytes&&e->name_bytes<=e->length-scan_head();
+}
+static int scan_join(char out[256],const char *base,const char *name) {
+ unsigned a=length(base),b=length(name);if(a+b+1>255)return 0;
+ put(put(out,base),"/");put(out+a+1,name);return 1;
+}
 /* Validate the whole record before accessing name bytes. */
 static int cache_dent(const sbx_dirent_meta *e,uint32_t left) {
  return left>=sizeof *e&&e->length>=sizeof *e&&e->length<=left&&!(e->length&7u)&&
@@ -25,6 +37,7 @@ static unsigned cache_inventory(const char *path,struct cache_file *out) {
  uint64_t fd,got;_Alignas(8) static uint8_t list[2048];unsigned count=0;
  int r=sbx_open(path,length(path),SBX_O_RDONLY,&fd);
  if(r){if(r!=-SBX_ENOENT)cache_enabled=0;return 0;}
+ /* Packs still use canonical volume aliases; ZIP keys come from scan_tree. */
  while(!(r=sbx_getdents_meta(fd,list,sizeof list,&got))&&got) {
   for(uint32_t at=0;at<got;){
    const sbx_dirent_meta *e=(const sbx_dirent_meta *)(const void *)(list+at);
@@ -64,18 +77,21 @@ static void cache_begin(void) {
 }
 /* Return the same first GAM as find_gam, with exact metadata from that entry.
  * Always enumerate even previously empty folders: parent dates aren't enough. */
-static int cache_find_gam(const char *path,char name[13],uint8_t key[16]) {
+static int cache_find_gam(const char *path,char name[256],uint8_t key[16]) {
  uint64_t fd,got;_Alignas(8) static uint8_t list[512];name[0]=0;
  if(!cache_enabled)return 0;
  int r=sbx_open(path,length(path),SBX_O_RDONLY,&fd);
  if(r){cache_enabled=0;return 0;}
- while(!(r=sbx_getdents_meta(fd,list,sizeof list,&got))&&got){
+ while(!(r=scan_list(fd,list,sizeof list,&got))&&got){
   for(uint32_t at=0;at<got;){
    const sbx_dirent_meta *e=(const sbx_dirent_meta *)(const void *)(list+at);
    if(!cache_dent(e,(uint32_t)got-at)){cache_enabled=0;break;}
    const char *s=(const char *)(list+at+sizeof *e);
-   if(e->type==SBX_DT_FILE&&e->name_bytes<=12&&ends_with_gam(s,e->name_bytes)){
-    cache_copy(name,s,e->name_bytes);name[e->name_bytes]=0;cache_copy(key,&e->size,16);sbx_close(fd);return 1;
+   char candidate[256];cache_copy(candidate,s,e->name_bytes);candidate[e->name_bytes]=0;
+   if(collect_children)scan_collect(path,(const sbx_dirent *)(const void *)e,candidate,&e->size);
+   if(!name[0]&&e->type==SBX_DT_FILE&&!gz_noise(candidate)&&ends_with_gam(s,e->name_bytes)){
+    cache_copy(name,s,e->name_bytes);name[e->name_bytes]=0;cache_copy(key,&e->size,16);
+    if(!collect_children){sbx_close(fd);return 1;}
    }
    at+=e->length;
   }
@@ -97,18 +113,27 @@ static int cache_pack_key(const struct sp_pack *p,uint8_t key[256]) {
 }
 static int cache_source_get(const char *path,const void *key,unsigned kn,struct cache_source *s) {
  uint32_t n=0;const uint8_t *p=cache_enabled?gc_get(&scan_cache,path,key,kn,&n):0;
- if(p&&n>=sizeof *s){
-  cache_copy(s,p,sizeof *s);
-  if(s->gam[12]==0&&s->title[GM_TITLE_MAX]==0&&s->valid<=1&&!s->reserved[0]&&!s->reserved[1]&&s->record_bytes<=4096&&n==sizeof *s+s->record_bytes){
-   cache_copy(cache_value,p,n);cache_hits++;return 1;
+ if(p&&n>=34){
+  *s=(struct cache_source){0};cache_copy(s,p,12);unsigned gn=p[12];
+  cache_copy(s->title,p+13,GM_TITLE_MAX+1);
+  if(s->title[GM_TITLE_MAX]==0&&s->valid<=1&&s->record_bytes<=4096&&n==34+gn+s->record_bytes){
+   cache_copy(s->gam,p+34,gn);
+   if(length(s->gam)==gn){
+    cache_copy(cache_value,s,sizeof *s);cache_copy(cache_value+sizeof *s,p+34+gn,s->record_bytes);cache_hits++;return 1;
+   }
   }
  }
  cache_misses++;return 0;
 }
 static void cache_source_put(const char *path,const void *key,unsigned kn,const struct cache_source *s,const void *record) {
  if(!cache_enabled||!kn)return;
- cache_copy(cache_value,s,sizeof *s);if(s->record_bytes)cache_copy(cache_value+sizeof *s,record,s->record_bytes);
- gc_add(&scan_cache,path,key,kn,cache_value,sizeof *s+s->record_bytes);
+ unsigned gn=length(s->gam);if(gn>255)return;
+ /* Compact wire value: crc/record length/valid, u8 GAM length, title[21],
+  * GAM bytes, optional library record. Long-name capacity costs no warm I/O. */
+ if(s->record_bytes)cache_copy(cache_wire+34+gn,record,s->record_bytes);
+ cache_copy(cache_wire,s,12);cache_wire[12]=(uint8_t)gn;
+ cache_copy(cache_wire+13,s->title,GM_TITLE_MAX+1);cache_copy(cache_wire+34,s->gam,gn);
+ gc_add(&scan_cache,path,key,kn,cache_wire,34+gn+s->record_bytes);
 }
 static void cache_end(void) {
  if(!cache_enabled)return;

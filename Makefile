@@ -7,6 +7,8 @@ CC := $(TOOLCHAIN)gcc
 CXX := $(TOOLCHAIN)g++
 HOSTCC ?= cc
 HOSTCXX ?= c++
+HOST_SYSTEM := $(shell uname -s)
+HOSTCXXLIB ?= $(if $(filter Darwin,$(HOST_SYSTEM)),-lc++,-lstdc++)
 PYTHON ?= python3
 ARCH := -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -Os -ffreestanding -fno-builtin -nostdlib -Wall -Wextra -Werror
 # src/board: headers the board build has no C library for (setjmp.h, for puff).
@@ -15,9 +17,9 @@ PFLAGS := $(ARCH) -DGMOS_SCAN_VERBOSE=$(SCAN_VERBOSE) -std=c11 -Isdk/include -Is
 # The core is header-only C++ (no exceptions, RTTI or static constructors).
 PXXFLAGS := $(ARCH) -std=c++17 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -Isrc -Ithird_party/gmcore
 LFLAGS := -nostdlib -Tsdk/lib/sandbox.ld -Wl,-z,noexecstack -Wl,--build-id=none -Wl,-z,max-page-size=4096
-CORE := third_party/puff/puff.c src/gam.c src/menu.c src/library.c src/scan_cache.c src/thumb.c src/view.c src/font_data.c src/gif.c src/fli.c src/text.c src/font8_data.c src/session.c src/sound.c
+CORE := third_party/puff/puff.c src/asset_scratch.c src/zip.c src/gam.c src/menu.c src/library.c src/scan_cache.c src/thumb.c src/view.c src/font_data.c src/gif.c src/fli.c src/text.c src/font8_data.c src/session.c src/sound.c
 PLAYCORE := src/game.cpp
-GMPCORE := src/gmp.cpp third_party/gmcore/gmsmall.h third_party/puff/puff.h
+GMPCORE := src/gmp.cpp src/asset_scratch.h third_party/gmcore/gmsmall.h third_party/puff/puff.h
 GMCORE := third_party/gmcore/gmcore.h third_party/gmcore/gmmon.h
 SDK := sdk/lib/crt0.S sdk/lib/mem.c src/libc.c
 .PHONY: all host test test-asan clean js
@@ -30,8 +32,8 @@ build/game.o: $(PLAYCORE) src/game.h $(GMCORE) Makefile | build
 	$(CXX) $(PXXFLAGS) -c $(PLAYCORE) -o $@
 build/gmp.o: $(GMPCORE) src/gmp.h Makefile | build
 	$(CXX) $(PXXFLAGS) -Ithird_party/puff -c src/gmp.cpp -o $@
-build/GMOS.ELF: src/main.c src/sdpack.c build/game.o build/gmp.o $(CORE) $(wildcard src/*.h) $(SDK) sdk/lib/sandbox.ld $(wildcard sdk/include/sandbox/*.h) Makefile | build
-	$(CC) $(PFLAGS) $(LFLAGS) $(SDK) src/main.c src/sdpack.c $(CORE) build/game.o build/gmp.o -lgcc -o $@
+build/GMOS.ELF: src/main.c src/sdpack.c src/sdzip.c build/game.o build/gmp.o $(CORE) $(wildcard src/*.h) $(SDK) sdk/lib/sandbox.ld $(wildcard sdk/include/sandbox/*.h) Makefile | build
+	$(CC) $(PFLAGS) $(LFLAGS) $(SDK) src/main.c src/sdpack.c src/sdzip.c $(CORE) build/game.o build/gmp.o -lgcc -o $@
 # The pure parts (title reader, list, drawing, game, session) as a host library
 # for tests/, and gmplay, which prints the Pocket Player host test's state lines.
 HOSTDIR ?= build/host
@@ -42,14 +44,15 @@ $(HOSTDIR):
 $(HOSTDIR)/libgmos.so: $(CORE) $(PLAYCORE) $(GMCORE) $(GMPCORE) $(wildcard src/*.h) tests/host/hostio.c tests/host/hostio.h Makefile | $(HOSTDIR)
 	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -fPIC -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore -c $(PLAYCORE) -o $(HOSTDIR)/game.o
 	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -fPIC -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore -Ithird_party/puff -c src/gmp.cpp -o $(HOSTDIR)/gmp.o
-	$(HOSTCC) -shared -fPIC $(HOSTFLAGS) -std=c11 -Wall -Wextra -Werror -Isrc -Ithird_party/puff $(CORE) tests/host/hostio.c $(HOSTDIR)/game.o $(HOSTDIR)/gmp.o -lc++ -o $@
+	$(HOSTCC) -shared -fPIC $(HOSTFLAGS) -std=c11 -Wall -Wextra -Werror -Isrc -Ithird_party/puff $(CORE) tests/host/hostio.c $(HOSTDIR)/game.o $(HOSTDIR)/gmp.o $(HOSTCXXLIB) -o $@
 # Board pack reader with a host transport shim; gmp.o is built by libgmos above.
 $(HOSTDIR)/libsdpack.so: $(HOSTDIR)/libgmos.so src/sdpack.c tests/host/sdpack.c tests/host/sdpack/sandbox/syscall.h $(wildcard sdk/include/sandbox/*.h) Makefile
-	$(HOSTCC) -shared -fPIC $(HOSTFLAGS) -std=c11 -Wall -Wextra -Werror -Itests/host/sdpack -Isdk/include -Isrc -Ithird_party/puff src/sdpack.c tests/host/sdpack.c third_party/puff/puff.c $(HOSTDIR)/gmp.o -lc++ -o $@
+	$(HOSTCC) -shared -fPIC $(HOSTFLAGS) -std=c11 -Wall -Wextra -Werror -Itests/host/sdpack -Isdk/include -Isrc -Ithird_party/puff src/asset_scratch.c src/sdpack.c tests/host/sdpack.c third_party/puff/puff.c $(HOSTDIR)/gmp.o $(HOSTCXXLIB) -o $@
 $(HOSTDIR)/gmplay: tests/host/gmplay.cpp tests/host/hostio.h $(PLAYCORE) $(GMCORE) $(GMPCORE) src/game.h Makefile | $(HOSTDIR)
 	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore -Ithird_party/puff -c src/gmp.cpp -o $(HOSTDIR)/gmplay_gmp.o
 	$(HOSTCC) $(HOSTFLAGS) -std=c11 -Wall -Wextra -Werror -c third_party/puff/puff.c -o $(HOSTDIR)/gmplay_puff.o
-	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore -Ithird_party/puff $(PLAYCORE) tests/host/gmplay.cpp $(HOSTDIR)/gmplay_gmp.o $(HOSTDIR)/gmplay_puff.o -o $@
+	$(HOSTCC) $(HOSTFLAGS) -Isrc -c src/asset_scratch.c -o $(HOSTDIR)/gmplay_scratch.o
+	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore -Ithird_party/puff $(PLAYCORE) tests/host/gmplay.cpp $(HOSTDIR)/gmplay_gmp.o $(HOSTDIR)/gmplay_puff.o $(HOSTDIR)/gmplay_scratch.o -o $@
 test: host
 	GMOS_HOST=$(HOSTDIR) $(PYTHON) -m unittest discover -s tests -v
 # The host suite again with AddressSanitizer and UndefinedBehaviorSanitizer in
@@ -60,12 +63,13 @@ test: host
 FUZZ_ROUNDS ?= 300
 FUZZ_GAMES ?=
 ASAN := -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined
-ASANRT = $(shell $(HOSTCC) -print-file-name=libclang_rt.asan_osx_dynamic.dylib)
+ASANRT = $(shell $(HOSTCC) -print-file-name=$(if $(filter Darwin,$(HOST_SYSTEM)),libclang_rt.asan_osx_dynamic.dylib,libasan.so))
+ASAN_PRELOAD = $(if $(filter Darwin,$(HOST_SYSTEM)),DYLD_INSERT_LIBRARIES,LD_PRELOAD)=$(ASANRT)
 ASANPY = $(shell tools/asan_python.sh $(PYTHON))
 test-asan:
 	$(MAKE) HOSTDIR=build/asan HOSTFLAGS="$(ASAN)" host build/asan/fuzz
 	ASAN_OPTIONS=detect_leaks=0:abort_on_error=0:halt_on_error=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 build/asan/fuzz tests/games $(FUZZ_ROUNDS) $(FUZZ_GAMES)
-	DYLD_INSERT_LIBRARIES=$(ASANRT) ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+	$(ASAN_PRELOAD) ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
 	  GMOS_HOST=build/asan $(ASANPY) -m unittest discover -s tests
 $(HOSTDIR)/fuzz: tests/host/fuzz.c tests/host/hostio.h $(HOSTDIR)/libgmos.so | $(HOSTDIR)
 	$(HOSTCC) $(HOSTFLAGS) -std=c11 -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore tests/host/fuzz.c $(HOSTDIR)/libgmos.so -o $@
@@ -101,6 +105,6 @@ $(HOSTDIR)/q_%.o: third_party/quickjs-ng/%.c $(wildcard third_party/quickjs-ng/*
 	$(HOSTCC) $(HOSTFLAGS) -D_GNU_SOURCE -DNDEBUG -w -c $< -o $@
 $(HOSTDIR)/jsrun: tests/host/jsrun.c $(JSC) $(HOSTDIR)/js_prelude.c $(HOSTDIR)/js_picker.c $(QJS:%=$(HOSTDIR)/q_%.o) $(PLAYCORE) $(GMCORE) $(wildcard src/js/*.h) $(wildcard src/*.h) Makefile | $(HOSTDIR)
 	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore -c $(PLAYCORE) -o $(HOSTDIR)/js_game.o
-	$(HOSTCC) $(HOSTFLAGS) -std=gnu11 -Wall -Wextra -Werror -Isrc -Ithird_party/quickjs-ng tests/host/jsrun.c $(JSC) $(HOSTDIR)/js_prelude.c $(HOSTDIR)/js_picker.c $(QJS:%=$(HOSTDIR)/q_%.o) $(HOSTDIR)/js_game.o -lc++ -lm -o $@
+	$(HOSTCC) $(HOSTFLAGS) -std=gnu11 -Wall -Wextra -Werror -Isrc -Ithird_party/quickjs-ng tests/host/jsrun.c $(JSC) $(HOSTDIR)/js_prelude.c $(HOSTDIR)/js_picker.c $(QJS:%=$(HOSTDIR)/q_%.o) $(HOSTDIR)/js_game.o $(HOSTCXXLIB) -lm -o $@
 clean:
 	rm -rf build

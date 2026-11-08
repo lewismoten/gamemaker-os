@@ -2,11 +2,14 @@
  * Pocket Player's bundle index (gmsmall.h) and inflated by puff. */
 #include "gmp.h"
 #include "gmsmall.h"
+#include "asset_scratch.h"
+#define packed ga_packed
+#define whole ga_whole
 extern "C" {
 #include "puff.h"
 }
 namespace {
-uint8_t packed[GMP_PACKED_MAX], whole[GMP_FILE_MAX]; /* a stored entry; a file read only in part */
+
 bool pak_read(void *user, uint32_t off, void *buf, uint32_t n) {return gmp_read_at((const struct gmp *)user, off, buf, n) == 0;}
 gm::SmallPak pak_of(const struct gmp *g) {
   gm::SmallPak p; p.user = (void *)g; p.readAt = pak_read; p.size = g->total; p.count = g->entries; return p;

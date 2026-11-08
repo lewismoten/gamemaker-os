@@ -47,21 +47,24 @@ int32_t sbx_seek(uint64_t fd, int64_t offset, uint64_t *position) {
   if (fseek(handles[fd].file, (long)offset, SEEK_SET)) return -SBX_EIO;
   *position = (uint64_t)offset; return 0;
 }
-int32_t sbx_getdents(uint64_t fd, void *out, uint32_t n, uint64_t *got) {
+static int32_t host_dents(uint64_t fd, void *out, uint32_t n, uint64_t *got,unsigned head) {
   if (fd >= 32 || !handles[fd].dir) return -SBX_EBADF;
   struct dirent *d; *got = 0;
   while ((d = readdir(handles[fd].dir))) {
-    size_t len = strlen(d->d_name); unsigned bytes = (unsigned)(8 + len + 7) & ~7u;
+    size_t len = strlen(d->d_name); unsigned bytes = (unsigned)(head + len + 7) & ~7u;
     if (bytes > n - *got) return -SBX_EINVAL;
     char path[1500]; struct stat st;
     snprintf(path, sizeof path, "%s/%s", handles[fd].path, d->d_name);
     if (stat(path, &st)) return -SBX_EIO;
     sbx_dirent e = {(uint16_t)bytes, S_ISDIR(st.st_mode) ? SBX_DT_DIR : SBX_DT_FILE, (uint8_t)len, (uint32_t)st.st_size};
-    memcpy((char *)out + *got, &e, sizeof e); memcpy((char *)out + *got + 8, d->d_name, len);
-    memset((char *)out + *got + 8 + len, 0, bytes - 8 - len); *got += bytes;
+    memset((char *)out+*got,0,bytes);
+    memcpy((char *)out + *got, &e, sizeof e); memcpy((char *)out + *got + head, d->d_name, len);
+    *got += bytes;
   }
   return 0;
 }
+int32_t sbx_getdents(uint64_t fd,void *out,uint32_t n,uint64_t *got){return host_dents(fd,out,n,got,8);}
+int32_t sbx_getdents_long_meta(uint64_t fd,void *out,uint32_t n,uint64_t *got){return host_dents(fd,out,n,got,24);}
 void test_sp_setup(const char *path, unsigned major, unsigned minor) {
   /* sp_open closes its own handle; keep it alive until then. */
   snprintf(root, sizeof root, "%s", path); seek_error = 0; short_read = 0;

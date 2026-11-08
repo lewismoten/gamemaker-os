@@ -31,7 +31,7 @@ def run(kernel):
                         '-I'+str(ROOT/'third_party/puff'), '-c', str(ROOT/'src/gmp.cpp'), '-o', str(gmp)], check=True)
         subprocess.run(['cc', '-shared', '-fPIC', '-std=c11', '-Wall', '-Wextra', '-Werror',
                         '-I'+str(ROOT/'tests/host/sdpack'), '-I'+str(ROOT/'sdk/include'), '-I'+str(ROOT/'src'),
-                        str(ROOT/'src/sdpack.c'), str(ROOT/'tests/host/sdpack_kernel.c'),
+                        str(ROOT/'src/sdpack.c'), str(ROOT/'src/asset_scratch.c'), str(ROOT/'tests/host/sdpack_kernel.c'),
                         str(puff), str(gmp), '-lc++' if sys.platform == 'darwin' else '-lstdc++', '-o', str(bridge)], check=True)
         c = C.CDLL(str(bridge)); k = m1.lib(work)
         fixture = m1.CallsBase(); fixture.c = k
