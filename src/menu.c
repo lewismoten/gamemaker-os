@@ -15,7 +15,18 @@ bool gm_dir_ok(const char *name, unsigned n) {
 bool gm_add(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc) {
   if (m->count >= GM_MAX_GAMES) return false;
   struct gm_game *g = &m->games[m->count++];
-  copy(g->dir, dir, 8); copy(g->gam, gam, 12); copy(g->title, title[0] ? title : dir, GM_LIB_TITLE);
+  copy(g->dir, dir, 8); copy(g->gam, gam, 12);
+  if (title[0]) copy(g->title, title, GM_LIB_TITLE);
+  else {
+    /* Display only: keep launch paths and legacy identity fields untouched.
+     * Strip the last extension BEFORE clipping a long basename. */
+    const char *base=dir, *end=0;
+    for (const char *p=dir; *p; p++) if (*p=='/') base=p+1;
+    for (const char *p=base; *p; p++) if (*p=='.' && p!=base) end=p;
+    unsigned n=0;
+    while (base[n] && base+n!=end && n<GM_LIB_TITLE) {g->title[n]=base[n];n++;}
+    g->title[n]=0;
+  }
   g->company[0] = g->blurb[0] = 0; g->year = g->course = 0; g->crc = crc; g->cat = GM_CAT_OTHER; g->pic = 0;
   return true;
 }

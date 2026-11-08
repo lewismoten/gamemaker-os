@@ -127,7 +127,7 @@ static void add_game(const char *dir, unsigned dn) {
     if (menu.games[i].crc == crc) { /* listed already: packed (the pack is played; a card changing over holds both) or another folder */
       char line[80], *q = put(line, "GMOS skipped folder "); q = put(q, d); q = put(q, where[i].packed ? ": packed as " : ": the same game as "); put(q, menu.games[i].dir); scan_say(line); return;
     }
-  if(gm_add(&menu, d, name, source.title, crc)){put(where[menu.count-1].path,folder);put(where[menu.count-1].gam,name);}
+  if(gm_add(&menu, dir, name, source.title, crc)){put(where[menu.count-1].path,folder);put(where[menu.count-1].gam,name);}
 }
 /* /sd/GAMES/LIBRARY.JSL (or /sd/OS/LIBRARY.JSL, where the kernel's USB PUTF can
    install it), a line at a time: the titles, categories and blurbs it gives. */
