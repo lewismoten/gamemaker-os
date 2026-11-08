@@ -112,3 +112,24 @@ int voc_render(struct voc_host *v,void *output,size_t frames) {
     }
     return 0;
 }
+static int get(const uint8_t *p) {
+    unsigned u=le16(p);return u>=32768?(int)u-65536:(int)u;
+}
+int pcm_mix(void *dst,const void *a,const void *b,size_t frames) {
+    if(frames>PC_MAX_FRAMES || (frames && (!dst || !a || !b)))return VOC_INVALID;
+    uint8_t *d=dst;const uint8_t *x=a,*y=b;
+    for(size_t i=0;i<frames*2;i++) {
+        int32_t sum=get(x+i*2)+get(y+i*2);
+        if(sum>32767)sum=32767;
+        if(sum< -32768)sum= -32768;
+        uint16_t u=(uint16_t)sum;d[2*i]=(uint8_t)u;d[2*i+1]=(uint8_t)(u>>8);
+    }
+    return 0;
+}
+int voc_speaker_render(struct voc_host *v,struct pcspeaker *p,void *out,size_t n) {
+    uint8_t speaker[PC_MAX_FRAMES*4];
+    int r=voc_render(v,out,n);if(r || !n)return r;
+    /* pc_render cannot fail after the same size/span checks above. */
+    (void)pc_render(p,speaker,n);
+    return pcm_mix(out,out,speaker,n);
+}

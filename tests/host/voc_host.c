@@ -110,9 +110,40 @@ static void limits(void) {
  for(unsigned i=0;i<sizeof(out);i++)assert(out[i]==0x5a);
  puts("pending/output atomicity, prepare budget,10000 visits,120sec and bounded-memory rejection: PASS");
 }
+static void mixer_cases(void) {
+ uint8_t a[8]={255,127,0,128,255,127,0,128};
+ uint8_t b[8]={1,0,255,255,255,127,0,128},out[8];
+ assert(pcm_mix(out,a,b,2)==0);
+ assert(s16(out)==32767 && s16(out+2)==-32768);
+ assert(s16(out+4)==32767 && s16(out+6)==-32768);
+ assert(pcm_mix(a,a,b,2)==0 && memcmp(a,out,8)==0);
+ assert(pcm_mix(NULL,NULL,NULL,0)==0);
+ memset(out,0x5a,8);assert(pcm_mix(out,NULL,b,1)==VOC_INVALID);
+ assert(pcm_mix(out,a,b,1921)==VOC_INVALID);
+ for(unsigned i=0;i<8;i++)assert(out[i]==0x5a);
+ uint8_t snd[2160]={0},whole[1920*4],split[1920*4];
+ for(unsigned i=0;i<36;i++){snd[2*i]=184;snd[2*i+1]=1;}
+ struct pcspeaker p,saved;pc_init(&p);assert(pc_start(&p,snd,sizeof(snd),0)==0);
+ assert(ready(tiny,sizeof(tiny))==0);saved=p;
+ assert(voc_speaker_render(&v,&p,whole,1920)==0);
+ assert(s16(whole)==-26214+PC_AMPLITUDE);
+ assert(ready(tiny,sizeof(tiny))==0);p=saved;
+ for(unsigned i=0;i<1920;i+=3)assert(voc_speaker_render(&v,&p,split+4*i,3)==0);
+ assert(memcmp(whole,split,sizeof(whole))==0);
+ voc_stop(&v);p=saved;assert(voc_speaker_render(&v,&p,out,1)==0);
+ assert(s16(out)==PC_AMPLITUDE); /*stopping digital must not stop speaker*/
+ pc_stop(&p);assert(ready(tiny,sizeof(tiny))==0);
+ assert(voc_speaker_render(&v,&p,out,1)==0 && s16(out)==-26214);
+ assert(voc_begin(&v,tiny,sizeof(tiny))==0);saved=p;
+ memset(out,0x5a,sizeof(out));assert(voc_speaker_render(&v,&p,out,1)==VOC_NOT_READY);
+ assert(memcmp(&saved,&p,sizeof(p))==0 && out[0]==0x5a);
+ assert(voc_speaker_render(&v,&p,out,1921)==VOC_INVALID && v.frame==0);
+ assert(voc_speaker_render(&v,&p,NULL,0)==0);
+ puts("saturating stereo mixer, independent voices, split buffers and rejection atomicity: PASS");
+}
 int main(void) {
  uint8_t out[1920*4];
- headers();malformed();graph_cases();limits();
+ headers();malformed();graph_cases();limits();mixer_cases();
  assert(voc_begin(&v,tiny,sizeof(tiny))==0);
  while (voc_prepare(&v,1)==VOC_PENDING) {}
  assert(v.status==0 && v.rate==8000 && v.samples==4 && v.frames==24);
