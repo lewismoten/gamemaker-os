@@ -30,8 +30,10 @@ is host-qualified; its new FAT-card/Pi workflow still needs hardware acceptance.
 
 `GMOS.ELF` is built only against the sandbox-kernel SDK, vendored in `sdk/` at the kernel commit named in `sdk/PINNED`, and the shared play core in `third_party/gmcore` (commit in its `PINNED`). `make` builds it with the Arm GNU toolchain; `make test` runs the host tests and renders the list and a game to PNG files in `build/host/`. See [docs/build.md](docs/build.md) for installing it on a card and driving it over USB.
 
-The [isolated PC-speaker PCM producer](docs/pcspeaker-host.md) is host qualification
-code only. It remains unlinked; board sound and the remote SND protocol are unchanged.
+The [isolated PC-speaker PCM producer](docs/pcspeaker-host.md) and
+[bounded PCM8 VOC decoder/resampler and mixer](docs/voc-host.md) are host
+qualification code only. They remain unlinked; board sound and remote SND are
+unchanged.
 
 ## Plan
 
