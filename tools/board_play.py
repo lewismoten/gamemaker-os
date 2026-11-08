@@ -22,6 +22,13 @@ The kernel checkout gives scripts/usb_kernel.py (its serial helpers)."""
 import pathlib, re, subprocess, sys, time
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
+def listed_games(lines):
+    """Folder names in list order, from raw or timestamped USB log lines."""
+    pattern = re.compile(r'^\s*(?:\d+\.\d+\s+)?(?:LOG OS: )?GMOS game '
+                         r'([^\s:\[\]]+)(?: \[[^\s:\[\]]+\])?:[^\r\n]*$')
+    return [m.group(1) for line in lines if (m := pattern.fullmatch(line.rstrip('\r\n')))]
+
+
 def drive(kernel, port_path, log_path, game, folder, put, put_elf, pages):
     sys.path.insert(0, str(pathlib.Path(kernel) / 'scripts'))
     import usb_kernel as u
@@ -52,7 +59,7 @@ def drive(kernel, port_path, log_path, game, folder, put, put_elf, pages):
     def press(code, wait=0.4): key(code, 'down', 0.05); key(code, 'up', wait)
     try:
         note(u.handshake(port)); cmd('RUN GMOS.ELF'); pump(3)
-        listed = [re.search(r'GMOS game (\S+):', l).group(1) for l in lines if 'GMOS game ' in l]
+        listed = listed_games(lines)
         if game not in listed: raise SystemExit(f'{game} is not in the list: {listed}')
         for _ in range(listed.index(game)): press(108, 0.15)   # down to it
         press(28, 0.5)                                           # Enter
