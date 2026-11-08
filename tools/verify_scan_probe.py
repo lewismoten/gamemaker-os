@@ -13,7 +13,10 @@ def run(label,setup):
 def dice(c):shutil.copytree(r/'tests/games/DICE',c/'GAMES/DICE')
 def indexed(c):dice(c);shutil.copyfile(r/'tests/data/library.jsl',c/'GAMES/LIBRARY.JSL')
 a=run('missing-index',dice);assert a['games']==1 and a['crc_calls']==1
-b=run('valid-index',indexed);assert b['games']==1 and b['list']==a['list'] and b['crc_calls']==1
+b=run('valid-index',indexed)
+def identities(d):return [{k:g[k] for k in ('dir','gam','crc','packed','storage')} for g in d['list']]
+assert b['games']==1 and identities(b)==identities(a) and b['crc_calls']==1
+assert b['list'][0]['title']=='Roll the Dice'
 
 def corrupt(c):dice(c);(c/'GAMES/LIBRARY.JSL').write_text('{bad JSON\n')
 x=run('corrupt-index',corrupt);assert x['list']==a['list']

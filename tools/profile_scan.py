@@ -3,7 +3,7 @@
 Usage: python3 profile_scan.py REPO CARD OUTDIR [REPEATS]
 CARD contains GAMES and optionally POCKET, OS. Native readdir order, not FAT.
 """
-import sys,pathlib,subprocess,hashlib,json,platform
+import sys,pathlib,subprocess,hashlib,json,platform,os,shlex
 repo,card,out=map(lambda s:pathlib.Path(s).resolve(),sys.argv[1:4]);out.mkdir(parents=True,exist_ok=True)
 text=(repo/'src/main.c').read_text(); scan=text.split('static void open_input(void)')[0]
 assert scan.endswith('}\n') and 'static void find_games(void)' in scan
@@ -77,18 +77,26 @@ int32_t sbx_log(uint64_t h,const char*b,uint32_t n){(void)h;(void)b;logs++;log_b
 int32_t sbx_health(uint32_t g,uint64_t s){(void)g;(void)s;healths++;return 0;}
 static void jstr(const char*s){putchar('"');for(;*s;s++){unsigned char c=*s;if(c=='"'||c=='\\')printf("\\%c",c);else if(c<32||c>=127)printf("\\u%04x",c);else putchar(c);}putchar('"');}
 int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;i++)handles[i].f=-1;sp_set_abi(1,3);uint64_t t=ns();find_games();t=ns()-t;
- printf("{\"elapsed_ns\":%llu,\"games\":%u",(unsigned long long)t,menu.count);
+ printf("{\"elapsed_ns\":%llu,\"games\":%u,\"menu_crc\":%u,\"where_crc\":%u",(unsigned long long)t,menu.count,__real_gm_crc32(0,(const uint8_t*)&menu,sizeof menu),__real_gm_crc32(0,(const uint8_t*)where,sizeof where));
  #define FIELD(x) printf(",\"" #x "\":%llu",(unsigned long long)x)
  FIELD(opens);FIELD(dir_opens);FIELD(file_opens);FIELD(read_calls);FIELD(read_bytes);FIELD(dent_calls);FIELD(dent_entries);FIELD(logs);FIELD(log_bytes);FIELD(healths);FIELD(seeks);FIELD(io_ns);FIELD(crc_ns);FIELD(crc_calls);FIELD(crc_bytes);FIELD(lib_ns);FIELD(lib_calls);
  printf(",\"inclusive_phase_ns\":[");for(unsigned i=0;i<5;i++)printf("%s%llu",i?",":"",(unsigned long long)phase_ns[i]);printf("],\"phase_calls\":[");for(unsigned i=0;i<5;i++)printf("%s%llu",i?",":"",(unsigned long long)phase_calls[i]);printf("],\"list\":[");
- for(unsigned j=0;j<menu.count;j++){unsigned i=menu.order[j];printf("%s{\"dir\":",j?",":"");jstr(menu.games[i].dir);printf(",\"gam\":");jstr(menu.games[i].gam);printf(",\"crc\":%u,\"packed\":%u}",menu.games[i].crc,where[i].packed);}puts("]}");for(int i=1;i<64;i++)if(handles[i].d||handles[i].f>=0)sbx_close(i);return 0;}
+ for(unsigned j=0;j<menu.count;j++){
+  unsigned i=menu.order[j];const struct gm_game*g=&menu.games[i];
+  printf("%s{\"dir\":",j?",":"");jstr(g->dir);printf(",\"gam\":");jstr(g->gam);
+  printf(",\"title\":");jstr(g->title);printf(",\"company\":");jstr(g->company);printf(",\"blurb\":");jstr(g->blurb);
+  printf(",\"storage\":%u,\"crc\":%u,\"cat\":%u,\"course\":%d,\"year\":%d,\"packed\":%u",i,g->crc,g->cat,g->course,g->year,where[i].packed);
+  if(where[i].packed){const struct sp_pack*p=&where[i].pack;printf(",\"pack_folder\":%u,\"pack_base\":",p->folder);jstr(p->base);printf(",\"volume_sizes\":[");for(unsigned v=0;v<p->volumes;v++)printf("%s%u",v?",":"",p->size[v]);printf("]");}
+  printf("}");
+ }puts("]}");for(int i=1;i<64;i++)if(handles[i].d||handles[i].f>=0)sbx_close(i);return 0;}
 '''
 (out/'probe.c').write_text(source)
-flags=['-O2','-ffunction-sections','-fdata-sections','-I'+str(out),'-I'+str(repo/'sdk/include'),'-I'+str(repo/'src'),'-I'+str(repo/'third_party/gmcore'),'-I'+str(repo/'third_party/puff')]
+extra=shlex.split(os.environ.get('GMOS_SCAN_CFLAGS',''))
+flags=['-O2',*extra,'-ffunction-sections','-fdata-sections','-I'+str(out),'-I'+str(repo/'sdk/include'),'-I'+str(repo/'src'),'-I'+str(repo/'third_party/gmcore'),'-I'+str(repo/'third_party/puff')]
 commands=[]
 for name,src,compiler in [('probe','probe.c','cc'),('sdpack',str(repo/'src/sdpack.c'),'cc'),('menu',str(repo/'src/menu.c'),'cc'),('library',str(repo/'src/library.c'),'cc'),('gam',str(repo/'src/gam.c'),'cc'),('gmp',str(repo/'src/gmp.cpp'),'c++'),('puff',str(repo/'third_party/puff/puff.c'),'cc')]:
  cmd=[compiler,*flags,'-c',src,'-o',name+'.o'];commands.append(cmd);subprocess.run(cmd,cwd=out,check=True)
-cmd=['c++','-Wl,--gc-sections','-Wl,--wrap=gm_crc32','-Wl,--wrap=gm_library_line',*[str(out/(x+'.o')) for x in ['probe','sdpack','menu','library','gam','gmp','puff']],'-o',str(out/'scan-probe')];commands.append(cmd);subprocess.run(cmd,check=True)
+cmd=['c++',*extra,'-Wl,--gc-sections','-Wl,--wrap=gm_crc32','-Wl,--wrap=gm_library_line',*[str(out/(x+'.o')) for x in ['probe','sdpack','menu','library','gam','gmp','puff']],'-o',str(out/'scan-probe')];commands.append(cmd);subprocess.run(cmd,check=True)
 runs=[json.loads(subprocess.check_output([str(out/'scan-probe'),str(card)])) for _ in range(int(sys.argv[4]) if len(sys.argv)>4 else 5)]
 result=dict(environment=platform.platform(),method='Native POSIX transport; original scanner prefix with inclusive timing wrappers; no FAT, UART, USB or rendering. Log sink counts only.',repo=str(repo),card=str(card),source_sha256=hashlib.sha256(text.encode()).hexdigest(),phases=['find_gam','add_game','read_index','add_pack','find_packs'],commands=commands,runs=runs)
 (out/'results.json').write_text(json.dumps(result,indent=2));print(json.dumps({k:v for k,v in runs[0].items() if k!='list'},indent=2))

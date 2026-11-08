@@ -10,7 +10,8 @@ HOSTCXX ?= c++
 PYTHON ?= python3
 ARCH := -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -Os -ffreestanding -fno-builtin -nostdlib -Wall -Wextra -Werror
 # src/board: headers the board build has no C library for (setjmp.h, for puff).
-PFLAGS := $(ARCH) -std=c11 -Isdk/include -Isrc -Isrc/board -Ithird_party/puff
+SCAN_VERBOSE ?= 0
+PFLAGS := $(ARCH) -DGMOS_SCAN_VERBOSE=$(SCAN_VERBOSE) -std=c11 -Isdk/include -Isrc -Isrc/board -Ithird_party/puff
 # The core is header-only C++ (no exceptions, RTTI or static constructors).
 PXXFLAGS := $(ARCH) -std=c++17 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -Isrc -Ithird_party/gmcore
 LFLAGS := -nostdlib -Tsdk/lib/sandbox.ld -Wl,-z,noexecstack -Wl,--build-id=none -Wl,-z,max-page-size=4096
