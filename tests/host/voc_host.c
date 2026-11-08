@@ -152,9 +152,42 @@ static void rate_extremes(void) {
  assert(v.rate==3906 && v.frames==24);
  puts("time constants0/255, sub-frame clip minimum and downsampling: PASS");
 }
+static void allocation_and_lifecycle(void) {
+ uint8_t out[1920*4+2],again[1920*4];
+ for(size_t n=0;n<sizeof(tiny);n++) {
+  uint8_t *p=malloc(n?n:1);assert(p);if(n)memcpy(p,tiny,n);
+  assert(ready(p,n)==VOC_INVALID);free(p);
+ }
+ uint8_t b[sizeof(tiny)+1];memcpy(b+1,tiny,sizeof(tiny));
+ assert(voc_begin(&v,b+1,sizeof(tiny))==0);memset(b,0,sizeof(b));
+ while(voc_prepare(&v,1)==VOC_PENDING){}
+ memset(out,0x5a,sizeof(out));assert(voc_render(&v,out+1,1920)==0);
+ assert(out[0]==0x5a && out[sizeof(out)-1]==0x5a && s16(out+1)==-26214);
+ assert(ready(tiny,sizeof(tiny))==0);assert(voc_render(&v,again,1920)==0);
+ assert(memcmp(again,out+1,sizeof(again))==0);
+ assert(voc_begin(&v,NULL,1)==VOC_INVALID);assert(v.frames==0 && v.frame==0);
+ voc_stop(&v);assert(voc_render(&v,again,1920)==0);
+ for(unsigned i=0;i<sizeof(again);i++)assert(again[i]==0);
+ uint8_t *max=malloc(VOC_SOURCE_MAX+1);assert(max);
+ memcpy(max+1,tiny,26);max[27]=1;
+ unsigned len=VOC_SOURCE_MAX-31;
+ max[28]=(uint8_t)len;max[29]=(uint8_t)(len>>8);max[30]=(uint8_t)(len>>16);
+ max[31]=231;max[32]=0;
+ memset(max+33,128,VOC_SOURCE_MAX-33);max[VOC_SOURCE_MAX]=0;
+ assert(ready(max+1,VOC_SOURCE_MAX)==0 && v.samples==VOC_SOURCE_MAX-33);
+ free(max);
+ graph_begin();const uint8_t silence[]={255,255,0},tail[]={239,38,0}; /*9968 samples*/
+ for(unsigned i=0;i<7;i++)block(3,silence,3);
+ block(3,tail,3);assert(graph_ready()==0 && v.frames==120*48000);
+ gn--;const uint8_t one[]={0,0,0};block(3,one,3);assert(graph_ready()==VOC_LIMIT);
+ graph_begin();const uint8_t first[]={131,0,128};block(1,first,3);
+ for(unsigned i=0;i<9998;i++)block(2,first+2,1);
+ assert(graph_ready()==0 && v.visits==10000 && v.count==9999);
+ puts("exact allocations, unaligned copied source/output, stop/retrigger and inclusive bounds: PASS");
+}
 int main(void) {
  uint8_t out[1920*4];
- headers();malformed();graph_cases();limits();mixer_cases();rate_extremes();
+ headers();malformed();graph_cases();limits();mixer_cases();rate_extremes();allocation_and_lifecycle();
  assert(voc_begin(&v,tiny,sizeof(tiny))==0);
  while (voc_prepare(&v,1)==VOC_PENDING) {}
  assert(v.status==0 && v.rate==8000 && v.samples==4 && v.frames==24);
