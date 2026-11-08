@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: MIT; JS.ELF: starts the app named on the second
  * line of /OS/AUTORUN.TXT (a folder under /OS, such as APPS/HELLO; that is
  * the default), runs its MAIN.JS and keeps the loop turning. The first line
- * is the kernel's (JS.ELF). */
+ * is the kernel's (JS.ELF). App exit returns to the built-in picker;
+ * PICKER on line 2 starts there directly. Quitting the picker returns to
+ * the kernel through crt0's existing entry-return path. */
 #include <sandbox/syscall.h>
 #include <stdio.h>
 #include <string.h>
@@ -29,11 +31,11 @@ int main(const sbx_startup *start) {
   snprintf(line, sizeof line, "JS.ELF QuickJS-ng %s, ABI %u.%u, app /OS/%s", "0.18.0", (unsigned)start->major, (unsigned)start->minor, app);
   plat_log(line, (uint32_t)strlen(line));
   char dir[80]; snprintf(dir, sizeof dir, "/sd/OS/%s", app);
-  if (jsrt_start(dir, 3u << 20)) return 5;
+  if (jsapp_start(!strcmp(app, "PICKER") ? 0 : dir, 3u << 20)) return 5;
   snprintf(line, sizeof line, "JS heap high-water after start %u bytes", (unsigned)sys_heap_used());
   plat_log(line, (uint32_t)strlen(line));
   for (;;) {
-    uint64_t wake = jsrt_step();
+    uint64_t wake = jsapp_step();
     if (!wake) break;
     plat_sleep_until(wake);
   }

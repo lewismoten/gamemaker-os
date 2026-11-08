@@ -50,7 +50,10 @@ function render() {
 themeButton.addEventListener('click', () => { state.paper = !state.paper; render(); });
 hintsButton.addEventListener('click', () => { state.hints = !state.hints; render(); });
 resetButton.addEventListener('click', () => { state = { ...defaults }; render(); });
-// Native arrow focus and Enter/Space clicks are enough; no custom key map.
+// Native arrow focus and Enter/Space clicks; Q demonstrates the exit API.
+document.addEventListener('keydown', event => {
+  if (event.code === 'KeyQ' && !event.repeat) sys.exit(0);
+});
 render();
 themeButton.focus();
 console.log('SETTINGS ready');

@@ -43,6 +43,7 @@
     if (!a) return;
     ev.currentTarget = node;
     for (const fn of a.slice()) {
+      if (N.exiting()) break;
       try {
         fn.call(node, ev);
       } catch (e) {
@@ -134,6 +135,7 @@
   };
   N.onTimers = (now) => {
     for (const [id, t] of [...timers]) {
+      if (N.exiting()) break;
       if (t.at > now || !timers.has(id)) continue;
       if (t.every) t.at = Math.max(t.at + t.every, now);
       else timers.delete(id);
@@ -159,6 +161,7 @@
     const due = frames;
     frames = [];
     for (const f of due) {
+      if (N.exiting()) break;
       try {
         f[1](ts);
       } catch (e) {
@@ -187,7 +190,7 @@
   g.console = { log, info: log, warn: log, error: log, debug: log };
   g.performance = { now: N.now };
   g.fs = { readFile: N.readFile, readdir: N.readdir };
-  g.sys = { exit: N.exit, stats: N.stats, memory: N.memory };
+  g.sys = { exit: N.exit, stats: N.stats, memory: N.memory, launch: N.launch };
   // The screen: setMode(width, height, depth 32|16) for the page; a playing
   // <game> uses 320x200 at 8 bpp unless screen.gameLowres(false), or a larger
   // 8 bpp mode with the picture centered: screen.gameLowres(true, 384, 216)

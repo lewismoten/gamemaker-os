@@ -18,6 +18,11 @@
 
 extern const char jsrt_prelude[];
 extern const uint32_t jsrt_prelude_len;
+extern const char jsrt_picker[];
+extern const uint32_t jsrt_picker_len;
+static int in_picker;
+static char launch_dir[64];
+static uint32_t app_heap_limit;
 struct jsrt_stats jsrt_stats;
 static JSRuntime *rt;
 static JSContext *ctx;
@@ -504,7 +509,23 @@ static JSValue js_readdir(JSContext *c, JSValueConst t, int n, JSValueConst *a) 
 static JSValue js_exit(JSContext *c, JSValueConst t, int n, JSValueConst *a) {
   (void)t; int32_t code = 0;
   if (n && JS_ToInt32(c, &code, a[0])) return JS_EXCEPTION;
-  exited = 1; exit_code = code; return JS_UNDEFINED;
+  if (!exited) {exited = 1; exit_code = code;}
+  return JS_UNDEFINED;
+}
+static JSValue js_exiting(JSContext *c, JSValueConst t, int n, JSValueConst *a) {
+  (void)t; (void)n; (void)a; return JS_NewBool(c, exited);
+}
+/* Only the built-in picker can request another app; no kernel exec ABI. */
+static JSValue js_launch(JSContext *c, JSValueConst t, int n, JSValueConst *a) {
+  (void)t; (void)n; char name[9];
+  if (!in_picker) return JS_ThrowTypeError(c, "launch: picker only");
+  if (copy_str(c, a[0], name, sizeof name)) return JS_EXCEPTION;
+  if (!name[0]) return JS_ThrowRangeError(c, "empty app name");
+  for (const char *p = name; *p; p++)
+    if (!((*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '_' || *p == '-'))
+      return JS_ThrowRangeError(c, "not a DOS app folder");
+  if (!exited) {snprintf(launch_dir, sizeof launch_dir, "/sd/OS/APPS/%s", name); exited = 1; exit_code = 0;}
+  return JS_UNDEFINED;
 }
 static JSValue js_stats(JSContext *c, JSValueConst t, int n, JSValueConst *a) {
   (void)t; (void)n; (void)a; JSValue o = JS_NewObject(c);
@@ -562,7 +583,8 @@ static const JSCFunctionListEntry native_fns[] = {
   JS_CFUNC_DEF("focused", 0, js_focused), JS_CFUNC_DEF("now", 0, js_now), JS_CFUNC_DEF("wakeAt", 1, js_wake_at),
   JS_CFUNC_DEF("wantFrame", 0, js_want_frame), JS_CFUNC_DEF("log", 1, js_log), JS_CFUNC_DEF("readFile", 1, js_read_file),
   JS_CFUNC_DEF("readdir", 1, js_readdir), JS_CFUNC_DEF("exit", 1, js_exit), JS_CFUNC_DEF("stats", 0, js_stats),
-  JS_CFUNC_DEF("memory", 0, js_memory),
+  JS_CFUNC_DEF("memory", 0, js_memory), JS_CFUNC_DEF("exiting", 0, js_exiting),
+  JS_CFUNC_DEF("launch", 1, js_launch),
 };
 
 /* Focus changes fire blur and focus. */
@@ -611,7 +633,7 @@ static void key_event(uint16_t code, int32_t value) {
   int go_on = JS_ToBool(ctx, r);
   JS_FreeValue(ctx, r);
   for (int i = 0; i < 4; i++) JS_FreeValue(ctx, args[i]);
-  if (!value || !go_on) return; /* keyup, or preventDefault() */
+  if (exited || !value || !go_on) return; /* keyup, exit, or preventDefault() */
   int dir = code == 103 ? 0 : code == 108 ? 1 : code == 105 ? 2 : code == 106 ? 3 : -1; /* the default actions */
   struct dom_el *was = dom_focused;
   if (dir >= 0 && dom_focus_move(dir)) {fire(was, "blur"); fire(dom_focused, "focus");}
@@ -636,6 +658,14 @@ static JSClassID new_class(JSClassID *id, const char *name, JSClassFinalizer *fi
   return *id;
 }
 int jsrt_start(const char *dir, uint32_t heap_limit) {
+  native = JS_UNDEFINED;
+  exited = exit_code = want_frame = 0;
+  wake_at_ms = 1e300;
+  in_picker = !dir; launch_dir[0] = 0;
+  game_el = 0; game_started = lowres_on = 0; game_dir[0] = 0;
+  lowres = 1; game_w = GP_W; game_h = GP_H; font_scale = 1;
+  memset(&session, 0, sizeof session);
+  memset(&jsrt_stats, 0, sizeof jsrt_stats);
   uint64_t t = plat_clock_ns();
   t0_ns = t;
   rt = JS_NewRuntime();
@@ -648,6 +678,7 @@ int jsrt_start(const char *dir, uint32_t heap_limit) {
   new_class(&el_class, "Element", el_finalizer, el_mark, el_proto, (int)(sizeof el_proto / sizeof el_proto[0]));
   new_class(&style_class, "CSSStyleDeclaration", style_finalizer, style_mark, style_proto, (int)NSTYLE);
   new_class(&ctx2d_class, "CanvasRenderingContext2D", style_finalizer, ctx2d_mark, ctx2d_proto, (int)(sizeof ctx2d_proto / sizeof ctx2d_proto[0]));
+  if (set_mode(PLAT_W, PLAT_H, 32)) {say("JS cannot restore page mode"); return -1;}
   dom_init(load_picture, draw_game);
   native = JS_NewObject(ctx);
   JS_SetPropertyFunctionList(ctx, native, native_fns, (int)(sizeof native_fns / sizeof native_fns[0]));
@@ -669,6 +700,11 @@ int jsrt_start(const char *dir, uint32_t heap_limit) {
   JS_FreeValue(ctx, g);
   {JSMemoryUsage u0; JS_ComputeMemoryUsage(rt, &u0);
    sayf("JS runtime ready in %u us (engine, browser-like globals), heap %u bytes", (unsigned)((plat_clock_ns() - t) / 1000), (unsigned)u0.malloc_size);}
+  if (!dir) {
+    if (jsrt_eval(jsrt_picker, jsrt_picker_len, "picker.js")) return -1;
+    next_frame_ns = plat_clock_ns();
+    return 0;
+  }
   char path[96]; snprintf(path, sizeof path, "%s/MAIN.JS", dir);
   char *src = (char *)io; /* JS_Eval copies what it keeps */
   int32_t n = plat_read(path, io, sizeof io - 1);
@@ -681,18 +717,25 @@ int jsrt_start(const char *dir, uint32_t heap_limit) {
   JSMemoryUsage u; JS_ComputeMemoryUsage(rt, &u);
   sayf("JS started %s in %u us, heap %u bytes in %u blocks%s", path, (unsigned)(jsrt_stats.start_ns / 1000), (unsigned)u.malloc_size, (unsigned)u.malloc_count, bad ? " (it threw)" : "");
   next_frame_ns = plat_clock_ns();
-  return 0;
+  return bad ? -1 : 0;
 }
 uint64_t jsrt_step(void) {
   uint16_t type, code; int32_t value;
   plat_heartbeat();
-  while (plat_event(&type, &code, &value)) if (type == 1) key_event(code, value);
+  if (exited) return 0;
+  while (!exited && plat_event(&type, &code, &value)) {
+    /* F10 is owned by the host, before game routing or preventDefault(). */
+    if (type == 1 && code == 68) {if (value == 1) {exited = 1; exit_code = 0;}}
+    else if (type == 1) key_event(code, value);
+  }
+  if (exited) return 0;
   uint64_t now = plat_clock_ns();
   if (now_ms() >= wake_at_ms) {
     wake_at_ms = 1e300;
     JSValue a = JS_NewFloat64(ctx, now_ms());
     JS_FreeValue(ctx, call_native("onTimers", 1, &a));
   }
+  if (exited) return 0;
   if (want_frame && now >= next_frame_ns) {
     want_frame = 0;
     next_frame_ns += FRAME_NS;
@@ -701,6 +744,7 @@ uint64_t jsrt_step(void) {
     JS_FreeValue(ctx, call_native("onFrame", 1, &a));
     jsrt_stats.frames++;
   }
+  if (exited) return 0;
   if (game_started) {
     uint64_t t = plat_clock_ns(), due = gs_wake(&session, t);
     if (session.phase == GS_PLAY && t > due) {uint32_t l = (uint32_t)((t - due) / 1000u); if (l > jsrt_stats.game_late_max_us) jsrt_stats.game_late_max_us = l;}
@@ -722,7 +766,8 @@ uint64_t jsrt_step(void) {
     } else if (r & GS_DRAW && game_el) {struct dom_rect all = {0, 0, PLAT_W, PLAT_H}; dom_damage(&all);}
     if (r & GS_EXIT) stop_game();
   }
-  for (JSContext *c; JS_ExecutePendingJob(rt, &c) > 0;) {}
+  for (JSContext *c; !exited && JS_ExecutePendingJob(rt, &c) > 0;) {}
+  if (exited) return 0;
   uint64_t t = plat_clock_ns();
   struct dom_rect rects[DOM_MAX_DIRTY];
   uint32_t n = lowres_on ? 0 : dom_render(plat_fb(), rects);
@@ -738,4 +783,35 @@ uint64_t jsrt_step(void) {
   if (wake_at_ms < 1e300) {uint64_t w = t0_ns + (uint64_t)(wake_at_ms * 1e6); if (w < wake) wake = w;}
   if (game_started) {uint64_t w = gs_wake(&session, now); if (w < wake) wake = w;}
   return wake > now ? wake : now + 1;
+}
+
+/* Dispose the entire app realm, not merely its body. No JS shutdown callbacks:
+   those could restart timers or block the return path. Device handles belong
+   to JS.ELF and survive; queued events and the page's state do not. */
+void jsrt_stop(void) {
+  if (game_started) {gp_release_all(); snd_end(&session.sound);}
+  game_started = 0; game_el = 0;
+  if (ctx) {JS_FreeValue(ctx, native); native = JS_UNDEFINED; JS_FreeContext(ctx); ctx = 0;}
+  if (rt) {JS_FreeRuntime(rt); rt = 0;}
+  dom_body = dom_focused = 0;
+  want_frame = lowres_on = 0; wake_at_ms = 1e300;
+  plat_reset_input();
+}
+int jsapp_start(const char *dir, uint32_t heap_limit) {
+  app_heap_limit = heap_limit;
+  if (!jsrt_start(dir, heap_limit)) return 0;
+  jsrt_stop();
+  if (dir && !jsrt_start(0, heap_limit)) return 0;
+  jsrt_stop(); return -1;
+}
+uint64_t jsapp_step(void) {
+  uint64_t wake = jsrt_step();
+  if (wake) return wake;
+  int picker = in_picker;
+  char next[64]; snprintf(next, sizeof next, "%s", launch_dir);
+  if (!picker) sayf("JS app returned status %d", exit_code);
+  jsrt_stop();
+  if (picker && !next[0]) return 0; /* quit host through existing entry return */
+  if (jsapp_start(next[0] ? next : 0, app_heap_limit)) {exit_code = 5; return 0;}
+  return plat_clock_ns() + 1;
 }

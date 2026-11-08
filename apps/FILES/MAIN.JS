@@ -140,6 +140,7 @@ function goBack() {
   showFolder();
 }
 document.addEventListener('keydown', event => {
+  if (event.code === 'KeyQ' && !event.repeat) { sys.exit(0); return; }
   if (event.key === 'Escape' || event.key === 'Backspace') {
     event.preventDefault();
     if (!event.repeat) goBack();

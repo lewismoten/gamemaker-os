@@ -19,5 +19,11 @@ int jsrt_start(const char *dir, uint32_t heap_limit);
    Returns the time to wake next (ns), or 0 when the app called sys.exit. */
 uint64_t jsrt_step(void);
 int jsrt_exit_code(void);
+/* NULL dir is the built-in picker. Pair start (even failed) with stop. */
+void jsrt_stop(void);
+/* JS.ELF driver: app exit -> picker, picker launch -> fresh app realm;
+   picker exit -> 0 wake, return jsrt_exit_code() to the kernel. */
+int jsapp_start(const char *dir, uint32_t heap_limit);
+uint64_t jsapp_step(void);
 /* Evaluates source as a script (the host tests' probes): 0, or -1 on an exception (logged). */
 int jsrt_eval(const char *src, uint32_t n, const char *name);

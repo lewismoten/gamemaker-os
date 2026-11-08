@@ -8,6 +8,8 @@ static uint64_t log_fd, fb_fd, in_fd;
 static int have_input;
 static uint32_t *fb, generation;
 static uint64_t beat;
+static sbx_input_event ev[16];
+static uint32_t n, at;
 int plat_sbx_init(const sbx_startup *start);
 static void open_input(void) {
   sbx_input_state st;
@@ -69,7 +71,6 @@ int plat_palette(const uint8_t *pal) {
 }
 void plat_present(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {sbx_fb_present(fb_fd, x, y, w, h);}
 int plat_event(uint16_t *type, uint16_t *code, int32_t *value) {
-  static sbx_input_event ev[16]; static uint32_t n, at;
   if (at == n) {
     uint64_t got; at = n = 0;
     if (!have_input) {open_input(); if (!have_input) return 0;}
@@ -81,4 +82,8 @@ int plat_event(uint16_t *type, uint16_t *code, int32_t *value) {
   }
   *type = ev[at].type; *code = ev[at].code; *value = ev[at].value; at++;
   return 1;
+}
+void plat_reset_input(void) {
+  at = n = 0;
+  if (have_input) {sbx_input_state st; sbx_input_state_get(in_fd, &st);}
 }
