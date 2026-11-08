@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: MIT
 """Exercise the board scanner itself through the host profiling transport.
 
-These are uncached scans, not tests of a persistent on-card cache or FAT order.
+Scan exercises the legacy fallback; PersistentScan exercises actual cache
+read/rebuild/replay through a POSIX shim. Neither establishes FAT order or
+physical SD durability; the real FAT/kernel harnesses cover separate layers.
 """
 import json
 import os
@@ -126,3 +128,89 @@ class Scan(unittest.TestCase):
         p = folder/'DICE.GAM'
         data = bytearray(p.read_bytes()); data[-1] ^= 1; p.write_bytes(data)
         self.assertNotEqual(self.scan()['list'][0]['crc'], old)
+
+
+class PersistentScan(Scan):
+    """Same real scanner with opt-in cache writes to disposable card copies.
+    Host POSIX durability is not evidence of SD/FAT atomicity (kernel tests are).
+    """
+    def scan(self):
+        env = dict(os.environ, GMOS_SCAN_CACHE='1')
+        return json.loads(subprocess.check_output([str(self.probe), str(self.card)], env=env))
+
+    def test_warm_restart_reuses_candidates_without_gam_reads(self):
+        self.dice('FIRST'); self.dice('SECOND')
+        cold = self.scan(); warm = self.scan()
+        self.assertTrue((self.card/'OS/CACHE/GAMES.IDX').exists(), 'runtime cache was not persisted')
+        self.assertEqual(warm['list'], cold['list'])
+        self.assertEqual((warm['menu_crc'], warm['where_crc']), (cold['menu_crc'], cold['where_crc']))
+        self.assertEqual(warm['crc_calls'], 0, 'unchanged candidates should not reopen/CRC GAM payloads')
+        self.assertLess(warm['file_opens'], cold['file_opens'])
+
+    def test_failed_pack_metadata_read_is_not_cached_as_absent(self):
+        import struct
+        pack = (ROOT/'tests/data/dice.gmp').read_bytes()
+        count = struct.unpack_from('<I', pack, 4)[0]
+        record = json.dumps(dict(schema='gmp-library', title='Cached pack title', locator='DICE', category=['sandbox'])).encode()
+        entries = bytearray(pack[8:8+count*40])
+        for i in range(count): struct.pack_into('<I', entries, i*40+32, struct.unpack_from('<I', entries, i*40+32)[0]+40)
+        entries += b'library.json'.ljust(32, b'\0')+struct.pack('<II', len(pack)+40, len(record))
+        pack = b'GMS1'+struct.pack('<I', count+1)+entries+pack[8+count*40:]+record
+        count += 1
+        (self.card/'GAMES/DICE.GMP').write_bytes(pack)
+        offsets = {pack[8+i*40:40+i*40].split(b'\0')[0]:struct.unpack_from('<I', pack, 40+i*40)[0] for i in range(count)}
+        self.assertIn(b'library.json', offsets)
+        env = dict(os.environ, GMOS_SCAN_CACHE='1', GMOS_SCAN_FAIL_FILE='DICE.GMP', GMOS_SCAN_FAIL_AT=str(offsets[b'library.json']))
+        subprocess.check_output([str(self.probe), str(self.card)], env=env)
+        recovered = self.scan()
+        uncached = json.loads(subprocess.check_output([str(self.probe), str(self.card)]))
+        self.assertEqual(recovered['list'], uncached['list'], 'transient metadata failure poisoned persistent cache')
+        self.assertEqual(recovered['crc_calls'], 1, 'failed pack metadata must be retried')
+
+    def test_corrupt_truncated_oversized_and_stale_cache_rebuild(self):
+        self.dice()
+        expected = self.scan()['list']
+        cache = self.card/'OS/CACHE/GAMES.IDX'
+        valid = cache.read_bytes()
+        for data in (b'', valid[:15], valid[:-1], b'bad magic'+valid[9:], valid+bytes(256*1024)):
+            with self.subTest(size=len(data)):
+                cache.write_bytes(data)
+                self.assertEqual(self.scan()['list'], expected)
+                self.assertEqual(self.scan()['crc_calls'], 0)  # rebuilt and usable on next launch
+        cache.unlink()
+        self.assertEqual(self.scan()['crc_calls'], 1)
+
+    def test_one_changed_candidate_rescans_only_it_and_no_warm_writes(self):
+        first = self.dice('FIRST'); self.dice('SECOND')
+        self.scan(); self.assertEqual(self.scan()['crc_calls'], 0)
+        cache = self.card/'OS/CACHE/GAMES.IDX'
+        before = cache.stat().st_mtime_ns
+        self.assertEqual(self.scan()['crc_calls'], 0)
+        self.assertEqual(cache.stat().st_mtime_ns, before)
+        gam = first/'DICE.GAM'; data = bytearray(gam.read_bytes()); data[-1] ^= 1; gam.write_bytes(data)
+        changed = self.scan()
+        self.assertEqual((changed['games'], changed['crc_calls']), (2, 1))
+        self.assertEqual(self.scan()['crc_calls'], 0)
+
+    def test_invalid_sources_are_negatively_cached_without_hiding_new_content(self):
+        self.dice()
+        (self.card/'GAMES/BAD').mkdir()
+        (self.card/'GAMES/BAD/BAD.GAM').write_bytes(b'bad')
+        (self.card/'GAMES/BAD.GMP').write_bytes(b'not a pack')
+        self.scan()
+        warm = self.scan()
+        self.assertEqual(warm['file_opens'], 1, 'unchanged invalid candidates should only read the cache')
+        shutil.copyfile(ROOT/'tests/games/DICE/DICE.GAM', self.card/'GAMES/BAD/BAD.GAM')
+        changed = self.scan()
+        self.assertEqual(changed['crc_calls'], 1)
+        self.assertEqual(changed['games'], 1)  # duplicate still suppressed
+
+    def test_nested_first_gam_change_and_os_library_fallback(self):
+        folder = self.dice(); self.scan()
+        (folder/'DICE.GAM').rename(folder/'OTHER.GAM')
+        self.assertEqual(self.scan()['list'][0]['gam'], 'OTHER.GAM')
+        (self.card/'OS/LIBRARY.JSL').write_text(json.dumps(dict(schema='gmp-library', title='OS fallback', locator='DICE', category=['sandbox']))+'\n')
+        self.assertEqual(self.scan()['list'][0]['title'], 'OS fallback')
+        warm = self.scan()
+        self.assertEqual(warm['list'][0]['title'], 'OS fallback')
+        self.assertEqual(warm['crc_calls'], 0)

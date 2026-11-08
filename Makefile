@@ -15,7 +15,7 @@ PFLAGS := $(ARCH) -DGMOS_SCAN_VERBOSE=$(SCAN_VERBOSE) -std=c11 -Isdk/include -Is
 # The core is header-only C++ (no exceptions, RTTI or static constructors).
 PXXFLAGS := $(ARCH) -std=c++17 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -Isrc -Ithird_party/gmcore
 LFLAGS := -nostdlib -Tsdk/lib/sandbox.ld -Wl,-z,noexecstack -Wl,--build-id=none -Wl,-z,max-page-size=4096
-CORE := third_party/puff/puff.c src/gam.c src/menu.c src/library.c src/thumb.c src/view.c src/font_data.c src/gif.c src/fli.c src/text.c src/font8_data.c src/session.c src/sound.c
+CORE := third_party/puff/puff.c src/gam.c src/menu.c src/library.c src/scan_cache.c src/thumb.c src/view.c src/font_data.c src/gif.c src/fli.c src/text.c src/font8_data.c src/session.c src/sound.c
 PLAYCORE := src/game.cpp
 GMPCORE := src/gmp.cpp third_party/gmcore/gmsmall.h third_party/puff/puff.h
 GMCORE := third_party/gmcore/gmcore.h third_party/gmcore/gmmon.h

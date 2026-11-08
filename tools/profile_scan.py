@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Build a host-only probe of the actual main.c scanner. Never writes the card.
+"""Build a host-only probe of the actual main.c scanner. Read-only by default.
 Usage: python3 profile_scan.py REPO CARD OUTDIR [REPEATS]
 CARD contains GAMES and optionally POCKET, OS. Native readdir order, not FAT.
+GMOS_SCAN_CACHE=1 opts into cache writes: use ONLY a disposable card COPY.
 """
 import sys,pathlib,subprocess,hashlib,json,platform,os,shlex
 repo,card,out=map(lambda s:pathlib.Path(s).resolve(),sys.argv[1:4]);out.mkdir(parents=True,exist_ok=True)
@@ -14,6 +15,10 @@ int32_t sbx_open(const char*,uint32_t,uint32_t,uint64_t*);
 int32_t sbx_read(uint64_t,void*,uint32_t,uint64_t*);
 int32_t sbx_close(uint64_t);
 int32_t sbx_getdents(uint64_t,void*,uint32_t,uint64_t*);
+int32_t sbx_getdents_meta(uint64_t,void*,uint32_t,uint64_t*);
+int32_t sbx_write(uint64_t,const void*,uint32_t,uint64_t*);
+int32_t sbx_fsync(uint64_t);
+int32_t sbx_rename(const char*,uint32_t,const char*,uint32_t);
 int32_t sbx_seek(uint64_t,int64_t,uint64_t*);
 int32_t sbx_health(uint32_t,uint64_t);
 int32_t sbx_log(uint64_t,const char*,uint32_t);
@@ -36,6 +41,10 @@ source=r'''
 #include <time.h>
 #include <errno.h>
 #include <stdint.h>
+#ifdef __APPLE__
+#define st_mtim st_mtimespec
+#define st_ctim st_ctimespec
+#endif
 static uint64_t ns(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return (uint64_t)t.tv_sec*1000000000+t.tv_nsec;}
 static const char *root;
 static struct {DIR *d; int f; char path[4096];} handles[64];
@@ -53,30 +62,39 @@ uint32_t __wrap_gm_crc32(uint32_t c,const uint8_t*b,uint32_t n){uint64_t t=ns();
 int __real_gm_library_line(struct gm_menu*,const char*,uint32_t);
 int __wrap_gm_library_line(struct gm_menu*m,const char*b,uint32_t n){uint64_t t=ns();int r=__real_gm_library_line(m,b,n);lib_ns+=ns()-t;lib_calls++;return r;}
 int32_t sbx_open(const char*p,uint32_t n,uint32_t flags,uint64_t*out){
- (void)flags;uint64_t t=ns();opens++;if(n<3||memcmp(p,"/sd",3))return -2;
+ uint64_t t=ns();opens++;if(n<3||memcmp(p,"/sd",3))return -2;
+ if(flags && (!getenv("GMOS_SCAN_CACHE") || n<13 || memcmp(p,"/sd/OS/CACHE/",13)))return -30;
  unsigned h;for(h=1;h<64;h++)if(!handles[h].d&&handles[h].f<0)break;if(h==64)return -24;
  snprintf(handles[h].path,sizeof handles[h].path,"%s%.*s",root,(int)n-3,p+3);
+ if(flags){char dir[4096];snprintf(dir,sizeof dir,"%s/OS",root);mkdir(dir,0700);snprintf(dir,sizeof dir,"%s/OS/CACHE",root);mkdir(dir,0700);handles[h].f=open(handles[h].path,O_WRONLY|O_CREAT|O_TRUNC,0600);if(handles[h].f<0)return -5;*out=h;return 0;}
  struct stat st;if(stat(handles[h].path,&st)){io_ns+=ns()-t;return -2;}
  if(S_ISDIR(st.st_mode)){handles[h].d=opendir(handles[h].path);if(!handles[h].d)return -2;dir_opens++;}
  else {handles[h].f=open(handles[h].path,O_RDONLY);if(handles[h].f<0)return -2;file_opens++;}
  *out=h;io_ns+=ns()-t;return 0;
 }
-int32_t sbx_read(uint64_t h,void*b,uint32_t n,uint64_t*got){uint64_t t=ns();read_calls++;ssize_t r=read(handles[h].f,b,n);io_ns+=ns()-t;if(r<0)return -5;*got=r;read_bytes+=r;return 0;}
+int32_t sbx_read(uint64_t h,void*b,uint32_t n,uint64_t*got){uint64_t t=ns();read_calls++;const char *fail=getenv("GMOS_SCAN_FAIL_FILE"),*at=getenv("GMOS_SCAN_FAIL_AT");if(fail&&at&&strstr(handles[h].path,fail)&&lseek(handles[h].f,0,SEEK_CUR)>=(off_t)strtoull(at,0,10))return -5;ssize_t r=read(handles[h].f,b,n);io_ns+=ns()-t;if(r<0)return -5;*got=r;read_bytes+=r;return 0;}
 int32_t sbx_close(uint64_t h){if(handles[h].d){closedir(handles[h].d);handles[h].d=0;}else if(handles[h].f>=0){close(handles[h].f);handles[h].f=-1;}return 0;}
 int32_t sbx_seek(uint64_t h,int64_t off,uint64_t*out){uint64_t t=ns();seeks++;off_t p=lseek(handles[h].f,off,SEEK_SET);io_ns+=ns()-t;if(p<0)return -5;*out=p;return 0;}
-int32_t sbx_getdents(uint64_t h,void*b,uint32_t cap,uint64_t*got){
+static int32_t host_dents(uint64_t h,void*b,uint32_t cap,uint64_t*got,int meta){
  uint64_t t=ns();dent_calls++;uint32_t at=0;struct dirent*e;
  while(1){long pos=telldir(handles[h].d);e=readdir(handles[h].d);if(!e)break;if(!strcmp(e->d_name,".")||!strcmp(e->d_name,".."))continue;
- size_t nb=strlen(e->d_name);uint32_t len=(8+nb+7)&~7u;if(nb>255)continue;if(len>cap-at){seekdir(handles[h].d,pos);break;}
+ size_t nb=strlen(e->d_name);uint32_t head=meta?24:8,len=(head+nb+7)&~7u;if(nb>255)continue;if(len>cap-at){seekdir(handles[h].d,pos);break;}
  struct stat st; if(fstatat(dirfd(handles[h].d),e->d_name,&st,0))continue;
  sbx_dirent d={(uint16_t)len,S_ISDIR(st.st_mode)?SBX_DT_DIR:SBX_DT_FILE,(uint8_t)nb,S_ISDIR(st.st_mode)?0:(uint32_t)st.st_size};
- memset((char*)b+at,0,len);memcpy((char*)b+at,&d,8);memcpy((char*)b+at+8,e->d_name,nb);at+=len;dent_entries++;
+ memset((char*)b+at,0,len);memcpy((char*)b+at,&d,8);
+ if(meta){uint32_t m[4]={(uint32_t)st.st_mtim.tv_sec^(uint32_t)st.st_mtim.tv_nsec,(uint32_t)st.st_ctim.tv_sec^(uint32_t)st.st_ctim.tv_nsec,(uint32_t)st.st_ino,0};memcpy((char*)b+at+8,m,16);}
+ memcpy((char*)b+at+head,e->d_name,nb);at+=len;dent_entries++;
  }*got=at;io_ns+=ns()-t;return 0;
 }
+int32_t sbx_getdents(uint64_t h,void*b,uint32_t n,uint64_t*g){return host_dents(h,b,n,g,0);}
+int32_t sbx_getdents_meta(uint64_t h,void*b,uint32_t n,uint64_t*g){return host_dents(h,b,n,g,1);}
+int32_t sbx_write(uint64_t h,const void*b,uint32_t n,uint64_t*g){ssize_t r=write(handles[h].f,b,n);if(r<0)return -5;*g=r;return 0;}
+int32_t sbx_fsync(uint64_t h){return fsync(handles[h].f)?-5:0;}
+int32_t sbx_rename(const char*a,uint32_t an,const char*b,uint32_t bn){char ap[4096],bp[4096];if(!getenv("GMOS_SCAN_CACHE"))return -30;snprintf(ap,sizeof ap,"%s%.*s",root,(int)an-3,a+3);snprintf(bp,sizeof bp,"%s%.*s",root,(int)bn-3,b+3);return rename(ap,bp)?-5:0;}
 int32_t sbx_log(uint64_t h,const char*b,uint32_t n){(void)h;(void)b;logs++;log_bytes+=n;return 0;}
 int32_t sbx_health(uint32_t g,uint64_t s){(void)g;(void)s;healths++;return 0;}
 static void jstr(const char*s){putchar('"');for(;*s;s++){unsigned char c=*s;if(c=='"'||c=='\\')printf("\\%c",c);else if(c<32||c>=127)printf("\\u%04x",c);else putchar(c);}putchar('"');}
-int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;i++)handles[i].f=-1;sp_set_abi(1,3);uint64_t t=ns();find_games();t=ns()-t;
+int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;i++)handles[i].f=-1;abi_minor=getenv("GMOS_SCAN_CACHE")?4:3;sp_set_abi(1,abi_minor);uint64_t t=ns();find_games();t=ns()-t;
  printf("{\"elapsed_ns\":%llu,\"games\":%u,\"menu_crc\":%u,\"where_crc\":%u",(unsigned long long)t,menu.count,__real_gm_crc32(0,(const uint8_t*)&menu,sizeof menu),__real_gm_crc32(0,(const uint8_t*)where,sizeof where));
  #define FIELD(x) printf(",\"" #x "\":%llu",(unsigned long long)x)
  FIELD(opens);FIELD(dir_opens);FIELD(file_opens);FIELD(read_calls);FIELD(read_bytes);FIELD(dent_calls);FIELD(dent_entries);FIELD(logs);FIELD(log_bytes);FIELD(healths);FIELD(seeks);FIELD(io_ns);FIELD(crc_ns);FIELD(crc_calls);FIELD(crc_bytes);FIELD(lib_ns);FIELD(lib_calls);
@@ -94,9 +112,15 @@ int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;
 extra=shlex.split(os.environ.get('GMOS_SCAN_CFLAGS',''))
 flags=['-O2',*extra,'-ffunction-sections','-fdata-sections','-I'+str(out),'-I'+str(repo/'sdk/include'),'-I'+str(repo/'src'),'-I'+str(repo/'third_party/gmcore'),'-I'+str(repo/'third_party/puff')]
 commands=[]
-for name,src,compiler in [('probe','probe.c','cc'),('sdpack',str(repo/'src/sdpack.c'),'cc'),('menu',str(repo/'src/menu.c'),'cc'),('library',str(repo/'src/library.c'),'cc'),('gam',str(repo/'src/gam.c'),'cc'),('gmp',str(repo/'src/gmp.cpp'),'c++'),('puff',str(repo/'third_party/puff/puff.c'),'cc')]:
- cmd=[compiler,*flags,'-c',src,'-o',name+'.o'];commands.append(cmd);subprocess.run(cmd,cwd=out,check=True)
-cmd=['c++',*extra,'-Wl,--gc-sections','-Wl,--wrap=gm_crc32','-Wl,--wrap=gm_library_line',*[str(out/(x+'.o')) for x in ['probe','sdpack','menu','library','gam','gmp','puff']],'-o',str(out/'scan-probe')];commands.append(cmd);subprocess.run(cmd,check=True)
+units=[('probe','probe.c','cc'),('sdpack',str(repo/'src/sdpack.c'),'cc'),('menu',str(repo/'src/menu.c'),'cc'),('library',str(repo/'src/library.c'),'cc'),('gam',str(repo/'src/gam.c'),'cc'),('gmp',str(repo/'src/gmp.cpp'),'c++'),('puff',str(repo/'third_party/puff/puff.c'),'cc')]
+if (repo/'src/scan_cache.c').exists(): units.append(('scan_cache',str(repo/'src/scan_cache.c'),'cc'))
+for name,src,compiler in units:
+ wrap={'probe':['-Dgm_crc32=__wrap_gm_crc32','-Dgm_library_line=__wrap_gm_library_line'],
+       'library':['-Dgm_crc32=__real_gm_crc32'],'menu':['-Dgm_library_line=__real_gm_library_line']}.get(name,[])
+ cmd=[compiler,*flags,*wrap,'-c',src,'-o',name+'.o'];commands.append(cmd);subprocess.run(cmd,cwd=out,check=True)
+gcflag='-Wl,-dead_strip' if sys.platform=='darwin' else '-Wl,--gc-sections'
+cmd=['c++',*extra,gcflag,*[str(out/(x+'.o')) for x,_,_ in units],'-o',str(out/'scan-probe')];commands.append(cmd);subprocess.run(cmd,check=True)
 runs=[json.loads(subprocess.check_output([str(out/'scan-probe'),str(card)])) for _ in range(int(sys.argv[4]) if len(sys.argv)>4 else 5)]
-result=dict(environment=platform.platform(),method='Native POSIX transport; original scanner prefix with inclusive timing wrappers; no FAT, UART, USB or rendering. Log sink counts only.',repo=str(repo),card=str(card),source_sha256=hashlib.sha256(text.encode()).hexdigest(),phases=['find_gam','add_game','read_index','add_pack','find_packs'],commands=commands,runs=runs)
+result:dict=dict(environment=platform.platform(),method='Native POSIX transport; scanner prefix with inclusive timing wrappers and definition-only macro-renamed CRC/library functions; no FAT, UART, USB or rendering. Log sink counts only. Default read-only; GMOS_SCAN_CACHE=1 explicitly enables cache writes to the supplied copy.',repo=str(repo),card=str(card),source_sha256=hashlib.sha256(text.encode()).hexdigest(),phases=['find_gam','add_game','read_index','add_pack','find_packs'],commands=commands,runs=runs)
+result['sources_sha256']={p:hashlib.sha256((repo/p).read_bytes()).hexdigest() for p in ['src/main.c','src/sdpack.c','src/menu.c','src/library.c','src/scan_store.h','src/scan_cache.c','src/scan_cache.h','sdk/include/sandbox/abi.h'] if (repo/p).exists()}
 (out/'results.json').write_text(json.dumps(result,indent=2));print(json.dumps({k:v for k,v in runs[0].items() if k!='list'},indent=2))

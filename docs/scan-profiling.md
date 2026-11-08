@@ -1,9 +1,12 @@
 # Host-only scan investigation probes
 
-These optional tools do not participate in the firmware build or normal tests.
-They inspect the **current scanner**, not an implemented cache. They never write
-the input card directory or use real hardware. Output directories are created
-and must be separate from the input data.
+These tools originated in the profiling investigation and compile the actual
+scanner without changing its production source. They don't run on hardware.
+The scanner regression tests use the prefix transport too; the tools themselves
+are not firmware dependencies. Default operation is read-only. Explicit
+`GMOS_SCAN_CACHE=1` enables ABI1.4 cache writes to the supplied **disposable card
+copy**; see [the persistent cache contract](scan-cache.md). Output directories
+must remain separate from input data.
 
 ```sh
 python3 tools/profile_scan.py . /path/to/card /path/to/output/scan 5
@@ -16,7 +19,9 @@ The scan probe compiles the exact scanner prefix of `src/main.c` (ending before
 the repository's actual GAM, menu, library, sdpack, GMP and puff implementations.
 The output includes its source digest, compiler argv, operation counts, ordered
 storage identities, raw timing samples and inclusive phase times. It enables
-ABI 1.3 seek. C/C++ compilers and Python are required.
+ABI 1.3 seek by default; explicit cache mode enables ABI1.4. C/C++ compilers and
+Python are required. Exact metadata/native time fields in the POSIX shim aren't
+physical FAT timestamps; the actual-FAT cache probe covers that separate layer.
 
 **Limits:** native host `readdir` order and POSIX file I/O are not FAT short-name
 resolution or physical SD latency. Log calls count bytes but do not send them
@@ -28,7 +33,8 @@ launch execution are measured. Native filesystem naming rules can differ from
 FAT's short-name rules, so use representative DOS-safe inputs.
 `verify_scan_probe.py` requires a fresh output directory and checks eight
 baseline discovery/duplicate/index behaviors with repository DICE fixtures.
-It is not sufficient regression coverage for any future optimization.
+It is not sufficient cache regression coverage alone; `tests/test_scan.py`,
+`tests/test_scan_cache.py`, the actual-FAT probe and kernel tests provide that.
 
 The FAT probe compiles unchanged `core/assets.c` from a separately supplied
 kernel tree against a read-only host `sd_read`. It uses that kernel's existing
@@ -40,7 +46,8 @@ counts**, not distinct sectors or real SD timings. It bypasses the syscall
 validation layer. Synthetic card.img is removed after successful completion;
 all retained sources and result JSON remain in the output directory.
 
-Production `src/`, SDK, pack format, discovery and logging remain unchanged.
+Probes never rewrite production `src/`, SDK or pack data. The implemented cache
+and bounded discovery diagnostics are described separately in `scan-cache.md`.
 Re-run the probes after code changes: scan source-shape changes can require
 updating the extraction point. Keep real card data and generated outputs out
 of Git. On-device profiling should use aggregate counters/clock samples and
