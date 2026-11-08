@@ -51,6 +51,10 @@ smaller mode. Board video/keyboard execution has not been tested.
 
 ## Controls and behavior
 
+**Q** calls `sys.exit(0)`; **F10** is the native exit shortcut. Both return to
+JS.ELF's app picker. Esc/Backspace still navigate up, not out of the app.
+See [exit semantics and recovery limits](../../docs/app-exit.md).
+
 | Key | Folder grid | TXT view |
 | --- | --- | --- |
 | Left / Right | Previous / next sorted entry | Previous / next text page |

@@ -77,22 +77,26 @@ build/js:
 	mkdir -p $@
 build/js/prelude.c: src/js/prelude.js tools/embed_js.py | build/js
 	$(PYTHON) tools/embed_js.py $< $@ jsrt_prelude
+build/js/picker.c: src/js/picker.js tools/embed_js.py | build/js
+	$(PYTHON) tools/embed_js.py $< $@ jsrt_picker
 build/js/q_%.o: third_party/quickjs-ng/%.c $(wildcard third_party/quickjs-ng/*.h) Makefile | build/js
 	$(CC) $(QJSFLAGS) -c $< -o $@
 build/js/game.o: $(PLAYCORE) src/game.h $(GMCORE) Makefile | build/js
 	$(CXX) $(PXXFLAGS) -ffunction-sections -fdata-sections -c $(PLAYCORE) -o $@
-build/JS.ELF: src/js/main.c src/js/plat_sbx.c src/js/sys.c $(JSC) build/js/prelude.c $(QJS:%=build/js/q_%.o) build/js/game.o $(wildcard src/js/*.h) $(wildcard src/*.h) sdk/lib/crt0.S sdk/lib/sandbox.ld Makefile
+build/JS.ELF: src/js/main.c src/js/plat_sbx.c src/js/sys.c $(JSC) build/js/prelude.c build/js/picker.c $(QJS:%=build/js/q_%.o) build/js/game.o $(wildcard src/js/*.h) $(wildcard src/*.h) sdk/lib/crt0.S sdk/lib/sandbox.ld Makefile
 	$(CC) $(JSFLAGS) -nostartfiles -Tsdk/lib/sandbox.ld -Wl,-z,noexecstack -Wl,--build-id=none -Wl,-z,max-page-size=4096 -Wl,--gc-sections \
-	  sdk/lib/crt0.S src/js/main.c src/js/plat_sbx.c src/js/sys.c $(JSC) build/js/prelude.c $(QJS:%=build/js/q_%.o) build/js/game.o -lm -lc -lgcc -o build/js/JS.full.elf
+	  sdk/lib/crt0.S src/js/main.c src/js/plat_sbx.c src/js/sys.c $(JSC) build/js/prelude.c build/js/picker.c $(QJS:%=build/js/q_%.o) build/js/game.o -lm -lc -lgcc -o build/js/JS.full.elf
 	$(TOOLCHAIN)size build/js/JS.full.elf
 	$(TOOLCHAIN)strip -o $@ build/js/JS.full.elf
 # The runtime on the host: tests/host/jsrun.c (tests/test_js.py and the benchmarks).
 $(HOSTDIR)/js_prelude.c: src/js/prelude.js tools/embed_js.py | $(HOSTDIR)
 	$(PYTHON) tools/embed_js.py $< $@ jsrt_prelude
+$(HOSTDIR)/js_picker.c: src/js/picker.js tools/embed_js.py | $(HOSTDIR)
+	$(PYTHON) tools/embed_js.py $< $@ jsrt_picker
 $(HOSTDIR)/q_%.o: third_party/quickjs-ng/%.c $(wildcard third_party/quickjs-ng/*.h) | $(HOSTDIR)
 	$(HOSTCC) $(HOSTFLAGS) -D_GNU_SOURCE -DNDEBUG -w -c $< -o $@
-$(HOSTDIR)/jsrun: tests/host/jsrun.c $(JSC) $(HOSTDIR)/js_prelude.c $(QJS:%=$(HOSTDIR)/q_%.o) $(PLAYCORE) $(GMCORE) $(wildcard src/js/*.h) $(wildcard src/*.h) Makefile | $(HOSTDIR)
+$(HOSTDIR)/jsrun: tests/host/jsrun.c $(JSC) $(HOSTDIR)/js_prelude.c $(HOSTDIR)/js_picker.c $(QJS:%=$(HOSTDIR)/q_%.o) $(PLAYCORE) $(GMCORE) $(wildcard src/js/*.h) $(wildcard src/*.h) Makefile | $(HOSTDIR)
 	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore -c $(PLAYCORE) -o $(HOSTDIR)/js_game.o
-	$(HOSTCC) $(HOSTFLAGS) -std=gnu11 -Wall -Wextra -Werror -Isrc -Ithird_party/quickjs-ng tests/host/jsrun.c $(JSC) $(HOSTDIR)/js_prelude.c $(QJS:%=$(HOSTDIR)/q_%.o) $(HOSTDIR)/js_game.o -lc++ -lm -o $@
+	$(HOSTCC) $(HOSTFLAGS) -std=gnu11 -Wall -Wextra -Werror -Isrc -Ithird_party/quickjs-ng tests/host/jsrun.c $(JSC) $(HOSTDIR)/js_prelude.c $(HOSTDIR)/js_picker.c $(QJS:%=$(HOSTDIR)/q_%.o) $(HOSTDIR)/js_game.o -lc++ -lm -o $@
 clean:
 	rm -rf build

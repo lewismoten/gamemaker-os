@@ -84,6 +84,9 @@ has not been tested here.
 
 ## Controls
 
+**Q** calls `sys.exit(0)`; **F10** is the native exit shortcut. Both return to
+JS.ELF's app picker. See [exit semantics and recovery limits](../../docs/app-exit.md).
+
 | Key | Action |
 | --- | --- |
 | **T** (`KeyT`) | Cycle Night → Paper → Night; auto-repeat is ignored |

@@ -91,13 +91,17 @@ int plat_event(uint16_t *type, uint16_t *code, int32_t *value) {
   *type = 1; *code = keys[next_key].code; *value = keys[next_key].value; next_key++;
   return 1;
 }
+void plat_reset_input(void) {
+  while (next_key < nkeys && keys[next_key].at <= plat_clock_ns()) next_key++;
+}
 int main(int argc, char **argv) {
   if (argc < 3) {fprintf(stderr, "usage: jsrun <sd folder> <app folder> [--ms N] [--vclock] [--keys ms:code:value,...] [--shot out.rgb] [--heap bytes]\n"); return 2;}
   root = argv[1];
-  uint64_t ms = 1000; const char *shot = 0; uint32_t heap = 3u << 20;
+  uint64_t ms = 1000; const char *shot = 0; uint32_t heap = 3u << 20; int launcher = 0;
   for (int i = 3; i < argc; i++) {
     if (!strcmp(argv[i], "--ms") && i + 1 < argc) ms = strtoull(argv[++i], 0, 10);
     else if (!strcmp(argv[i], "--vclock")) vclock = 1;
+    else if (!strcmp(argv[i], "--launcher")) launcher = 1;
     else if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];
     else if (!strcmp(argv[i], "--heap") && i + 1 < argc) heap = (uint32_t)strtoul(argv[++i], 0, 10);
     else if (!strcmp(argv[i], "--keys") && i + 1 < argc)
@@ -109,10 +113,11 @@ int main(int argc, char **argv) {
       }
   }
   start = real_ns();
-  if (jsrt_start(argv[2], heap)) return 1;
+  const char *dir = !strcmp(argv[2], "--picker") ? 0 : argv[2];
+  if (launcher ? jsapp_start(dir, heap) : jsrt_start(dir, heap)) {jsrt_stop(); return 1;}
   uint64_t end = ms * 1000000ull;
   for (;;) {
-    uint64_t wake = jsrt_step();
+    uint64_t wake = launcher ? jsapp_step() : jsrt_step();
     if (!wake || plat_clock_ns() >= end) break;
     if (next_key < nkeys && keys[next_key].at < wake) wake = keys[next_key].at;
     plat_sleep_until(wake < end ? wake : end);
@@ -121,5 +126,7 @@ int main(int argc, char **argv) {
     FILE *f = fopen(shot, "wb");
     if (f) {uint32_t hd[4] = {0x534a4d47u, mode_w, mode_h, mode_d}; fwrite(hd, 4, 4, f); fwrite(palette, 1, 768, f); fwrite(fb, 1, mode_w * mode_h * (mode_d / 8), f); fclose(f);}
   }
-  return jsrt_exit_code();
+  int status = jsrt_exit_code();
+  jsrt_stop();
+  return status;
 }

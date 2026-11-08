@@ -3,6 +3,8 @@
  * (plat_sbx.c, sandbox-kernel system calls) and the host tests
  * (tests/host/plat_host.c) each give one. */
 #pragma once
+/* Drop buffered events at an app/launcher boundary, without changing devices. */
+void plat_reset_input(void);
 #include <stdint.h>
 #define PLAT_W 640u /* the mode a program starts in: 640x480, 32 bpp */
 #define PLAT_H 480u

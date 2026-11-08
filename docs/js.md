@@ -38,6 +38,15 @@ build/host/jsrun <card folder> /sd/OS/APPS/HELLO --vclock --ms 2000 --keys 500:2
 python3 tools/jsshot.py a.shot a.png 2      # 2x, nearest neighbor, as a 1080p screen shows 960x540
 ```
 
+## Exit and app switching
+
+Call `sys.exit(status = 0)` and return from the current callback, or press
+**F10**. JS.ELF releases the app and returns to its built-in app picker;
+Up/Down and Enter launch another app, F10 in the picker quits to the kernel.
+CLOCK, FILES and SETTINGS also bind Q to `sys.exit(0)`. Esc remains navigation.
+For the precise cooperative-exit semantics, ABI boundary, blocked-script
+limitations and Pi smoke procedure, see [app-exit.md](app-exit.md).
+
 ## What a page can use
 
 | Global | What it is |
@@ -60,7 +69,8 @@ python3 tools/jsshot.py a.shot a.png 2      # 2x, nearest neighbor, as a 1080p s
 | `fs.readFile(path)`, `fs.readdir(path)` | read-only, `/sd/...` |
 | `screen.setMode(w, h, depth)` | the page's mode: 32 (XRGB8888) or 16 (RGB565) bits; 960x540x16 is exactly half of 1080p |
 | `screen.gameLowres(on, w, h)` | a playing game switches to its own 8-bit mode with its palette: 320x200, or larger with the picture centered (384x216 is 1080p / 5) |
-| `sys.exit(code)`, `sys.stats()`, `sys.memory()` | timing and heap counters (the benchmarks use them) |
+| `sys.exit(code = 0)` | request cooperative return to JS.ELF's app picker; F10 is the reserved native shortcut |
+| `sys.stats()`, `sys.memory()` | timing and heap counters (the benchmarks use them) |
 
 CSS subset (`src/js/dom.c` has the details): `left`, `top`, `width` and `height`
 in px; `position: static | absolute`; `display: block | flex | none`;

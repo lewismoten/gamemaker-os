@@ -71,6 +71,7 @@ function switchTheme() {
 }
 themeButton.addEventListener('click', switchTheme);
 document.addEventListener('keydown', (event) => {
+  if (event.code === 'KeyQ' && !event.repeat) { sys.exit(0); return; }
   if (event.code === 'KeyT') {
     event.preventDefault();
     if (!event.repeat) switchTheme();

@@ -50,6 +50,10 @@ claim and physical board/video/keyboard behavior remains untested.
 
 ## Controls and supported behavior
 
+**Q** calls `sys.exit(0)`; **F10** is the native exit shortcut. Both return to
+JS.ELF's app picker; relaunching resets this app's memory-only settings.
+See [exit semantics and recovery limits](../../docs/app-exit.md).
+
 | Control | Action |
 | --- | --- |
 | Up / Down arrows | Native spatial focus among the three vertically stacked buttons |
