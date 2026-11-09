@@ -1,8 +1,7 @@
 # Saves and high scores on the Pi
 
-Status: first slice (design, file layer, high scores). The game-state save (`GAME0.SAV`) and
-demos (`.REC`) are later slices. Nothing here is linked into `GMOS.ELF` yet and nothing has been
-written to a real card.
+Status: first slice (design, file layer, high scores), now linked into `GMOS.ELF`. The game-state save
+(`GAME0.SAV`) and demos (`.REC`) are later slices. Nothing has been written to a real card yet.
 
 ## Decisions
 
@@ -35,13 +34,26 @@ rewrites the file when nothing placed; the Pi doesn't, to spare the card.
 | `src/savefile_sbx.c` | `save_ops` over the kernel's open/write/fsync/close/rename |
 | `tests/host/savefile.c`, `tests/test_savefile.py` | A fake kernel that cuts power after every step |
 
+## The Top Ten on the Pi
+
+- **At game end** (a win, a loss or Esc, as in PLAYGAME, once the first level began): a score above 0 that
+  beats a row gets `hiscreen.c`'s name entry ("Congratulations!", "You scored number N on the Top
+  Ten!", "Enter Your Name:", 22 characters, Enter or Esc accepts, Backspace or Left erases, a blinking
+  box cursor), then the Top Ten with "Your Latest Score" and "Hit any key" (30 s or any key). A score
+  that doesn't place goes straight to the list, as in DOS.
+- **From the list**: `H` (high scores) on the grid or the details view shows the selected game's Top Ten
+  alone; the key-help line says so.
+- **Where it lives**: `hisload.c` reads `/OS/SAVES/<GAME>/<GAME>.HIS`; with none yet it seeds from the
+  game's own `<GAME>.HIS` (read only), so DOS scores carry over. A new name is written back to
+  `/OS/SAVES` only. On a kernel older than ABI 1.7 the entry is skipped (it could not be saved).
+- The game's own high score picture (`File(0,8)`) is the list's backdrop, as in DOS.
+- Tests: `tests/test_hiscreen.py` (flow; renders `build/host/top-ten/*.png`).
+
 ## Still to do (later slices)
 
 1. `GAME0.SAV` to `GAME9.SAV` and `SAVNAMES.DAT`: layout is 37755 + 5M + 3R bytes (max 41505) on
    the original 3.00 binary; needs a codec and a bridge into the portable core (the core drops
    monster status fields and keeps no recorder). Needs Kaylee's design review first.
-2. Calling `save_his_record` when a game ends with a score, with an on-screen name prompt (the
-   core has no score read-out yet), and a Top Ten screen.
-3. Re-vendoring the SDK once the kernel with `/OS/SAVES` is released (`sdk/PINNED`).
-4. Real-card checks: power cut during a save, card full, long run.
-5. Demos (`.REC`), later.
+2. Re-vendoring the SDK once the kernel with `/OS/SAVES` is released (`sdk/PINNED` names 5732b42).
+3. Real-card checks: power cut during a save, card full, long run.
+4. Demos (`.REC`), later.
