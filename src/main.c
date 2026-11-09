@@ -444,6 +444,42 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   if (game.begun) top_ten(px, g, gp_score(), 0); /* PLAYGAME checks the Top Ten however the game ended */
   say("GMOS back to the games list");
 }
+/* The demo preview (docs/demo.md): a game left selected on its details view for GS_DEMO_IDLE_NS plays its
+   demo .REC in the picture's place; any key stops it (and is then handled as usual); when it ends the
+   title screen returns and the wait starts again. A game with no .REC shows nothing extra. */
+static int demo_on, demo_none = -1;
+static uint64_t demo_idle;
+static void demo_present(uint16_t *px) {
+  uint32_t x, y, w, h; gm_picture_rect(&x, &y, &w, &h);
+  gm_draw_picture(px, GM_W, game.px, game.pal); sbx_fb_present(fb_fd, x, y, w, h);
+}
+static void demo_stop(const char *why) {
+  char line[64], *p = put(line, "GMOS demo stopped: "); put(p, why); say(line);
+  gs_demo_stop(&game); demo_on = 0; big_id = -1;
+}
+/* Starts the demo of the selected game on its details view; draws its first frame. */
+static void demo_start(uint16_t *px, const struct gm_game *g) {
+  char line[96], *p; void *user; gp_read_fn read = reader(g, &user);
+  demo_none = (int)(g - menu.games);
+  if (!read || !where[demo_none].gam[0]) return;
+  game.say = say;
+  if (gs_demo_start(&game, read, user, where[demo_none].gam, clock_ns())) return; /* no demo */
+  demo_none = -1; demo_on = 1;
+  p = put(line, "GMOS demo start "); p = put(p, g->dir); p = put(p, ", "); p = num(p, game.demo_n); put(p, " keys"); say(line);
+  demo_present(px);
+}
+/* One step of the running demo (a tick is due, or the wait ends): draws a changed frame. 1 when it ended. */
+static int demo_run(uint16_t *px) {
+  uint64_t t = clock_ns();
+  if (t < gs_wake(&game, t)) return 0;
+  int r = gs_step(&game, t);
+  if (r & GS_DRAW) {
+    demo_present(px);
+    if (game.total_ticks == 1 || game.total_ticks % 91 == 0) {char line[64], *p = put(line, "GMOS demo t "); p = num(p, game.total_ticks); p = put(p, " h "); num(p, gp_frame_hash()); say(line);}
+  }
+  if (r & GS_EXIT) {demo_stop("the demo ended"); demo_idle = t; return 1;}
+  return 0;
+}
 /* The title screen of a game (thumb.h), read from its folder; -1 when it has none. */
 static int title_picture(const struct gm_game *g, uint8_t *px, uint8_t *pal) {
   void *user; gp_read_fn read = reader(g, &user);
@@ -516,9 +552,21 @@ int main(const sbx_startup *start) {
     }
     int32_t s = sbx_read(in_fd, ev, sizeof ev, &got);
     if (s == -SBX_EAGAIN) { /* nothing pressed: draw the next card's title screen, or look again in 10 ms */
-      if (load_next_thumb()) show_list(px); else sbx_sleep_until(clock_ns() + 10000000ull);
+      if (demo_on) {
+        if (demo_run(px)) show_list(px);
+        else {uint64_t w = gs_wake(&game, clock_ns()), n = clock_ns() + 10000000ull; sbx_sleep_until(w < n ? w : n);}
+        continue;
+      }
+      if (load_next_thumb()) show_list(px);
+      else {
+        const struct gm_game *g = gm_selected(&menu);
+        if (menu.view == GM_DETAILS && g && demo_none != (int)(g - menu.games) && gs_demo_idle_due(demo_idle, clock_ns()) && abi_minor >= 1) demo_start(px, g);
+        else sbx_sleep_until(clock_ns() + 10000000ull);
+      }
       continue;
     }
+    demo_idle = clock_ns();
+    {int stopped = 0; for (uint32_t i = 0; i < got / sizeof ev[0]; i++) if (demo_on && gs_demo_stops(ev[i].type, ev[i].value)) {demo_stop("a key"); stopped = 1; break;} if (stopped) show_list(px);}
     if (s) {sbx_close(in_fd); have_input = 0; say(s == -SBX_ENODEV ? "GMOS input removed" : "GMOS input error"); continue;}
     int redraw = 0;
     for (uint32_t i = 0; i < got / sizeof ev[0]; i++) {

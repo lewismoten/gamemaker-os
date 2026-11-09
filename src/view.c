@@ -265,15 +265,7 @@ static void button(int32_t x, int32_t y, int32_t w, const char *label, int prima
   }
   text0(F8, tx, y + 11, label, 0xffffffu);
 }
-static void details(const struct gm_menu *m, const uint8_t *big, const uint8_t *big_pal) {
-  const struct gm_game *g = gm_selected(m);
-  int32_t px = 16, py = TABS_Y, pw = GM_W - 32, ph = FOOT_Y - 8 - TABS_Y;
-  for (int32_t j = 0; j < ph; j++) {
-    int32_t k = inset(12, j < ph - 1 - j ? j : ph - 1 - j);
-    for (int32_t i = k; i < pw - k; i++) dot_dither(px + i, py + j, mix(mix(0x150e4cu, 0x3b2272u, (uint32_t)i, (uint32_t)pw), 0x370d4eu, (uint32_t)j, (uint32_t)ph * 2));
-  }
-  if (!g) return;
-  round_rect(PIC_X - 8, PIC_Y - 8, 656, 416, 10, C_FRAME);
+static void picture_area(const uint8_t *big, const uint8_t *big_pal) {
   if (big) { /* each pixel 2 x 2: crisp, and 1080p is exactly 2x again */
     uint16_t c16[256];
     for (unsigned i = 0; i < 256; i++) {const uint8_t *c = big_pal + i * 3; uint32_t v = 0; for (int k = 0; k < 3; k++) v = v << 8 | ((c[k] & 63u) << 2 | (c[k] & 63u) >> 4); c16[i] = gm_565(v);}
@@ -283,6 +275,17 @@ static void details(const struct gm_menu *m, const uint8_t *big, const uint8_t *
     const char *say = "No title screen";
     text(F8, PIC_X + (640 - width(F8, say, len(say), 2)) / 2, PIC_Y + 192, say, len(say), C_DIM, 2);
   }
+}
+static void details(const struct gm_menu *m, const uint8_t *big, const uint8_t *big_pal) {
+  const struct gm_game *g = gm_selected(m);
+  int32_t px = 16, py = TABS_Y, pw = GM_W - 32, ph = FOOT_Y - 8 - TABS_Y;
+  for (int32_t j = 0; j < ph; j++) {
+    int32_t k = inset(12, j < ph - 1 - j ? j : ph - 1 - j);
+    for (int32_t i = k; i < pw - k; i++) dot_dither(px + i, py + j, mix(mix(0x150e4cu, 0x3b2272u, (uint32_t)i, (uint32_t)pw), 0x370d4eu, (uint32_t)j, (uint32_t)ph * 2));
+  }
+  if (!g) return;
+  round_rect(PIC_X - 8, PIC_Y - 8, 656, 416, 10, C_FRAME);
+  picture_area(big, big_pal);
   int32_t x = SIDE_X, w = SIDE_W, y = 62;
   const char *badge = BADGE[g->cat];
   int32_t bw = width(F8, badge, len(badge), 1) + 12;
@@ -315,4 +318,9 @@ void gm_draw(uint16_t *px, uint32_t stride, const struct gm_menu *m, const uint8
   if (m->view == GM_DETAILS) details(m, big, big_pal);
   else {tabs(m); grid(m);}
   footer(m);
+}
+void gm_picture_rect(uint32_t *x, uint32_t *y, uint32_t *w, uint32_t *h) {*x = PIC_X; *y = PIC_Y; *w = 640; *h = 400;}
+void gm_draw_picture(uint16_t *px, uint32_t stride, const uint8_t *big, const uint8_t *big_pal) {
+  P = px; S = stride;
+  picture_area(big, big_pal);
 }

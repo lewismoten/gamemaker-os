@@ -52,6 +52,8 @@ int gp_take_sound(void);
    none, or its name starts with a space: PLAYGAME's PC speaker path). */
 const char *gp_sound_file(void);
 const char *gp_voc_name(int n);
+/* The demo recording's name: scene 0's file slot 11 ("" when empty). */
+const char *gp_demo(void);
 /* The .CMF song slots PLAYGAME plays: the title's, the won and lost pages',
    and a level's (level is for GP_SONG_LEVEL); "" when empty. */
 enum {GP_SONG_TITLE, GP_SONG_WON, GP_SONG_LOST, GP_SONG_LEVEL};

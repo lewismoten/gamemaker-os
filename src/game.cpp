@@ -273,6 +273,7 @@ extern "C" const char *gp_song(int slot, int level) {
   }
   return "";
 }
+extern "C" const char *gp_demo(void) { return fileOf(0, 11); }
 extern "C" const uint8_t *gp_gam_bytes(uint32_t *n) {
   *n = gamN;
   return gam;

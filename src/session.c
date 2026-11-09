@@ -304,6 +304,56 @@ int gs_start(struct gs_session *s, gp_read_fn read, void *user, const char *gam_
   if (s->phase == GS_DONE) {snd_end(&s->sound); return -1;}
   return 0;
 }
+/* PLAYGAME's Recording::DoPlayBack, once a game tick before the tick: the timer counts up and each
+   recorded key whose time has come is pressed (a scan code, bit 7 set: released). The web engine's
+   recorder does the same per tick. A gap over 4096 ticks is a DOS demo's wait at a page (the preview
+   plays no pages), so it counts as one tick. Returns 1 when the demo's Esc comes. */
+static int demo_feed(struct gs_session *s) {
+  s->demo_timer++;
+  while (s->demo_i < s->demo_n) {
+    const uint8_t *r = text + 3 * s->demo_i;
+    uint32_t delta = (uint32_t)(r[0] | r[1] << 8);
+    if (delta > 4096) delta = 1;
+    if (s->demo_last + delta > s->demo_timer) break;
+    s->demo_last += delta; s->demo_i++;
+    if ((r[2] & 0x7f) == 1) return 1;
+    gp_key(r[2] & 0x7f, !(r[2] & 0x80));
+  }
+  return 0;
+}
+void gs_demo_stop(struct gs_session *s) {
+  if (s->demo) {gp_release_all(); s->demo = 0; s->phase = GS_DONE;}
+}
+int gs_demo_start(struct gs_session *s, gp_read_fn read, void *user, const char *gam_name, uint64_t now_ns) {
+  s->read = read; s->user = user; s->begun = 0; s->total_ticks = 0; s->ran = 0; s->showing_card = 0; s->demo = 0;
+  s->keys = 0; s->text = 0; s->now_card = 0;
+  zero(s->px, sizeof s->px); zero(s->pal, 768);
+  if (gp_open(read, user, gam_name) < 0) return -1;
+  const char *name = gp_demo();
+  int32_t n = name[0] ? read(user, name, text, 1000u * 3u) : -1;
+  if (n < 3 || gp_begin()) return -1;
+  s->demo = 1; s->demo_n = (uint32_t)n / 3; s->demo_i = s->demo_timer = s->demo_last = 0;
+  s->begun = 1; s->phase = GS_PLAY; s->t0 = now_ns; s->ticks = 0;
+  render_play(s); copy(s->pal, gp_palette(), 768);
+  return 0;
+}
+static int demo_step(struct gs_session *s, uint64_t now) {
+  uint64_t due = (now - s->t0) * 10u / GS_TICK_NS10;
+  while (s->ticks < due && s->ran < 4) {
+    if (demo_feed(s)) {gs_demo_stop(s); return GS_EXIT;}
+    char r = gp_tick();
+    s->ticks++; s->total_ticks++; s->ran++;
+    gp_take_sound(); /* silent: the preview only shows */
+    if (r == 'W' || (r == 'D' && gp_lives() <= 0) || ((r == 'L' || r == 'D') && gp_finish())) {gs_demo_stop(s); return GS_EXIT;}
+    if (r) gp_release_all(); /* a link or a lost life: the next level or try starts at once, keys let go */
+  }
+  if (s->ticks + 4 < due) {s->t0 = now; s->ticks = 0;}
+  if (!s->ran) return 0;
+  render_play(s); copy(s->pal, gp_palette(), 768);
+  return GS_DRAW;
+}
+int gs_demo_idle_due(uint64_t last, uint64_t now) {return now >= last && now - last >= GS_DEMO_IDLE_NS;}
+int gs_demo_stops(uint16_t type, int32_t value) {return type == 1 && value == 1;}
 int gs_scan(uint16_t code) {
   switch (code) {
     case 103: return 72;  /* up */
@@ -335,6 +385,7 @@ int gs_step(struct gs_session *s, uint64_t now) {
   s->ran = 0;
   if (s->phase == GS_DONE) return GS_EXIT;
   if (s->phase == GS_CARDS) return run_cards(s, now);
+  if (s->demo) return demo_step(s, now);
   uint64_t due = (now - s->t0) * 10u / GS_TICK_NS10;
   while (s->ticks < due && s->ran < 4) {
     char r = gp_tick();
