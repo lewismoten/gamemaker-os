@@ -241,6 +241,7 @@ extern "C" const char *gp_graphic(int slot, int level) {
     case GP_INTRO: return level >= 0 && level < nplay ? fileOf(play[level], F_INTRO) : "";
     case GP_EXIT: return level >= 0 && level < nplay ? fileOf(play[level], F_EXIT) : "";
     case GP_MENU: return fileOf(0, 2);
+    case GP_SCORES: return fileOf(0, 8); // the high score screen's backdrop
   }
   return "";
 }
@@ -286,6 +287,7 @@ extern "C" int gp_finish(void) {
   return ok ? 0 : -1;
 }
 extern "C" int gp_level(void) { return w->level; }
+extern "C" int32_t gp_score(void) { return w ? w->score : 0; }
 extern "C" int gp_lives(void) { return w->lives; }
 extern "C" int gp_pending_level(void) { return w->pendLevel; }
 extern "C" void gp_render(uint8_t *px) {

@@ -18,7 +18,7 @@ extern "C" {
 typedef int32_t (*gp_read_fn)(void *user, const char *name, uint8_t *buf, uint32_t cap);
 /* Scene 0's title graphic and scene 1's won and lost graphics, a level's
    intro and exit graphics (ShowGraphic's file slots), and scene 0's menu picture. */
-enum {GP_TITLE, GP_WON, GP_LOST, GP_INTRO, GP_EXIT, GP_MENU};
+enum {GP_TITLE, GP_WON, GP_LOST, GP_INTRO, GP_EXIT, GP_MENU, GP_SCORES};
 /* Reads the .GAM (version 3.00, or an older one converted as GameClass::Load
    converts it); returns the number of levels (scenes of type 10), or -1. */
 int gp_open(gp_read_fn read, void *user, const char *gam_name);
@@ -36,6 +36,7 @@ void gp_release_all(void);
 char gp_tick(void);
 int gp_finish(void); /* enters the level the last 'D' or 'L' named: 0 or -1 */
 int gp_level(void);
+int32_t gp_score(void); /* the score so far (PLAYGAME ci.score) */
 int gp_lives(void);
 int gp_pending_level(void); /* the level a held 'L' goes to */
 /* The 320 x 200 picture of the game as palette indices (rows outside the

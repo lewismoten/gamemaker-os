@@ -229,9 +229,9 @@ static void footer(const struct gm_menu *m) {
   fill(0, FOOT_Y, GM_W, 1, C_LINE2);
   int32_t x = 16, y = FOOT_Y + 18;
   if (m->message[0]) {text0(F8, x, y, m->message, C_GOLD); return;}
-  if (m->view == GM_DETAILS) {keycap(&x, y, "Left/Right", "choose"); keycap(&x, y, "Enter", "press"); keycap(&x, y, "Esc", "back to the games"); return;}
+  if (m->view == GM_DETAILS) {keycap(&x, y, "Left/Right", "choose"); keycap(&x, y, "Enter", "press"); keycap(&x, y, "H", "high scores"); keycap(&x, y, "Esc", "back to the games"); return;}
   keycap(&x, y, "Arrows", "choose"); keycap(&x, y, "Enter", "open");
-  keycap(&x, y, "Tab", "category"); keycap(&x, y, "PgUp/PgDn", "page"); keycap(&x, y, "Esc", "quit");
+  keycap(&x, y, "Tab", "category"); keycap(&x, y, "PgUp/PgDn", "page"); keycap(&x, y, "H", "high scores"); keycap(&x, y, "Esc", "quit");
 }
 static void grid(const struct gm_menu *m) {
   unsigned t = m->tab, n = m->tab_count[t], p = m->pos[t], first = p / GM_PAGE * GM_PAGE;

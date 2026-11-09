@@ -68,8 +68,14 @@ int gs_step(struct gs_session *s, uint64_t now_ns);
 /* When gs_step next has something to do (a tick, a fade step, a frame, a
    pause's end, or soon, to read input). */
 uint64_t gs_wake(const struct gs_session *s, uint64_t now_ns);
+/* A 320 x 200 picture and its 6-bit palette as a page (x2, as gs_draw shows a card): the Top Ten screens. */
+void gs_show(const uint8_t *px, const uint8_t *pal, uint32_t *fb, uint32_t stride);
 /* The screen: a page or the play view at x2, black around it. */
 void gs_draw(const struct gs_session *s, uint32_t *fb, uint32_t stride);
+/* The game's high score picture (File(0,8): a GIF or BKD) into px (320 x 200 indexes) and pal,
+   as the Top Ten screen's backdrop; 0, or -1 if it has none. open is 1 when no game is open
+   yet (the list's own Top Ten): it opens gam first. */
+int gs_scores_picture(struct gs_session *s, int open, gp_read_fn read, void *user, const char *gam, uint8_t *px, uint8_t *pal);
 /* The DOS scan code for a Linux key code (0: none). */
 int gs_scan(uint16_t code);
 /* FadeTo's palette at a step (0..steps) between two palettes. */
