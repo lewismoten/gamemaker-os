@@ -24,6 +24,7 @@ static int o_ren(void *c, const char *a, const char *b) { /* the staged name mov
 static uint32_t rpos;
 static int o_or(void *c, const char *p, uint64_t *fd) {(void)c; for (int i = 0; i < 4; i++) if (files[i].used && !strcmp(files[i].path, p)) {rd_i = i; rpos = 0; *fd = 5; return 0;} return -2;}
 static int o_rd(void *c, uint64_t fd, void *p, uint32_t n, uint32_t *got) {(void)c; (void)fd; uint32_t left = files[rd_i].n - rpos; if (n > left) n = left; memcpy(p, files[rd_i].d + rpos, n); rpos += n; *got = n; return 0;}
+static int o_or_fail(void *c, const char *p, uint64_t *fd) {(void)c; (void)p; (void)fd; return -5;}
 static const struct save_ops OPS = {0, o_ow, o_w, o_sync, o_close, o_ren, o_or, o_rd};
 static uint8_t dos_his[HIS_BYTES]; static int dos_reads, dos_has;
 static int32_t game_read(void *u, const char *name, uint8_t *buf, uint32_t cap) {
@@ -82,7 +83,7 @@ int main(int argc, char **argv) {
   int a = key(&h, 28);
   assert((a & HS_COMMIT) && h.stage == HS_TABLE && !(a & HS_DONE));
   assert(h.t.row[2].score == 5000 && !strcmp((char *)h.t.row[2].name, "Doc Leo") && h.t.row[3].score == 4200 && h.t.row[4].score == 300);
-  assert(hl_save(&OPS, "TIN", &h.t) == 0);
+  assert(hl_save(&OPS, "TIN", "TIN", &h.t) == 0);
   hs_draw(&h, px, pal, 0, 0); ppm(out, "top-ten-after-entry", px, pal);
   assert(hs_step(&h, now + 29 * 1000 * MS) == 0 && (hs_step(&h, now + 31 * 1000 * MS) & HS_DONE)); /* 30 seconds */
   assert(key(&h, 1) & HS_DONE); /* any key, Esc too */
@@ -133,18 +134,37 @@ int main(int argc, char **argv) {
   memset(files, 0, sizeof files);
   table(&t); his_serialize(&t, dos_his); dos_has = 1;
   struct his_table got; int seeded;
-  assert(hl_load(&OPS, "TIN", game_read, 0, &got, &seeded) == 0 && seeded == 1 && got.row[0].score == 9000 && !strcmp((char *)got.row[1].name, "Teddy"));
+  assert(hl_load(&OPS, "TIN", "TIN", game_read, 0, &got, &seeded) == 0 && seeded == 1 && got.row[0].score == 9000 && !strcmp((char *)got.row[1].name, "Teddy"));
   for (int i = 0; i < 4; i++) assert(!files[i].used); /* loading wrote nothing */
   hs_start(&h, &got, 8000, now); type(&h, "Lewis"); key(&h, 28);
-  assert(hl_save(&OPS, "TIN", &h.t) == 0);
+  assert(hl_save(&OPS, "TIN", "TIN", &h.t) == 0);
   int live = 0, his = 0;
   for (int i = 0; i < 4; i++) if (files[i].used) {live++; his += !strcmp(files[i].path, "/sd/OS/SAVES/TIN/TIN.HIS") && files[i].n == HIS_BYTES;}
   assert(live == 1 && his == 1); /* the .TMP is renamed away; nothing else was written */
   dos_reads = 0; dos_has = 0; memset(dos_his, 0, sizeof dos_his);
-  assert(hl_load(&OPS, "TIN", game_read, 0, &got, &seeded) == 0 && seeded == 0 && dos_reads == 0 && got.row[1].score == 8000 && !strcmp((char *)got.row[1].name, "Lewis") && got.row[2].score == 7500);
+  assert(hl_load(&OPS, "TIN", "TIN", game_read, 0, &got, &seeded) == 0 && seeded == 0 && dos_reads == 0 && got.row[1].score == 8000 && !strcmp((char *)got.row[1].name, "Lewis") && got.row[2].score == 7500);
   memset(files, 0, sizeof files); /* neither: an empty table */
-  assert(hl_load(&OPS, "TIN", game_read, 0, &got, &seeded) == 0 && seeded == 0 && got.row[0].score == 0);
-  assert(hl_load(&OPS, "TIN", 0, 0, &got, &seeded) == 0 && seeded == 0);
+  assert(hl_load(&OPS, "TIN", "TIN", game_read, 0, &got, &seeded) == 0 && seeded == 0 && got.row[0].score == 0);
+  assert(hl_load(&OPS, "TIN", "TIN", 0, 0, &got, &seeded) == 0 && seeded == 0);
+  /* two START.GAMs in different folders get different save folders; the same game keeps its own */
+  char k1[9], k2[9], k3[9];
+  hl_key("START", "/games/a", "START.GAM", k1); hl_key("START", "/games/b", "START.GAM", k2); hl_key("START", "/games/a", "START.GAM", k3);
+  assert(strcmp(k1, k2) && !strcmp(k1, k3) && strlen(k1) == 8 && !strncmp(k1, "STAR", 4));
+  /* a Top Ten saved under the old stem-only folder is found under the new key, and the next save goes to the key */
+  memset(files, 0, sizeof files); dos_has = 0;
+  table(&t); his_serialize(&t, dos_his);
+  files[0].used = 1; strcpy(files[0].path, "/sd/OS/SAVES/START/START.HIS"); memcpy(files[0].d, dos_his, HIS_BYTES); files[0].n = HIS_BYTES;
+  assert(hl_load(&OPS, k1, "START", game_read, 0, &got, &seeded) == 0 && seeded == 0 && got.row[0].score == 9000);
+  assert(hl_save(&OPS, k1, "START", &got) == 0);
+  char want[48]; snprintf(want, sizeof want, "/sd/OS/SAVES/%s/START.HIS", k1); int at_key = 0;
+  for (int i = 0; i < 4; i++) at_key += files[i].used && !strcmp(files[i].path, want);
+  assert(at_key == 1);
+  /* a card read error other than "no file" is reported (main.c then saves nothing this session) */
+  struct save_ops bad = OPS; bad.open_read = o_or_fail;
+  assert(hl_load(&bad, k1, "START", 0, 0, &got, &seeded) == -5);
+  /* his_name checks the length: a long game name is refused, not copied into char[16] */
+  assert(save_his_load(&OPS, "TOOLONGNAMES", &got) == SAVE_EINVAL && save_his_load(&OPS, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", &got) == SAVE_EINVAL);
+  int place; assert(save_his_record(&OPS, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", 5, "x", &place) == SAVE_EINVAL);
   puts("ALL PASS");
   return 0;
 }

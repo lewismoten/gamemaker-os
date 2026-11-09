@@ -338,14 +338,16 @@ static struct hs_screen hsc;
    game is open in the play core yet. The table is read from /OS/SAVES/<GAME>/, else seeded from the
    game's own .HIS (read only); a new name is written back there. */
 static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int open) {
-  char line[96], stem[9], *p; void *user; gp_read_fn read = reader(g, &user);
+  char line[96], stem[9], key[9], *p; void *user; gp_read_fn read = reader(g, &user);
   const char *gam = where[g - menu.games].gam;
   if (!gam[0] || !read || hl_stem(gam, stem)) {say("GMOS no Top Ten for this game"); return;}
+  hl_key(stem, where[g - menu.games].path, gam, key);
   struct his_table t; int seeded = 0, can_write = abi_minor >= 7;
-  int e = hl_load(&save_sbx_ops, stem, read, user, &t, &seeded);
-  if (e) {p = put(line, "GMOS Top Ten read failed "); num(p, (uint32_t)-e); say(line);}
+  int e = hl_load(&save_sbx_ops, key, stem, read, user, &t, &seeded);
+  /* a card read that failed for any reason but "no file" must not be saved over by the seed */
+  if (e) {p = put(line, "GMOS Top Ten read failed "); p = num(p, (uint32_t)-e); put(p, ": no saving this time"); say(line); can_write = 0;}
   if (seeded) say("GMOS Top Ten seeded from the game's own .HIS");
-  if (!can_write && score > 0) say("GMOS saving needs the kernel's /OS/SAVES (ABI 1.7)");
+  if (abi_minor < 7 && score > 0) say("GMOS saving needs the kernel's /OS/SAVES (ABI 1.7)");
   score = hs_entry_score(score, can_write);
   /* PLAYGAME shows File(1,2) (lost) or (1,0) (won) and plays File(1,3)/(1,1), then clears the screen with
      BoxFill before the name entry (PLAYGAME.C 1149-1176): the entry's backdrop is black, as here, and the
@@ -373,7 +375,7 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
       for (uint32_t i = 0; i < got / sizeof ev[0] && !(r & HS_DONE); i++) {
         int a = hs_event(&hsc, ev[i].type, ev[i].code, ev[i].value, clock_ns());
         if (a & HS_COMMIT) {
-          int w = hl_save(&save_sbx_ops, stem, &hsc.t);
+          int w = hl_save(&save_sbx_ops, key, stem, &hsc.t);
           p = put(line, "GMOS Top Ten "); p = put(p, stem); p = put(p, w ? " save failed " : " saved "); num(p, (uint32_t)-w); say(line);
         }
         r |= a;

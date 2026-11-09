@@ -213,4 +213,28 @@ class Play(unittest.TestCase):
     def test_missing_game(self):
         s = Session(gam=b'NONE.GAM'); self.assertEqual(s.result, -1); self.assertIn('GMOS cannot read NONE.GAM', s.log)
 
+class DamagedFiles(unittest.TestCase):
+    """A damaged .GAM or .MAP must not make the core read outside its arrays (make test-asan checks that);
+    the hero's position wraps by the map size and a map cell above 150 is empty, as in PLAYGAME."""
+    def play(self, gam=None, mapb=None):
+        import shutil, tempfile
+        with tempfile.TemporaryDirectory() as d:
+            shutil.copytree(DICE, d, dirs_exist_ok=True)
+            if gam: (pathlib.Path(d) / 'DICE.GAM').write_bytes(gam((DICE / 'DICE.GAM').read_bytes()))
+            if mapb: (pathlib.Path(d) / 'ONE.MAP').write_bytes(mapb((DICE / 'ONE.MAP').read_bytes()))
+            s = Session(folder=d)
+            if s.result < 0: return s
+            t = s.to_play()
+            for i in range(1, 200): s.step(t + tick_ns(i)); s.key(RIGHT, 1)
+            return s
+    def test_link_position_far_off_the_map(self):
+        def far(b): b = bytearray(b); b[351:355] = bytes.fromhex('ff7fff7f'); return bytes(b)
+        self.assertGreaterEqual(self.play(gam=far).result, 0)
+    def test_map_cells_above_150(self):
+        def big(b): return bytes(255 if i % 2 == 0 else x for i, x in enumerate(b))
+        self.assertGreaterEqual(self.play(mapb=big).result, 0)
+    def test_unterminated_name(self):
+        s = self.play(gam=lambda b: b[:-1])  # the last name loses its NUL: it is no name
+        self.assertIsNotNone(s)
+
 if __name__ == '__main__': unittest.main()

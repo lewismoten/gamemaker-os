@@ -8,8 +8,10 @@
 #include "savefile.h"
 /* The 8.3 stem of a game's .GAM name, upper case, as <GAME>; 0, or -1 if it is no valid <GAME>. */
 int hl_stem(const char *gam, char out[9]);
-/* Fills t. *seeded is 1 when it came from the game's own .HIS. A card error other than
+/* The save folder <GAME> for this game: stem letters plus a short hash of folder and .GAM name. */
+void hl_key(const char *stem, const char *folder, const char *gam, char out[9]);
+/* Fills t from /OS/SAVES/<key>/<stem>.HIS (else the older <stem> folder, else the game's own .HIS). *seeded is 1 when it came from the game's own .HIS. A card error other than
    "no file" is returned (t then holds the seed or zeros). */
-int hl_load(const struct save_ops *o, const char *game, gp_read_fn read, void *user, struct his_table *t, int *seeded);
-/* Writes t to /OS/SAVES/<GAME>/<GAME>.HIS. */
-int hl_save(const struct save_ops *o, const char *game, const struct his_table *t);
+int hl_load(const struct save_ops *o, const char *key, const char *stem, gp_read_fn read, void *user, struct his_table *t, int *seeded);
+/* Writes t to /OS/SAVES/<key>/<stem>.HIS. */
+int hl_save(const struct save_ops *o, const char *key, const char *stem, const struct his_table *t);
