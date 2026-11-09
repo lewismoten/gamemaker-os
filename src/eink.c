@@ -27,8 +27,9 @@ void ei_page(uint8_t *out, const char *mode, unsigned games, const char *game) {
   for (unsigned y = 20; y < 122; y++) for (unsigned x = y < 44 ? 6u : 0u; x < 32; x++) out[y * 32 + x] = 0; /* the frame's own labels go; the mark (x < 48) stays */
   draw(out, 50, 26, mode, 24, 1);
   char head[24] = "GAMES: "; unsigned h = 7, v = games; char t[11]; int k = 0;
-  do t[k++] = (char)('0' + v % 10); while (v /= 10);
-  while (k) head[h++] = t[--k]; head[h] = 0;
+  do {t[k++] = (char)('0' + v % 10);} while (v /= 10);
+  while (k) head[h++] = t[--k];
+  head[h] = 0;
   draw(out, 4, 46, head, h, 2);
   unsigned skip, n = line_of(game, &skip); draw(out, 4, 66, game, n, 2);
   const char *rest = game + skip; while (*rest == ' ') rest++;
