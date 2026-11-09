@@ -56,8 +56,8 @@ static void scan_summary(void) {
 }
 static int no_index; /* read_index found no LIBRARY.JSL */
 static void (*beat_hook)(int); /* the loading splash's animation, set in main: called between files and games */
-static void audio_poll(void); /* below: feeds /dev/audio; the heartbeat is called all through a game's slow steps */
-static void heartbeat(void) {sbx_health(generation, ++beat); if (beat_hook) beat_hook(0); audio_poll();}
+static void (*audio_hook)(void); /* feeds /dev/audio (set while a game plays): the heartbeat is called all through its slow steps */
+static void heartbeat(void) {sbx_health(generation, ++beat); if (beat_hook) beat_hook(0); if (audio_hook) audio_hook();}
 static int ends_with_gam(const char *s, unsigned n) {
   return n > 4 && s[n - 4] == '.' && (s[n - 3] == 'G'||s[n - 3]=='g') && (s[n - 2] == 'A'||s[n - 2]=='a') && (s[n - 1] == 'M'||s[n - 1]=='m');
 }
@@ -332,6 +332,7 @@ static int32_t au_write(void *u, const void *pcm, uint32_t bytes) {
 static uint64_t au_now(void *u) {(void)u; uint64_t t = 0; sbx_clock_ns(&t); return t;}
 static const struct au_sink au_sink = {0, au_query, au_write, au_now};
 static void audio_poll(void) {if (aud_on && !aud_busy) {aud_busy = 1; au_pump(&aud, &au_sink); aud_busy = 0;}}
+
 static void au_event(void *u, int kind, const char *name, int n) {
   (void)u;
   if (kind == SND_EV_MUSIC) au_music(&aud, name); else if (kind == SND_EV_BEEP) au_beep(&aud, name, n); else au_stop(&aud);
@@ -340,7 +341,8 @@ static void audio_start(struct gs_sound *snd) {
   aud_on = 0;
   if (abi_minor < 8) {say("GMOS audio: kernel ABI below 1.8, SND lines only"); return;}
   if (sbx_open("/dev/audio", 10, SBX_O_WRONLY, &audio_fd)) {say("GMOS audio: /dev/audio not available"); return;}
-  au_init(&aud, pic_px, sizeof pic_px); /* the thumbnail scratch is idle while a game plays */ snd->event = au_event; snd->event_user = 0; aud_on = 1;
+  au_init(&aud, pic_px, sizeof pic_px); /* the thumbnail scratch is idle while a game plays */
+  audio_hook = audio_poll; snd->event = au_event; snd->event_user = 0; aud_on = 1;
   sbx_audio_info i; char line[80], *p = put(line, "GMOS audio open, ring ");
   if (!sbx_audio_query(audio_fd, &i)) {p = num(p, (uint32_t)i.capacity_frames); p = put(p, " frames at "); p = num(p, (uint32_t)i.rate); put(p, " Hz");} else put(p, "(no query)");
   say(line);
@@ -358,7 +360,7 @@ static void audio_log(const char *what, uint64_t elapsed_ns) {
 }
 static void audio_stop(uint64_t since) {
   if (!aud_on) return;
-  audio_log("closing", clock_ns() - since); aud_on = 0; sbx_close(audio_fd);
+  audio_log("closing", clock_ns() - since); aud_on = 0; audio_hook = 0; sbx_close(audio_fd);
 }
 #define PLAY_W 640u /* a game's screen: 320 x 200 doubled, as before the page went 16:9 */
 #define PLAY_H 480u
