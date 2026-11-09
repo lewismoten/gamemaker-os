@@ -22,12 +22,14 @@
 #include "thumb.h"
 #include "view.h"
 #include "bootart.h"
+#include "eink.h"
 #ifndef GMOS_SCAN_VERBOSE
 #define GMOS_SCAN_VERBOSE 0
 #endif
 static uint64_t log_fd, fb_fd, in_fd;
 static uint32_t generation, abi_minor;
 static uint64_t beat;
+static uint64_t eink_fd; static int eink_on; static struct ei_state eink; /* ABI 1.9: the e-ink title and status page (eink.h) */
 static int have_input;
 static struct gm_menu menu;
 /* Menu labels remain DOS-sized; exact UTF-8 locations are separate. Kind 0
@@ -517,6 +519,26 @@ static int load_next_thumb(void) {
   }
   return 0;
 }
+/* Open /dev/eink and set the OS's title and mark; without ABI 1.9 or the panel the OS runs as before. */
+static void eink_start(void) {
+  if (abi_minor < 9) {say("GMOS eink: kernel ABI below 1.9, no e-ink use"); return;}
+  if (sbx_open("/dev/eink", 9, SBX_O_WRONLY, &eink_fd)) {say("GMOS eink: /dev/eink not available"); return;}
+  sbx_eink_title_rec rec; int32_t rc = sbx_eink_title(eink_fd, &rec, EI_NAME, 13, ei_mark);
+  char line[48], *p = put(line, rc ? "GMOS eink title failed, error " : "GMOS eink title set, result "); num(p, (uint32_t)(rc < 0 ? -rc : rc)); say(line);
+  if (rc) return;
+  eink_on = 1; ei_init(&eink);
+}
+/* On the list, once the selection has been still: the status page (eink.h decides when; the kernel may still say too soon). */
+static void eink_tick(void) {
+  if (!eink_on || !menu.count) return;
+  const struct gm_game *g = gm_selected(&menu);
+  uint64_t now = clock_ns();
+  if (!ei_update(&eink, now, menu.count, g ? g->title : "")) return;
+  int32_t rc = sbx_eink_page(eink_fd, eink.page);
+  ei_sent(&eink, now, rc == 0);
+  char line[64], *p = put(line, rc ? "GMOS eink page refused, error " : "GMOS eink page sent: "); if (rc) num(p, (uint32_t)(rc < 0 ? -rc : rc)); else {p = put(p, "GAMES "); p = num(p, menu.count); p = put(p, " GAME "); put(p, g ? g->title : ""); line[63] = 0;}
+  say(line);
+}
 /* Draws the games page and presents it; once every card on it is drawn, logs the frame's CRC (the host tests render the same frame). */
 static void show_list(uint16_t *px) {
   if (!menu.count) { /* an empty or unreadable library: the OS says why (bootart.h) */
@@ -557,6 +579,7 @@ int main(const sbx_startup *start) {
   px = (uint16_t *)surface;
   ba_splash(px, GM_W); sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H); say("GMOS boot splash"); /* until the list is ready */
   splash_px = px; sbx_clock_ns(&splash_t0); splash_last = splash_call = splash_t0; beat_hook = splash_tick;
+  eink_start();
   find_games();
   splash_tick(1); {char l[64], *q = put(l, "GMOS splash longest gap between checkpoints "); q = num(q, splash_gap_ms); put(q, " ms"); say(l);} splash_px = 0; beat_hook = 0; /* a last step, so a quick load still moves once */
   p = put(line, "GMOS "); p = num(p, menu.count); p = put(p, menu.count == 1 ? " game" : " games"); put(p, " in /sd/GAMES"); say(line);
@@ -586,6 +609,7 @@ int main(const sbx_startup *start) {
       }
       if (load_next_thumb()) show_list(px);
       else {
+        eink_tick();
         const struct gm_game *g = gm_selected(&menu);
         if (menu.view == GM_DETAILS && g && demo_none != (int)(g - menu.games) && gs_demo_idle_due(demo_idle, clock_ns()) && abi_minor >= 1) demo_start(px, g);
         else sbx_sleep_until(clock_ns() + 10000000ull);
