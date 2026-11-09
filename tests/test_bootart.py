@@ -38,7 +38,8 @@ class BootArt(unittest.TestCase):
     def test_bars_travel_and_stay_visible(self):
         c = lib(); c.ba_bar.argtypes = [C.c_void_p, C.c_uint32, C.c_uint32, C.c_uint32]
         base, buf = render('ba_splash'); bg = rgb(base[0]); gifs = {}
-        for segs, x0, w, pitch in ((4, 426, 24, 28), (8, 425, 12, 14)):
+        for segs, x0, w, pitch, mode in ((4, 426, 24, 28, 0), (8, 425, 12, 14, 0), (8, 425, 12, 14, 1)):
+            C.c_uint32.in_dll(c, 'ba_ramp_mode').value = mode
             frames = []; peaks = []
             for ms in range(0, 1600, 100):
                 c.ba_bar(buf, W, ms, segs); px = [buf[y * W + x] for y in range(H) for x in range(W)]; frames.append(px)
@@ -49,14 +50,15 @@ class BootArt(unittest.TestCase):
                     for i in range(segs):  # each segment is one solid color across its whole box
                         self.assertEqual({rgb(px[y * W + x]) for x in range(x0 + i * pitch, x0 + i * pitch + w)}, {shades[i]})
                 self.assertNotIn(bg, shades); self.assertNotIn(0x182C78, shades)  # always visible: never background or navy
-                self.assertEqual(px[:497 * W], base[:497 * W]); peaks.append(max(range(segs), key=lambda i: (sum(shades[i].to_bytes(3, 'big')), -i)))
+                self.assertEqual(px[:497 * W], base[:497 * W]); self.assertNotIn(q(0xF8FCF8), shades); peaks.append(max(range(segs), key=lambda i: (-sum(abs(a - b) for a, b in zip(shades[i].to_bytes(3, 'big'), q(0xF8D450).to_bytes(3, 'big'))), -i)))  # the peak is yellow, never white
             while len(peaks) > 1 and peaks[-1] == 0: peaks.pop()  # the last frames are back around the loop
             self.assertEqual(peaks[0], 0); self.assertEqual(sorted(set(peaks)), list(range(segs)))  # the white peak visits every segment, in order
-            self.assertEqual(peaks, sorted(peaks)); gifs[segs] = frames
+            self.assertEqual(peaks, sorted(peaks)); gifs[(segs, mode)] = frames
         d = pathlib.Path(SHOTS or OUT / 'bootart'); d.mkdir(parents=True, exist_ok=True)
         from PIL import Image
-        for segs, frames in gifs.items():
+        C.c_uint32.in_dll(c, 'ba_ramp_mode').value = 0
+        for (segs, mode), frames in gifs.items():
             ims = [Image.frombytes('RGB', (W, H), b''.join(bytes(((rgb(p) >> 16) & 255, (rgb(p) >> 8) & 255, rgb(p) & 255)) for p in f)) for f in frames]
-            ims[0].save(d / f'boot-splash-loading-{segs}seg.gif', save_all=True, append_images=ims[1:], duration=100, loop=0)
-            if segs == 8: ims[0].crop((380, 360, 580, 510)).save(d / 'boot-splash-loading-frame.png')
+            ims[0].save(d / f'boot-splash-loading-{segs}seg-mode{mode}.gif', save_all=True, append_images=ims[1:], duration=100, loop=0)
+            if (segs, mode) == (8, 0): ims[0].crop((380, 360, 580, 510)).save(d / 'boot-splash-loading-frame.png')
 if __name__ == '__main__': unittest.main()

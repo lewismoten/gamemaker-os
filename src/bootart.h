@@ -20,4 +20,6 @@ void ba_diag(uint16_t *px, uint32_t stride, const char *const *lines, unsigned n
 #define BA_BAR_H 4u
 #define BA_CYCLE_MS 1600u
 #define BA_SEGS 8u
+#define BA_RAMP 0u /* the highlight's colors: 0 dip through dark, 1 hue path */
+extern uint32_t ba_ramp_mode;
 void ba_bar(uint16_t *px, uint32_t stride, uint32_t ms, uint32_t segs);
