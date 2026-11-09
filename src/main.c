@@ -349,7 +349,7 @@ static void audio_start(struct gs_sound *snd) {
 }
 /* One log line of the audio counters: what the kernel counted, and what the synth cost. */
 static void audio_log(const char *what, uint64_t elapsed_ns) {
-  sbx_audio_info i; char line[120], *p = put(line, "GMOS audio "); p = put(p, what);
+  sbx_audio_info i; char line[320], *p = put(line, "GMOS audio "); p = put(p, what);
   if (sbx_audio_query(audio_fd, &i)) {put(p, ": no query"); say(line); return;}
   p = put(p, ": rendered "); p = num(p, (uint32_t)aud.frames); p = put(p, " frames, queued "); p = num(p, (uint32_t)i.queued_frames);
   p = put(p, ", played "); p = num(p, (uint32_t)i.played_frames); p = put(p, ", underruns "); p = num(p, (uint32_t)i.underruns);
