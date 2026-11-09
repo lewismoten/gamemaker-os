@@ -267,12 +267,16 @@ static void open_input(void) {
   say(line);
   sbx_input_state_get(in_fd, &st); /* start from the current state and an empty queue */
 }
-static uint16_t *splash_px; static uint32_t splash_step; static uint64_t splash_t; /* the loading splash's bars (bootart.h) */
+static uint16_t *splash_px; static uint64_t splash_t0, splash_last, splash_call; static uint32_t splash_gap_ms; /* the loading bars (bootart.h) */
+/* Called between files and games (the heartbeat): the clock picks the highlight's place, so uneven calls skip shades
+   instead of slowing it. At most one redraw every 50 ms; force is the last step before the list. */
 static void splash_tick(int force) {
   uint64_t now = 0; if (!splash_px) return;
   sbx_clock_ns(&now);
-  if (!force && now - splash_t < 400000000ull) return; /* one step at most every 400 ms of real time */
-  splash_t = now; ba_bar(splash_px, GM_W, ++splash_step);
+  uint32_t gap = (uint32_t)((now - splash_call) / 1000000u); if (gap > splash_gap_ms) splash_gap_ms = gap; /* checkpoint spacing */
+  splash_call = now;
+  if (!force && now - splash_last < 50000000ull) return;
+  splash_last = now; ba_bar(splash_px, GM_W, (uint32_t)((now - splash_t0) / 1000000u), BA_SEGS);
   sbx_fb_present(fb_fd, BA_BAR_X, BA_BAR_Y, BA_BAR_W, BA_BAR_H);
 }
 /* game.h's folder reader: preserve spelling and reject escaping/oversized paths. */
@@ -552,9 +556,9 @@ int main(const sbx_startup *start) {
   }
   px = (uint16_t *)surface;
   ba_splash(px, GM_W); sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H); say("GMOS boot splash"); /* until the list is ready */
-  splash_px = px; sbx_clock_ns(&splash_t); beat_hook = splash_tick;
+  splash_px = px; sbx_clock_ns(&splash_t0); splash_last = splash_call = splash_t0; beat_hook = splash_tick;
   find_games();
-  splash_tick(1); splash_px = 0; beat_hook = 0; /* a last step, so a quick load still moves once */
+  splash_tick(1); {char l[64], *q = put(l, "GMOS splash longest gap between checkpoints "); q = num(q, splash_gap_ms); put(q, " ms"); say(l);} splash_px = 0; beat_hook = 0; /* a last step, so a quick load still moves once */
   p = put(line, "GMOS "); p = num(p, menu.count); p = put(p, menu.count == 1 ? " game" : " games"); put(p, " in /sd/GAMES"); say(line);
   for (unsigned i = 0; i < menu.count; i++) {
     const struct gm_game *g = &menu.games[i];

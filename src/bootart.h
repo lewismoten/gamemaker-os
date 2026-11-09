@@ -11,10 +11,13 @@ void ba_splash(uint16_t *px, uint32_t stride);
 /* Diagnostics: lines are the OS's reasons (upper case, at most 59 characters; the framed area holds 12). */
 #define BA_DIAG_ROWS 12u
 void ba_diag(uint16_t *px, uint32_t stride, const char *const *lines, unsigned n);
-/* Only the four bars at (BA_BAR_X, BA_BAR_Y, BA_BAR_W x BA_BAR_H), their colors rotated step places: the loading
-   animation redraws just this strip. */
-#define BA_BAR_X 426u
+/* Only the loading bars (a strip of BA_BAR_W x BA_BAR_H at BA_BAR_X, BA_BAR_Y): a highlight travels along them once
+   every BA_CYCLE_MS, ms being the time since the splash began. segs: 4 or 8 segments. The strip is cleared first,
+   so a redraw leaves nothing behind. */
+#define BA_BAR_X 424u
 #define BA_BAR_Y 497u
-#define BA_BAR_W 108u
+#define BA_BAR_W 112u
 #define BA_BAR_H 4u
-void ba_bar(uint16_t *px, uint32_t stride, uint32_t step);
+#define BA_CYCLE_MS 1600u
+#define BA_SEGS 8u
+void ba_bar(uint16_t *px, uint32_t stride, uint32_t ms, uint32_t segs);

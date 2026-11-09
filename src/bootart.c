@@ -40,12 +40,27 @@ static void badge(int32_t x, int32_t y, uint32_t size) {
     for (uint32_t tx = 0; tx < size; tx++) P[(uint32_t)(y + (int32_t)ty) * S + (uint32_t)(x + (int32_t)tx)] = ba_pal[row[(2u * tx + 1u) * 96u / (2u * size)]];
   }
 }
-/* The four bars at the bottom; step n rotates the colors one place a step along the bars. */
-static void bar(uint32_t step) {
-  static const uint32_t col[4] = {NAVY, BLUE, YELLOW, WHITE};
-  for (uint32_t i = 0; i < 4; i++) rect(426 + (int32_t)i * 28, 497, 24, 4, col[(i + step) & 3u]);
+/* The loading bars: a highlight travels along them once every BA_CYCLE_MS. A segment is light blue at rest and eases
+   up through yellow to white as the highlight passes (16 shades, exact in RGB565); the background-like navy is not
+   used, so every segment stays visible. segs is 4 (24 px, 4 px gaps) or 8 (12 px, 2 px gaps). */
+static uint32_t ramp(uint32_t k) { /* k 0..16: light blue, yellow at 8, white at 16 */
+  static const uint32_t c[3] = {0x7898F8u, 0xF8D450u, 0xF8FCF8u};
+  uint32_t a = c[k / 8u], b = c[k / 8u + (k < 16u)], t = k % 8u, o = 0;
+  for (int sh = 16; sh >= 0; sh -= 8) {uint32_t x = a >> sh & 255u, y = b >> sh & 255u; o = o << 8 | (x * (8u - t) + y * t) / 8u;}
+  return o;
 }
-void ba_bar(uint16_t *px, uint32_t stride, uint32_t step) {P = px; S = stride; bar(step);}
+static void bar(uint32_t ms, uint32_t segs) {
+  uint32_t w = segs == 8u ? 12u : 24u, pitch = segs == 8u ? 14u : 28u; int32_t x0 = segs == 8u ? 425 : 426;
+  rect((int32_t)BA_BAR_X, (int32_t)BA_BAR_Y, (int32_t)BA_BAR_W, (int32_t)BA_BAR_H, BG);
+  uint32_t pos = (ms % BA_CYCLE_MS) * segs * 16u / BA_CYCLE_MS; /* the highlight's place in 1/16 segments */
+  for (uint32_t i = 0; i < segs; i++) {
+    uint32_t at = i * 16u, d = pos > at ? pos - at : at - pos;
+    if (d > segs * 8u) d = segs * 16u - d; /* around the loop */
+    uint32_t reach = 28u, k = d >= reach ? 0 : (reach - d) * 16u / reach; /* two segments either side fade out */
+    rect(x0 + (int32_t)(i * pitch), (int32_t)BA_BAR_Y, (int32_t)w, (int32_t)BA_BAR_H, ramp(k));
+  }
+}
+void ba_bar(uint16_t *px, uint32_t stride, uint32_t ms, uint32_t segs) {P = px; S = stride; bar(ms, segs);}
 void ba_splash(uint16_t *px, uint32_t stride) {
   P = px; S = stride;
   rect(0, 0, 960, 540, BG);
@@ -53,7 +68,7 @@ void ba_splash(uint16_t *px, uint32_t stride) {
   text(-1, 272, "GAME-MAKER OS", WHITE, 5);
   text(-1, 328, "SANDBOX EDITION", YELLOW, 2);
   text(-1, 375, "LOADING GAME LIBRARY...", MUTED, 2);
-  bar(0);
+  bar(0, BA_SEGS);
 }
 void ba_diag(uint16_t *px, uint32_t stride, const char *const *lines, unsigned n) {
   P = px; S = stride;
@@ -63,5 +78,5 @@ void ba_diag(uint16_t *px, uint32_t stride, const char *const *lines, unsigned n
   text(191, 96, "LIBRARY DIAGNOSTICS", YELLOW, 2);
   rect(112, 135, 736, 2, NAVY); rect(112, 453, 736, 2, NAVY);
   for (unsigned i = 0; i < n && i < BA_DIAG_ROWS; i++) text(128, 150 + (int32_t)i * 24, lines[i], WHITE, 2);
-  bar(0);
+  bar(0, BA_SEGS);
 }
