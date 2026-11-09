@@ -52,7 +52,8 @@ static void scan_summary(void) {
   }
 }
 static int no_index; /* read_index found no LIBRARY.JSL */
-static void heartbeat(void) {sbx_health(generation, ++beat);}
+static void (*beat_hook)(int); /* the loading splash's animation, set in main: called between files and games */
+static void heartbeat(void) {sbx_health(generation, ++beat); if (beat_hook) beat_hook(0);}
 static int ends_with_gam(const char *s, unsigned n) {
   return n > 4 && s[n - 4] == '.' && (s[n - 3] == 'G'||s[n - 3]=='g') && (s[n - 2] == 'A'||s[n - 2]=='a') && (s[n - 1] == 'M'||s[n - 1]=='m');
 }
@@ -265,6 +266,14 @@ static void open_input(void) {
   }
   say(line);
   sbx_input_state_get(in_fd, &st); /* start from the current state and an empty queue */
+}
+static uint16_t *splash_px; static uint32_t splash_step; static uint64_t splash_t; /* the loading splash's bars (bootart.h) */
+static void splash_tick(int force) {
+  uint64_t now = 0; if (!splash_px) return;
+  sbx_clock_ns(&now);
+  if (!force && now - splash_t < 120000000ull) return; /* one step at most every 120 ms of real time */
+  splash_t = now; ba_bar(splash_px, GM_W, ++splash_step);
+  sbx_fb_present(fb_fd, BA_BAR_X, BA_BAR_Y, BA_BAR_W, BA_BAR_H);
 }
 /* game.h's folder reader: preserve spelling and reject escaping/oversized paths. */
 static int32_t sd_read(void *user, const char *name, uint8_t *buf, uint32_t cap) {
@@ -543,7 +552,9 @@ int main(const sbx_startup *start) {
   }
   px = (uint16_t *)surface;
   ba_splash(px, GM_W); sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H); say("GMOS boot splash"); /* until the list is ready */
+  splash_px = px; sbx_clock_ns(&splash_t); beat_hook = splash_tick;
   find_games();
+  splash_tick(1); splash_px = 0; beat_hook = 0; /* a last step, so a quick load still moves once */
   p = put(line, "GMOS "); p = num(p, menu.count); p = put(p, menu.count == 1 ? " game" : " games"); put(p, " in /sd/GAMES"); say(line);
   for (unsigned i = 0; i < menu.count; i++) {
     const struct gm_game *g = &menu.games[i];
