@@ -14,7 +14,7 @@
 enum {HS_NAME, HS_TABLE};
 enum {HS_DRAW = 1, HS_COMMIT = 2, HS_DONE = 4};
 struct hs_screen {
-  int stage, place, shift, cur_on;
+  int stage, place, shift, ctrl, cur_on;
   struct his_table t;
   int32_t score;                  /* the game's score, or -1 when opened from the menu */
   char name[HIS_NAME_MAX + 1];
@@ -36,3 +36,7 @@ uint64_t hs_wake(const struct hs_screen *h, uint64_t now);
 void hs_draw(const struct hs_screen *h, uint8_t *px, uint8_t *pal, const uint8_t *back, const uint8_t *back_pal);
 /* The ASCII a Linux key code types (0: none). */
 int hs_ascii(uint16_t code, int shift);
+/* Shift and Ctrl as the kernel's input state has them (sbx_input_state.keys), read when the entry begins. */
+void hs_modifiers(struct hs_screen *h, const uint64_t *keys);
+/* The score to open with: below ABI 1.7 nothing can be saved, so a score that would place shows the list (-1). */
+int32_t hs_entry_score(int32_t score, int can_write);
