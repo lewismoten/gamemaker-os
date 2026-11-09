@@ -21,6 +21,7 @@
 #include "session.h"
 #include "thumb.h"
 #include "view.h"
+#include "bootart.h"
 #ifndef GMOS_SCAN_VERBOSE
 #define GMOS_SCAN_VERBOSE 0
 #endif
@@ -50,7 +51,9 @@ static void scan_summary(void) {
     put(p, " detail messages suppressed (SCAN_VERBOSE=1 to show)"); say(line);
   }
 }
-static void heartbeat(void) {sbx_health(generation, ++beat);}
+static int no_index; /* read_index found no LIBRARY.JSL */
+static void (*beat_hook)(int); /* the loading splash's animation, set in main: called between files and games */
+static void heartbeat(void) {sbx_health(generation, ++beat); if (beat_hook) beat_hook(0);}
 static int ends_with_gam(const char *s, unsigned n) {
   return n > 4 && s[n - 4] == '.' && (s[n - 3] == 'G'||s[n - 3]=='g') && (s[n - 2] == 'A'||s[n - 2]=='a') && (s[n - 1] == 'M'||s[n - 1]=='m');
 }
@@ -143,7 +146,7 @@ static void read_index(void) {
     have=0;path="/sd/GAMES/LIBRARY.JSL";
     if(sbx_open(path,21,SBX_O_RDONLY,&fd)){
       path="/sd/OS/LIBRARY.JSL";
-      if(sbx_open(path,18,SBX_O_RDONLY,&fd)){say("GMOS no library index; titles from the .GAM files");return;}
+      if(sbx_open(path,18,SBX_O_RDONLY,&fd)){no_index=1;say("GMOS no library index; titles from the .GAM files");return;}
     }
     int status=0;
     while (have < sizeof index_text && !(status=sbx_read(fd, index_text + have, sizeof index_text - have, &got)) && got) have += (uint32_t)got;
@@ -249,8 +252,8 @@ static void find_games(void) {
   for(unsigned i=0;i<zip_count;i++)if(zip_candidates[i].directory){const char *p=zip_candidates[i].path+10;add_game(p,length(p));heartbeat();}
   for(unsigned i=0;i<zip_count;i++)if(!zip_candidates[i].directory){add_zip(i);heartbeat();}
   scan_summary();
-  read_index();
-  gm_finish(&menu);
+  heartbeat(); read_index(); heartbeat(); /* a checkpoint either side of each slow step */
+  gm_finish(&menu); heartbeat();
   cache_end();
 }
 static void open_input(void) {
@@ -263,6 +266,18 @@ static void open_input(void) {
   }
   say(line);
   sbx_input_state_get(in_fd, &st); /* start from the current state and an empty queue */
+}
+static uint16_t *splash_px; static uint64_t splash_t0, splash_last, splash_call; static uint32_t splash_gap_ms; /* the loading bars (bootart.h) */
+/* Called between files and games (the heartbeat): the clock picks the highlight's place, so uneven calls skip shades
+   instead of slowing it. At most one redraw every 50 ms; force is the last step before the list. */
+static void splash_tick(int force) {
+  uint64_t now = 0; if (!splash_px) return;
+  sbx_clock_ns(&now);
+  uint32_t gap = (uint32_t)((now - splash_call) / 1000000u); if (gap > splash_gap_ms) splash_gap_ms = gap; /* checkpoint spacing */
+  splash_call = now;
+  if (!force && now - splash_last < 50000000ull) return;
+  splash_last = now; ba_bar(splash_px, GM_W, (uint32_t)((now - splash_t0) / 1000000u), BA_SEGS);
+  sbx_fb_present(fb_fd, BA_BAR_X, BA_BAR_Y, BA_BAR_W, BA_BAR_H);
 }
 /* game.h's folder reader: preserve spelling and reject escaping/oversized paths. */
 static int32_t sd_read(void *user, const char *name, uint8_t *buf, uint32_t cap) {
@@ -504,6 +519,14 @@ static int load_next_thumb(void) {
 }
 /* Draws the games page and presents it; once every card on it is drawn, logs the frame's CRC (the host tests render the same frame). */
 static void show_list(uint16_t *px) {
+  if (!menu.count) { /* an empty or unreadable library: the OS says why (bootart.h) */
+    static char l3[40], l5[48]; char *p;
+    p = put(l3, "SCAN NOTES: "); num(p, scan_detail_count); p = put(l5, "INDEX: "); put(p, no_index ? "NO LIBRARY.JSL FOUND" : "READ");
+    const char *const why[] = {"NO GAMES FOUND.", "LOOKED IN /SD/GAMES AND /SD/POCKET FOR", "FOLDERS WITH A .GAM, AND .GMP, .ZIP, .EXE FILES.", l3, l5,
+                               "CHECK THE CARD IS IN, AND COPY GAMES TO /SD/GAMES."};
+    ba_diag(px, GM_W, why, sizeof why / sizeof why[0]);
+    sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H); say("GMOS library diagnostics"); return;
+  }
   const struct gm_game *g = gm_selected(&menu);
   if (menu.view == GM_DETAILS && g && big_id != (int)(g - menu.games)) {big_id = (int)(g - menu.games); big_ok = !title_picture(g, big_px, big_pal);}
   gm_draw(px, GM_W, &menu, menu.view == GM_DETAILS && big_ok ? big_px : 0, big_pal);
@@ -532,7 +555,10 @@ int main(const sbx_startup *start) {
     say("GMOS needs a /dev/fb0 that takes 960x540x16"); return 4;
   }
   px = (uint16_t *)surface;
+  ba_splash(px, GM_W); sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H); say("GMOS boot splash"); /* until the list is ready */
+  splash_px = px; sbx_clock_ns(&splash_t0); splash_last = splash_call = splash_t0; beat_hook = splash_tick;
   find_games();
+  splash_tick(1); {char l[64], *q = put(l, "GMOS splash longest gap between checkpoints "); q = num(q, splash_gap_ms); put(q, " ms"); say(l);} splash_px = 0; beat_hook = 0; /* a last step, so a quick load still moves once */
   p = put(line, "GMOS "); p = num(p, menu.count); p = put(p, menu.count == 1 ? " game" : " games"); put(p, " in /sd/GAMES"); say(line);
   for (unsigned i = 0; i < menu.count; i++) {
     const struct gm_game *g = &menu.games[i];
@@ -540,6 +566,7 @@ int main(const sbx_startup *start) {
     p = put(line, "GMOS game "); p = put(p, g->dir); p = put(p, " ["); p = put(p, cat[g->cat]); p = put(p, "]: "); put(p, g->title); say(line);
   }
   show_list(px);
+  cache_flush(); /* the scan cache, now that the list is up (the kernel queues key presses meanwhile) */
   open_input();
   if (!have_input) say("GMOS no input yet; trying again");
   static sbx_input_event ev[16]; uint64_t got;

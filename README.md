@@ -1,5 +1,7 @@
 # Game-Maker OS
 
+![Game-Maker OS: a sandcastle badge, the name and the games list](docs/images/social-preview.png)
+
 Game-Maker OS turns a Raspberry Pi into a Game-Maker machine. It boots straight to a list of games you can play on a TV with a gamepad or remote. It is the Sandbox Edition of RSD Game-Maker 3.0, running as an operating system of its own.
 
 It runs on [sandbox-kernel](https://github.com/lewismoten/sandbox-kernel), a small MIT-licensed bare-metal kernel for Raspberry Pi. The kernel owns the hardware and exposes it through a standard, POSIX-style interface. Game-Maker OS is a separate program the kernel loads from the SD card. If the OS fails, the kernel recovers instead of leaving a blank screen.
@@ -7,6 +9,8 @@ It runs on [sandbox-kernel](https://github.com/lewismoten/sandbox-kernel), a sma
 ## Status
 
 The first program runs on the board and plays games. `GMOS.ELF` lists the games in `/sd/GAMES` (each a folder with a `.GAM` file, or one packed `.GMP` file there or in `/sd/POCKET`, the same file the Pocket Player plays; see [docs/gmp.md](docs/gmp.md)) and shows them on HDMI at 960x540 (16 bits a pixel, which the GPU doubles to fill a 1080p screen) the way the Sandbox Edition web site's Games page does: category tabs, cards with each game's title screen read from its own files, and a details view with the blurb and Play. A library index on the card (`LIBRARY.JSL`, the Pocket Player's `library.jsonl` format, written by the Sandbox Edition's `web/scripts/gmosCard.ts`) gives the titles, categories and blurbs. Play plays the chosen game from its original DOS files: the pages between scenes as PLAYGAME shows them (GIF pictures and BKD backdrops fading in, FLI animations frame by frame, text pages in PLAYGAME's font, lists of them), then the levels at PLAYGAME's 18.2 ticks a second, doubled on a 640x480 screen, fading in and out. Games saved before Game-Maker 3.00 play too. The arrow keys, Space and Enter play; Esc goes back to the list, as does the end of the game. On a Pi Zero W, Roll the Dice and five more Starters draw the same frames as the host tests, tick for tick. There is no sound on the board yet: each sound a game plays is logged as an `SND` line (`docs/play.md`, Sound events) for a page on the computer to play. Input is the kernel's synthetic device for now: the development computer sends key presses over USB.
+
+The screen shows the castle badge splash (`docs/boot-art.md`) from the moment `/dev/fb0` is open until the list is ready, and a library diagnostics screen when the library is empty.
 
 Leave a game on its details view for 3 seconds and its demo plays in the picture (any key stops it; see [docs/demo.md](docs/demo.md)).
 
