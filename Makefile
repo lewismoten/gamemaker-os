@@ -21,6 +21,9 @@ CORE := third_party/puff/puff.c src/asset_scratch.c src/zip.c src/gam.c src/menu
 PLAYCORE := src/game.cpp
 GMPCORE := src/gmp.cpp src/asset_scratch.h third_party/gmcore/gmsmall.h third_party/puff/puff.h
 GMCORE := third_party/gmcore/gmcore.h third_party/gmcore/gmmon.h
+# The OS's own build line for the e-ink title: the short git hash, "+" when the tree has uncommitted changes.
+# build/buildid is rewritten only when it changes, so a new commit rebuilds the ELF and nothing else.
+GMOS_BUILD := $(shell h=$$(git rev-parse --short=7 HEAD 2>/dev/null || echo unknown); git diff --quiet HEAD -- 2>/dev/null || h="$$h+"; echo "$$h")
 SDK := sdk/lib/crt0.S sdk/lib/mem.c src/libc.c
 .PHONY: all host test test-asan clean js quota
 all: build/GMOS.ELF
@@ -32,8 +35,11 @@ build/game.o: $(PLAYCORE) src/game.h $(GMCORE) Makefile | build
 	$(CXX) $(PXXFLAGS) -c $(PLAYCORE) -o $@
 build/gmp.o: $(GMPCORE) src/gmp.h Makefile | build
 	$(CXX) $(PXXFLAGS) -Ithird_party/puff -c src/gmp.cpp -o $@
-build/GMOS.ELF: src/main.c src/savefile_sbx.c src/sdpack.c src/sdzip.c build/game.o build/gmp.o $(CORE) $(wildcard src/*.h) $(SDK) sdk/lib/sandbox.ld $(wildcard sdk/include/sandbox/*.h) Makefile | build
-	$(CC) $(PFLAGS) $(LFLAGS) $(SDK) src/main.c src/savefile_sbx.c src/sdpack.c src/sdzip.c $(CORE) build/game.o build/gmp.o -lgcc -o $@
+build/buildid: FORCE | build
+	@echo '$(GMOS_BUILD)' | cmp -s - $@ || echo '$(GMOS_BUILD)' > $@
+FORCE:
+build/GMOS.ELF: build/buildid src/main.c src/savefile_sbx.c src/sdpack.c src/sdzip.c build/game.o build/gmp.o $(CORE) $(wildcard src/*.h) $(SDK) sdk/lib/sandbox.ld $(wildcard sdk/include/sandbox/*.h) Makefile | build
+	$(CC) $(PFLAGS) -DGMOS_BUILD='"$(GMOS_BUILD)"' $(LFLAGS) $(SDK) src/main.c src/savefile_sbx.c src/sdpack.c src/sdzip.c $(CORE) build/game.o build/gmp.o -lgcc -o $@
 # The pure parts (title reader, list, drawing, game, session) as a host library
 # for tests/, and gmplay, which prints the Pocket Player host test's state lines.
 HOSTDIR ?= build/host

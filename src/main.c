@@ -519,11 +519,14 @@ static int load_next_thumb(void) {
   }
   return 0;
 }
+#ifndef GMOS_BUILD
+#define GMOS_BUILD "" /* a build without the Makefile: a blank build line */
+#endif
 /* Open /dev/eink and set the OS's title and mark; without ABI 1.9 or the panel the OS runs as before. */
 static void eink_start(void) {
   if (abi_minor < 9) {say("GMOS eink: kernel ABI below 1.9, no e-ink use"); return;}
   if (sbx_open("/dev/eink", 9, SBX_O_WRONLY, &eink_fd)) {say("GMOS eink: /dev/eink not available"); return;}
-  sbx_eink_title_rec rec; int32_t rc = sbx_eink_title(eink_fd, &rec, EI_NAME, 13, ei_mark);
+  sbx_eink_title_rec rec; int32_t rc = sbx_eink_title(eink_fd, &rec, EI_NAME, 13, ei_mark, GMOS_BUILD);
   char line[48], *p = put(line, rc ? "GMOS eink title failed, error " : "GMOS eink title set, result "); num(p, (uint32_t)(rc < 0 ? -rc : rc)); say(line);
   if (rc) return;
   eink_on = 1; ei_init(&eink);
