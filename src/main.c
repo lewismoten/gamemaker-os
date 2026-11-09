@@ -271,7 +271,7 @@ static uint16_t *splash_px; static uint32_t splash_step; static uint64_t splash_
 static void splash_tick(int force) {
   uint64_t now = 0; if (!splash_px) return;
   sbx_clock_ns(&now);
-  if (!force && now - splash_t < 120000000ull) return; /* one step at most every 120 ms of real time */
+  if (!force && now - splash_t < 400000000ull) return; /* one step at most every 400 ms of real time */
   splash_t = now; ba_bar(splash_px, GM_W, ++splash_step);
   sbx_fb_present(fb_fd, BA_BAR_X, BA_BAR_Y, BA_BAR_W, BA_BAR_H);
 }

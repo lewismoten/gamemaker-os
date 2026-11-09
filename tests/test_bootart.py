@@ -36,6 +36,7 @@ class BootArt(unittest.TestCase):
         self.assertLess(bad, 150, f'{bad} pixels differ from the approved art')
         self.assertTrue(any(px[y * W + x] != px[0] for y in range(150, 200) for x in range(128, 400)), 'no reasons printed')
     def test_bars_rotate_in_order(self):
+        self.assertEqual(open(ROOT / 'src/bootart.h').read().count('#define BA_BAR_W 108u'), 1)  # 426 to 533 inclusive: all four bars
         c = lib(); c.ba_bar.argtypes = [C.c_void_p, C.c_uint32, C.c_uint32]
         base, buf = render('ba_splash'); frames = []
         order = [q(0x182C78), q(0x7898F8), q(0xF8D450), q(0xF8FCF8)]
@@ -43,9 +44,13 @@ class BootArt(unittest.TestCase):
             c.ba_bar(buf, W, step); px = [buf[y * W + x] for y in range(H) for x in range(W)]
             seen = [rgb(px[498 * W + 426 + 28 * i + 10]) for i in range(4)]
             self.assertEqual(seen, [order[(i + step) % 4] for i in range(4)])  # each color moves one bar along
+            bg = rgb(base[0])
+            for y in range(497, 501):  # the strip covers the bars exactly: background just right of the last one, and just left of the first
+                self.assertEqual([rgb(px[y * W + x]) for x in (424, 425, 534, 535, 536)], [bg] * 5)
+                self.assertEqual({rgb(px[y * W + x]) for x in (510, 533)}, {seen[3]})
             self.assertEqual(px[:497 * W], base[:497 * W]); frames.append(px)  # nothing above the strip changes
         d = pathlib.Path(SHOTS or OUT / 'bootart'); d.mkdir(parents=True, exist_ok=True)
         from PIL import Image
         ims = [Image.frombytes('RGB', (W, H), b''.join(bytes(((rgb(p) >> 16) & 255, (rgb(p) >> 8) & 255, rgb(p) & 255)) for p in f)) for f in [base] + frames[:4]]
-        ims[0].save(d / 'boot-splash-loading.gif', save_all=True, append_images=ims[1:], duration=120, loop=0)
+        ims[0].save(d / 'boot-splash-loading.gif', save_all=True, append_images=ims[1:], duration=400, loop=0)
 if __name__ == '__main__': unittest.main()

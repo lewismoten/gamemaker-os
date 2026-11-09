@@ -15,6 +15,6 @@ void ba_diag(uint16_t *px, uint32_t stride, const char *const *lines, unsigned n
    animation redraws just this strip. */
 #define BA_BAR_X 426u
 #define BA_BAR_Y 497u
-#define BA_BAR_W 106u
+#define BA_BAR_W 108u
 #define BA_BAR_H 4u
 void ba_bar(uint16_t *px, uint32_t stride, uint32_t step);
