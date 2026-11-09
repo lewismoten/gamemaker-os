@@ -107,6 +107,23 @@ int main(int argc, char **argv) {
   for (unsigned i = 0; i < 256; i++) {bpal[3 * i] = (uint8_t)(i / 6); bpal[3 * i + 1] = (uint8_t)(i / 8); bpal[3 * i + 2] = (uint8_t)(20 + i / 8);}
   bpal[3 * 1] = 63; bpal[3 * 1 + 1] = 10; bpal[3 * 1 + 2] = 10; bpal[3 * 2] = 10; bpal[3 * 2 + 1] = 10; bpal[3 * 2 + 2] = 63;
   table(&t); hs_start(&h, &t, 5000, now); key(&h, 28); hs_draw(&h, px, pal, back, bpal); ppm(out, "top-ten-picture", px, pal);
+  /* GGet's cursor keys: Right never moves (ans[ctr] is always 0), Left erases, extra Rights change nothing */
+  table(&t); hs_start(&h, &t, 5000, now); key(&h, 106); assert(h.len == 0); type(&h, "ab");
+  key(&h, 106); key(&h, 106); assert(!strcmp(h.name, "ab") && h.len == 2); key(&h, 105); key(&h, 106); type(&h, "c");
+  assert(!strcmp(h.name, "ac")); key(&h, 105); key(&h, 105); key(&h, 105); assert(h.len == 0 && h.stage == HS_NAME);
+  /* the accepted set: Tab and Ctrl bytes are typed, 0/8/13/27 never are */
+  hs_start(&h, &t, 5000, now); key(&h, 15); assert(h.len == 1 && h.name[0] == 9);
+  hs_event(&h, 1, 29, 1, now); key(&h, 30); hs_event(&h, 1, 29, 0, now); assert(h.len == 2 && h.name[1] == 1);
+  hs_event(&h, 1, 97, 1, now); key(&h, 35); assert(h.len == 1); /* Ctrl+H is 8: Backspace */
+  key(&h, 50); assert(h.stage == HS_TABLE); /* Ctrl+M is 13: accepted */
+  hs_start(&h, &t, 5000, now); hs_event(&h, 1, 29, 1, now); key(&h, 26); assert(h.stage == HS_TABLE); /* Ctrl+[ is 27 */
+  hs_start(&h, &t, 5000, now); hs_event(&h, 1, 29, 1, now); key(&h, 2); assert(h.len == 0); /* Ctrl+1: no byte */
+  /* a Shift down when the entry begins (the kernel's key state) */
+  { uint64_t keys[12] = {0}; keys[0] = 1ull << 42; hs_start(&h, &t, 5000, now); hs_modifiers(&h, keys); key(&h, 30);
+    assert(!strcmp(h.name, "A")); memset(keys, 0, sizeof keys); keys[1] = 1ull << (97 - 64); hs_modifiers(&h, keys); assert(h.shift == 0 && h.ctrl == 1); }
+  /* below ABI 1.7 nothing is saved: a placing score opens the list, other scores pass through */
+  assert(hs_entry_score(5000, 0) == -1 && hs_entry_score(5000, 1) == 5000 && hs_entry_score(0, 0) == 0 && hs_entry_score(-1, 0) == -1);
+  hs_start(&h, &t, hs_entry_score(5000, 0), now); assert(h.stage == HS_TABLE && h.place == 0);
   /* the cursor: on 500 ms after a key, off 400 ms, on again */
   table(&t); hs_start(&h, &t, 5000, now);
   assert(hs_step(&h, now + 499 * MS) == 0 && (hs_step(&h, now + 500 * MS) & HS_DRAW) && h.cur_on == 0);

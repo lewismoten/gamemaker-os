@@ -8,6 +8,9 @@
 #define K_LSHIFT 42
 #define K_RSHIFT 54
 #define K_LEFT 105
+#define K_TAB 15
+#define K_LCTRL 29
+#define K_RCTRL 97
 #define NS_MS 1000000ull
 static const char ROW_NUM[] = "1234567890-=", ROW_NUM_S[] = "!@#$%^&*()_+";
 static const char ROW_Q[] = "qwertyuiop[]", ROW_Q_S[] = "QWERTYUIOP{}";
@@ -20,10 +23,22 @@ int hs_ascii(uint16_t c, int sh) {
   if (c >= 44 && c <= 53) return (sh ? ROW_Z_S : ROW_Z)[c - 44];
   if (c == 43) return sh ? '|' : '\\';
   if (c == 57) return ' ';
+  if (c == K_TAB) return 9;
   return 0;
 }
+/* The byte bioskey(0) gives with Ctrl held (low byte of the key word): letters 1..26, Ctrl+[ 27, Ctrl+\ 28, Ctrl+] 29. */
+static int ctrl_byte(uint16_t c) {
+  int a = hs_ascii(c, 0);
+  if (a >= 'a' && a <= 'z') return a - 'a' + 1;
+  return a == '[' ? 27 : a == '\\' ? 28 : a == ']' ? 29 : 0;
+}
+int32_t hs_entry_score(int32_t score, int can_write) {return can_write || score <= 0 ? score : -1;}
+void hs_modifiers(struct hs_screen *h, const uint64_t *keys) {
+  h->shift = (keys[K_LSHIFT / 64] >> (K_LSHIFT % 64) | keys[K_RSHIFT / 64] >> (K_RSHIFT % 64)) & 1;
+  h->ctrl = (keys[K_LCTRL / 64] >> (K_LCTRL % 64) | keys[K_RCTRL / 64] >> (K_RCTRL % 64)) & 1;
+}
 void hs_start(struct hs_screen *h, const struct his_table *t, int32_t score, uint64_t now) {
-  h->t = *t; h->score = score; h->place = score > 0 ? his_place(t, score) + 1 : 0; h->shift = 0; h->cur_on = 1;
+  h->t = *t; h->score = score; h->place = score > 0 ? his_place(t, score) + 1 : 0; h->shift = 0; h->ctrl = 0; h->cur_on = 1;
   for (unsigned i = 0; i <= HIS_NAME_MAX; i++) h->name[i] = 0;
   h->len = 0; h->t0 = h->blink = now;
   h->stage = h->place ? HS_NAME : HS_TABLE;
@@ -36,12 +51,16 @@ static int accept(struct hs_screen *h, uint64_t now) { /* Enter or Esc: GGet ret
 int hs_event(struct hs_screen *h, uint16_t type, uint16_t code, int32_t value, uint64_t now) {
   if (type != 1) return 0;
   if (code == K_LSHIFT || code == K_RSHIFT) {h->shift = value != 0; return 0;}
+  if (code == K_LCTRL || code == K_RCTRL) {h->ctrl = value != 0; return 0;}
   if (value == 0) return 0;
   if (h->stage == HS_TABLE) return value == 1 ? HS_DONE : 0; /* "Hit any key" */
   h->blink = now; h->cur_on = 1;
-  if (code == K_ESC || code == K_ENTER) return value == 1 ? accept(h, now) : 0;
-  if (code == K_BACK || code == K_LEFT) {if (h->len) h->name[--h->len] = 0; return HS_DRAW;}
-  int c = hs_ascii(code, h->shift);
+  int c = h->ctrl ? ctrl_byte(code) : hs_ascii(code, h->shift);
+  if (code == K_ESC || code == K_ENTER || c == 27 || c == 13) return value == 1 ? accept(h, now) : 0; /* 27, 13 */
+  if (code == K_BACK || code == K_LEFT || c == 8) {if (h->len) h->name[--h->len] = 0; return HS_DRAW;} /* 8; Left: DOS erases too */
+  /* Right (RIGHTKEY) is "if (ans[ctr] != 0) ctr++", and ans[ctr] is always 0 here because Left and
+     Backspace truncate the answer and a new entry's starts empty: it never moves, so it is ignored.
+     Every other byte GGet's default case takes: any key byte but 0, 8, 13 and 27, controls included. */
   if (c && h->len < HIS_NAME_MAX) {h->name[h->len++] = (char)c; h->name[h->len] = 0;}
   return HS_DRAW;
 }

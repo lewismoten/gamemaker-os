@@ -325,12 +325,19 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
   int e = hl_load(&save_sbx_ops, stem, read, user, &t, &seeded);
   if (e) {p = put(line, "GMOS Top Ten read failed "); num(p, (uint32_t)-e); say(line);}
   if (seeded) say("GMOS Top Ten seeded from the game's own .HIS");
-  if (!can_write && score > 0) {say("GMOS saving needs the kernel's /OS/SAVES (ABI 1.7)"); score = -1;}
+  if (!can_write && score > 0) say("GMOS saving needs the kernel's /OS/SAVES (ABI 1.7)");
+  score = hs_entry_score(score, can_write);
+  /* PLAYGAME shows File(1,2) (lost) or (1,0) (won) and plays File(1,3)/(1,1), then clears the screen with
+     BoxFill before the name entry (PLAYGAME.C 1149-1176): the entry's backdrop is black, as here, and the
+     song runs on through it until StopSong after the list. TODO(audio): start that song here (snd_music)
+     once the kernel's /dev/audio lands, and stop it after the list. */
   int back = !gs_scores_picture(&game, open, read, user, gam, back_px, back_pal);
   if (screen_mode(PLAY_W, PLAY_H, SBX_FB_XRGB8888)) return;
   static sbx_input_event ev[16]; uint64_t got;
+  sbx_input_state ist; int have_ist = have_input && !sbx_input_state_get(in_fd, &ist); /* also empties the queue */
   while (have_input && !sbx_read(in_fd, ev, sizeof ev, &got)) {} /* keys left from the game are not an answer */
   hs_start(&hsc, &t, score, clock_ns());
+  if (have_ist) hs_modifiers(&hsc, ist.keys); /* a Shift or Ctrl already down */
   p = put(line, "GMOS Top Ten "); p = put(p, stem); put(p, hsc.stage == HS_NAME ? ": name entry" : ": list"); say(line);
   int r = HS_DRAW;
   for (;;) {
