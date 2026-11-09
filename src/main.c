@@ -312,7 +312,12 @@ static int screen_mode(uint32_t w, uint32_t h, uint32_t format) {
 }
 static struct gs_session game;
 static struct hs_screen hsc;
-static uint8_t hs_px[GP_W * GP_H], hs_pal[768], back_px[GP_W * GP_H], back_pal[768];
+/* The Top Ten shares the list's picture buffers (125 KB less BSS, kernel U_IMAGE_QUOTA): pic_* are only
+   scratch while thumbnails load, big_* are re-read after (big_id = -1). */
+#define hs_px pic_px
+#define hs_pal pic_pal
+#define back_px big_px
+#define back_pal big_pal
 /* PLAYGAME's CheckHighScores and ShowHighScores: the Top Ten screens in the 640x480x32 mode.
    score is the game's (a name entry first if it places), or -1 for the list alone; open is 1 when no
    game is open in the play core yet. The table is read from /OS/SAVES/<GAME>/, else seeded from the
@@ -331,6 +336,7 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
      BoxFill before the name entry (PLAYGAME.C 1149-1176): the entry's backdrop is black, as here, and the
      song runs on through it until StopSong after the list. TODO(audio): start that song here (snd_music)
      once the kernel's /dev/audio lands, and stop it after the list. */
+  big_id = -1;
   int back = !gs_scores_picture(&game, open, read, user, gam, back_px, back_pal);
   if (screen_mode(PLAY_W, PLAY_H, SBX_FB_XRGB8888)) return;
   static sbx_input_event ev[16]; uint64_t got;

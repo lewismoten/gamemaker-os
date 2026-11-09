@@ -22,7 +22,7 @@ PLAYCORE := src/game.cpp
 GMPCORE := src/gmp.cpp src/asset_scratch.h third_party/gmcore/gmsmall.h third_party/puff/puff.h
 GMCORE := third_party/gmcore/gmcore.h third_party/gmcore/gmmon.h
 SDK := sdk/lib/crt0.S sdk/lib/mem.c src/libc.c
-.PHONY: all host test test-asan clean js
+.PHONY: all host test test-asan clean js quota
 all: build/GMOS.ELF
 build:
 	mkdir -p $@
@@ -53,7 +53,10 @@ $(HOSTDIR)/gmplay: tests/host/gmplay.cpp tests/host/hostio.h $(PLAYCORE) $(GMCOR
 	$(HOSTCC) $(HOSTFLAGS) -std=c11 -Wall -Wextra -Werror -c third_party/puff/puff.c -o $(HOSTDIR)/gmplay_puff.o
 	$(HOSTCC) $(HOSTFLAGS) -Isrc -c src/asset_scratch.c -o $(HOSTDIR)/gmplay_scratch.o
 	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore -Ithird_party/puff $(PLAYCORE) tests/host/gmplay.cpp $(HOSTDIR)/gmplay_gmp.o $(HOSTDIR)/gmplay_puff.o $(HOSTDIR)/gmplay_scratch.o -o $@
-test: host
+# The kernel refuses a program whose loaded image tops U_IMAGE_QUOTA (8 MiB): fail while 64 KiB short of it.
+quota: build/GMOS.ELF
+	$(PYTHON) tools/check_quota.py build/GMOS.ELF $(wildcard build/js/JS.full.elf)
+test: host quota
 	GMOS_HOST=$(HOSTDIR) $(PYTHON) -m unittest discover -s tests -v
 # The host suite again with AddressSanitizer and UndefinedBehaviorSanitizer in
 # build/asan: any overflow or undefined behavior stops the run with a report.

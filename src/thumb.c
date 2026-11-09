@@ -7,7 +7,7 @@
 #include "rgb565.h"
 #define W 320u
 #define H 200u
-static uint8_t file[1024 * 1024], list[4096], frame[W * H], frame_pal[768], best[W * H], best_pal[768];
+static uint8_t file[1024 * 1024], list[4096], frame[W * H], frame_pal[768];
 static uint16_t cache[GM_THUMB_SLOTS][GM_THUMB_W * GM_THUMB_H];
 static uint32_t used[GM_THUMB_SLOTS], clock;
 static int16_t owner[GM_THUMB_SLOTS];
@@ -66,11 +66,11 @@ static int fli_pic(int32_t n, uint8_t *px, uint8_t *pal) {
     zero(frame, sizeof frame);
     for (uint32_t y = 0; y < H && y < f.h; y++) for (uint32_t x = 0; x < W && x < f.w; x++) frame[y * W + x] = canvas[y * f.w + x];
     uint32_t b = busyness(frame, frame_pal);
-    if (!have || b > best_busy) {best_busy = b; copy(best, frame, sizeof best); copy(best_pal, frame_pal, 768); have = 1;}
+    if (!have || b > best_busy) {best_busy = b; copy(px, frame, W * H); copy(pal, frame_pal, 768); have = 1;} /* the caller's px, pal hold the best so far */
   }
   if (!have) return -1;
   int last = busyness(frame, frame_pal) * 10u >= best_busy * 8u;
-  copy(px, last ? frame : best, W * H); copy(pal, last ? frame_pal : best_pal, 768);
+  if (last) {copy(px, frame, W * H); copy(pal, frame_pal, 768);}
   return 0;
 }
 static int graphic(gp_read_fn read, void *user, const char *name, int depth, uint8_t *px, uint8_t *pal);
