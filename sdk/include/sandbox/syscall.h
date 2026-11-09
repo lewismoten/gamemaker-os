@@ -6,6 +6,10 @@
 #ifndef SANDBOX_SYSCALL_H
 #define SANDBOX_SYSCALL_H
 #include "abi.h"
+#ifdef HOST_TEST
+/* Test-owned transport only; production always uses the ARM svc below. */
+int32_t sbx_syscall(uint32_t call, void *record, uint32_t bytes);
+#else
 #if !defined(__arm__) || defined(__thumb__)
 #error "sandbox/syscall.h targets ARM-state ARM32 (build with -marm)"
 #endif
@@ -25,8 +29,20 @@ __attribute__((always_inline)) static inline int32_t sbx_syscall(uint32_t call, 
                    : "r12", "lr", "memory", "cc");
   return (int32_t)r0;
 }
+#endif
 
 #define SBX_HEADER(type) {sizeof(type), 0, 0, 0}
+/* Unavailable startup or ENOSYS means disable this optional feature; no mmap
+   fallback. Errors leave both caller outputs untouched. */
+static inline int32_t sbx_app_arena(const sbx_startup *startup, uint64_t requested,
+                                   void **address, uint64_t *actual_bytes) {
+  uint64_t epoch = sbx_app_generation(startup);
+  if (!epoch) return -SBX_ENOSYS;
+  sbx_app_arena_rec r = {SBX_HEADER(sbx_app_arena_rec), epoch, requested, 0, 0};
+  int32_t s = sbx_syscall(SBX_CALL_APP_ARENA, &r, sizeof r);
+  if (!s) { *address = (void *)(uintptr_t)r.address; *actual_bytes = r.actual_bytes; }
+  return s;
+}
 
 static inline int32_t sbx_open(const char *path, uint32_t path_bytes, uint32_t flags, uint64_t *fd) {
   sbx_open_rec r = {SBX_HEADER(sbx_open_rec), (uint32_t)(uintptr_t)path, path_bytes, flags, 0, 0};
@@ -56,7 +72,7 @@ static inline int32_t sbx_fsync(uint64_t fd) {
   sbx_close_rec r = {SBX_HEADER(sbx_close_rec), fd};
   return sbx_syscall(SBX_CALL_FSYNC, &r, sizeof r);
 }
-/* Cache-only copy/publish rename; temp may survive interrupted cleanup.
+/* Cache or one save folder: copy/publish rename (same folder only); temp may survive interrupted cleanup.
    Destination is old/new, no shared chains. Close the writer first. */
 static inline int32_t sbx_rename(const char *from, uint32_t from_bytes, const char *to, uint32_t to_bytes) {
   sbx_rename_rec r = {SBX_HEADER(sbx_rename_rec), (uint32_t)(uintptr_t)from, from_bytes, (uint32_t)(uintptr_t)to, to_bytes};

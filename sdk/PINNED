@@ -1,4 +1,4 @@
-sandbox-kernel 3010a7c4c66f76bbef61fe21ccf0545cfe1ea39d
+sandbox-kernel 5732b42472208b6a39bbb6ce4a6eb0f7f21db6f4
 https://github.com/lewismoten/sandbox-kernel
-Local-only signed feature/drag-drop commit; import accompanying kernel bundle. Not yet published to GitHub.
-ABI1.5 opt-in call20; calls11/18 unchanged.
+Vendored from kernel develop 5732b42 (ABI 1.7: /OS/SAVES/<GAME>/ writes, fsync, rename).
+ABI 1.5 opt-in call20; calls 11/18 unchanged.
