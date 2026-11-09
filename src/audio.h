@@ -7,7 +7,6 @@
 #pragma once
 #include "cmf.h"
 #include "pcspeaker.h"
-#define AU_CMF_MAX 24576u    /* the biggest song in the games is 19.8 KB */
 #define AU_LOW_FRAMES 2400u  /* write when fewer frames than this are queued (50 ms) */
 #define AU_FILL_FRAMES 7200u /* and top up to this many (150 ms) */
 #define AU_CHUNK 480u        /* frames rendered per write (10 ms); pcspeaker.h's limit is 1920 */
@@ -24,7 +23,8 @@ struct au {
   struct opl opl; struct cmf cmf; struct pcspeaker pc;
   uint32_t until_q16;          /* samples to the next sequencer tick, 16 fractional bits */
   int16_t hold[AU_CHUNK * 2]; uint32_t hold_len, hold_off; /* a rendered chunk the ring has not taken yet */
-  uint8_t music[AU_CMF_MAX]; uint8_t snd[2430];
+  uint8_t *music; uint32_t music_cap; /* the caller's scratch for a song (the biggest in the games is 19.8 KB) */
+  uint8_t snd[2430];
   char snd_name[AU_NAME_MAX + 1]; uint32_t snd_len;
   /* Requests from the session, served by au_service (which reads files). */
   char want_music[AU_NAME_MAX + 1]; uint8_t music_pending;
@@ -32,7 +32,8 @@ struct au {
   /* Counters. */
   uint64_t frames, total_ns; uint32_t writes, eagain, music_loads, beeps;
 };
-void au_init(struct au *a);
+/* music: scratch for the song file while it plays (it must stay untouched until the next song or au_stop). */
+void au_init(struct au *a, uint8_t *music, uint32_t music_cap);
 /* The session's events (sound.h): a song (name "" stops it), a beep (tune n of the .SND), everything stops. */
 void au_music(struct au *a, const char *cmf);
 void au_beep(struct au *a, const char *snd, int tune);

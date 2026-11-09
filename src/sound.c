@@ -44,6 +44,7 @@ void snd_music(struct gs_sound *s, const char *cmf) {
   char line[LINE_MAX], *end = line + LINE_MAX - 1, *p;
   if (!cmf || !cmf[0]) p = word(line, end, "SND music stop");
   else p = path(word(line, end, "SND music start "), end, s, cmf);
+  if (s->event) s->event(s->event_user, SND_EV_MUSIC, cmf ? cmf : "", 0);
   say(s, line, p);
 }
 void snd_effect(struct gs_sound *s, uint32_t tick) {
@@ -54,12 +55,16 @@ void snd_effect(struct gs_sound *s, uint32_t tick) {
   char line[LINE_MAX], *end = line + LINE_MAX - 1, *p;
   const char *voc = gp_voc_name(n);
   if (voc[0]) {p = path(word(line, end, "SND voc "), end, s, voc); p = word(p, end, ".VOC");}
-  else {p = path(word(line, end, "SND beep "), end, s, gp_sound_file()); p = word(p, end, " "); p = num(p, end, (uint32_t)n);}
+  else {
+    p = path(word(line, end, "SND beep "), end, s, gp_sound_file()); p = word(p, end, " "); p = num(p, end, (uint32_t)n);
+    if (s->event) s->event(s->event_user, SND_EV_BEEP, gp_sound_file(), n);
+  }
   say(s, line, p);
 }
 void snd_end(struct gs_sound *s) {
   if (!s->active) return;
   s->active = 0;
+  if (s->event) s->event(s->event_user, SND_EV_STOP, "", 0);
   char line[LINE_MAX], *end = line + LINE_MAX - 1;
   say(s, line, word(line, end, "SND stopall"));
   say(s, line, word(line, end, "SND end"));

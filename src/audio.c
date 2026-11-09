@@ -2,9 +2,10 @@
 #include "audio.h"
 static void copy(char *to, const char *from) {unsigned i = 0; while (from && from[i] && i < AU_NAME_MAX) {to[i] = from[i]; i++;} to[i] = 0;}
 static int same(const char *a, const char *b) {unsigned i = 0; while (a[i] && a[i] == b[i]) i++; return a[i] == b[i];}
-void au_init(struct au *a) {
+void au_init(struct au *a, uint8_t *music, uint32_t music_cap) {
   uint8_t *b = (uint8_t *)a;
   for (unsigned i = 0; i < sizeof *a; i++) b[i] = 0;
+  a->music = music; a->music_cap = music_cap;
   cmf_init(&a->cmf, &a->opl); pc_init(&a->pc);
 }
 void au_music(struct au *a, const char *cmf) {copy(a->want_music, cmf); a->music_pending = 1;}
@@ -14,9 +15,9 @@ int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, ui
   int started = 0;
   if (a->music_pending) {
     a->music_pending = 0;
-    if (!a->want_music[0]) cmf_stop(&a->cmf);
-    else {
-      int32_t n = read ? read(user, a->want_music, a->music, AU_CMF_MAX) : -1;
+    cmf_stop(&a->cmf); /* the buffer is about to change under the pump (the read calls the heartbeat) */
+    if (a->want_music[0]) {
+      int32_t n = read ? read(user, a->want_music, a->music, a->music_cap) : -1;
       if (n > 0 && !cmf_load(&a->cmf, a->music, (uint32_t)n)) {a->until_q16 = 0; a->music_loads++; started = 1;}
       else cmf_stop(&a->cmf);
     }

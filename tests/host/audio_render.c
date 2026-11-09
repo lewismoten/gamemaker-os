@@ -10,9 +10,9 @@ static void le32(unsigned char *p, uint32_t v) {p[0] = v; p[1] = v >> 8; p[2] = 
 int main(int argc, char **argv) {
   if (argc < 4) return 2;
   FILE *f = fopen(argv[1], "rb"); if (!f) return 1;
-  static uint8_t buf[AU_CMF_MAX]; uint32_t len = (uint32_t)fread(buf, 1, sizeof buf, f); fclose(f);
+  static uint8_t buf[65536]; uint32_t len = (uint32_t)fread(buf, 1, sizeof buf, f); fclose(f);
   unsigned secs = (unsigned)atoi(argv[2]), n = secs * 48000u;
-  au_init(&au);
+  au_init(&au, buf, sizeof buf);
   if (cmf_load(&au.cmf, buf, len)) {fprintf(stderr, "refused\n"); return 1;}
   int16_t *pcm = malloc((size_t)n * 2);
   int16_t blk[AU_CHUNK * 2];
