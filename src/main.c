@@ -252,8 +252,8 @@ static void find_games(void) {
   for(unsigned i=0;i<zip_count;i++)if(zip_candidates[i].directory){const char *p=zip_candidates[i].path+10;add_game(p,length(p));heartbeat();}
   for(unsigned i=0;i<zip_count;i++)if(!zip_candidates[i].directory){add_zip(i);heartbeat();}
   scan_summary();
-  read_index();
-  gm_finish(&menu);
+  heartbeat(); read_index(); heartbeat(); /* a checkpoint either side of each slow step */
+  gm_finish(&menu); heartbeat();
   cache_end();
 }
 static void open_input(void) {
@@ -566,6 +566,7 @@ int main(const sbx_startup *start) {
     p = put(line, "GMOS game "); p = put(p, g->dir); p = put(p, " ["); p = put(p, cat[g->cat]); p = put(p, "]: "); put(p, g->title); say(line);
   }
   show_list(px);
+  cache_flush(); /* the scan cache, now that the list is up (the kernel queues key presses meanwhile) */
   open_input();
   if (!have_input) say("GMOS no input yet; trying again");
   static sbx_input_event ev[16]; uint64_t got;

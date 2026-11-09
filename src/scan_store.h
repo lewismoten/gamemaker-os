@@ -135,19 +135,39 @@ static void cache_source_put(const char *path,const void *key,unsigned kn,const 
  cache_copy(cache_wire+13,s->title,GM_TITLE_MAX+1);cache_copy(cache_wire+34,s->gam,gn);
  gc_add(&scan_cache,path,key,kn,cache_wire,34+gn+s->record_bytes);
 }
+static uint32_t cache_pending; /* bytes of the fresh cache still to persist: cache_flush writes them */
+/* The scan is done: close the fresh cache in memory. Writing it (an fsync and a rename can block for half a second)
+   waits for cache_flush, which GMOS calls once the games list is on screen. */
 static void cache_end(void) {
+ cache_pending=0;
  if(!cache_enabled)return;
  uint32_t n=gc_finish(&scan_cache);
  if(!n){say("GMOS cache capacity exceeded; live scan retained");return;}
  if(scan_cache.valid&&n==scan_cache.oldbytes&&cache_equal(cache_new,cache_old,n))return; /* no warm writes */
- uint64_t fd,got;int bad=sbx_open("/sd/OS/CACHE/GAMES.TMP",22,SBX_O_WRONLY|SBX_O_CREAT|SBX_O_TRUNC,&fd);
+ cache_pending=n;
+}
+/* Persist the fresh cache: write temp file, fsync, rename (power-cut safe). Each step's time is logged once. */
+static void cache_flush(void) {
+ uint32_t n=cache_pending;cache_pending=0;if(!n)return;
+ uint64_t t0=0,t1=0,fd,got,wmax=0,wsum=0;uint32_t chunks=0;
+ sbx_clock_ns(&t0);
+ int bad=sbx_open("/sd/OS/CACHE/GAMES.TMP",22,SBX_O_WRONLY|SBX_O_CREAT|SBX_O_TRUNC,&fd);
+ sbx_clock_ns(&t1);uint64_t open_ms=(t1-t0)/1000000u;t0=t1;
+ uint64_t fs_ms=0,rn_ms=0;
  if(!bad){
-  for(uint32_t at=0;at<n;){uint32_t take=n-at<65536?n-at:65536;
-   if(sbx_write(fd,cache_new+at,take,&got)||got!=take){bad=1;break;}at+=take;heartbeat();}
+  for(uint32_t at=0;at<n;){uint32_t take=n-at<4096?n-at:4096; /* small chunks, a checkpoint after each */
+   uint64_t a0=0,a1=0;sbx_clock_ns(&a0);
+   if(sbx_write(fd,cache_new+at,take,&got)||got!=take){bad=1;break;}at+=take;
+   sbx_clock_ns(&a1);a1-=a0;wsum+=a1;if(a1>wmax)wmax=a1;chunks++;heartbeat();}
+  sbx_clock_ns(&t1);t0=t1;
   if(!bad)bad=sbx_fsync(fd);
   heartbeat(); /* first syscall after bounded storage work: report progress */
+  sbx_clock_ns(&t1);fs_ms=(t1-t0)/1000000u;t0=t1;
   sbx_close(fd);
   if(!bad){bad=sbx_rename("/sd/OS/CACHE/GAMES.TMP",22,"/sd/OS/CACHE/GAMES.IDX",22);heartbeat();}
+  sbx_clock_ns(&t1);rn_ms=(t1-t0)/1000000u;
  }
+ {char l[160],*p=put(l,"GMOS cache write ");p=num(p,n);p=put(p," bytes: open ");p=num(p,(uint32_t)open_ms);p=put(p," ms, ");p=num(p,chunks);p=put(p," writes ");p=num(p,(uint32_t)(wsum/1000000u));
+  p=put(p," ms (worst ");p=num(p,(uint32_t)(wmax/1000000u));p=put(p,"), fsync ");p=num(p,(uint32_t)fs_ms);p=put(p," ms, close+rename ");p=num(p,(uint32_t)rn_ms);put(p," ms");say(l);}
  if(bad)say("GMOS cache write unavailable; live scan retained");
 }

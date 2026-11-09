@@ -19,6 +19,7 @@ int32_t sbx_getdents_meta(uint64_t,void*,uint32_t,uint64_t*);
 int32_t sbx_getdents_long_meta(uint64_t,void*,uint32_t,uint64_t*);
 int32_t sbx_write(uint64_t,const void*,uint32_t,uint64_t*);
 int32_t sbx_fsync(uint64_t);
+int32_t sbx_clock_ns(uint64_t*);
 int32_t sbx_rename(const char*,uint32_t,const char*,uint32_t);
 int32_t sbx_seek(uint64_t,int64_t,uint64_t*);
 int32_t sbx_health(uint32_t,uint64_t);
@@ -91,12 +92,13 @@ int32_t sbx_getdents(uint64_t h,void*b,uint32_t n,uint64_t*g){return host_dents(
 int32_t sbx_getdents_meta(uint64_t h,void*b,uint32_t n,uint64_t*g){return host_dents(h,b,n,g,1);}
 int32_t sbx_getdents_long_meta(uint64_t h,void*b,uint32_t n,uint64_t*g){return host_dents(h,b,n,g,1);}
 int32_t sbx_write(uint64_t h,const void*b,uint32_t n,uint64_t*g){ssize_t r=write(handles[h].f,b,n);if(r<0)return -5;*g=r;return 0;}
+int32_t sbx_clock_ns(uint64_t*t){*t=ns();return 0;}
 int32_t sbx_fsync(uint64_t h){return fsync(handles[h].f)?-5:0;}
 int32_t sbx_rename(const char*a,uint32_t an,const char*b,uint32_t bn){char ap[4096],bp[4096];if(!getenv("GMOS_SCAN_CACHE"))return -30;snprintf(ap,sizeof ap,"%s%.*s",root,(int)an-3,a+3);snprintf(bp,sizeof bp,"%s%.*s",root,(int)bn-3,b+3);return rename(ap,bp)?-5:0;}
 int32_t sbx_log(uint64_t h,const char*b,uint32_t n){(void)h;(void)b;logs++;log_bytes+=n;return 0;}
 int32_t sbx_health(uint32_t g,uint64_t s){(void)g;(void)s;healths++;return 0;}
 static void jstr(const char*s){putchar('"');for(;*s;s++){unsigned char c=*s;if(c=='"'||c=='\\')printf("\\%c",c);else if(c<32||c>=127)printf("\\u%04x",c);else putchar(c);}putchar('"');}
-int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;i++)handles[i].f=-1;abi_minor=getenv("GMOS_SCAN_CACHE")?5:3;if(getenv("GMOS_SCAN_ABI"))abi_minor=(unsigned)atoi(getenv("GMOS_SCAN_ABI"));sp_set_abi(1,abi_minor);uint64_t t=ns();find_games();t=ns()-t;
+int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;i++)handles[i].f=-1;abi_minor=getenv("GMOS_SCAN_CACHE")?5:3;if(getenv("GMOS_SCAN_ABI"))abi_minor=(unsigned)atoi(getenv("GMOS_SCAN_ABI"));sp_set_abi(1,abi_minor);uint64_t t=ns();find_games();cache_flush();t=ns()-t;
  printf("{\"elapsed_ns\":%llu,\"games\":%u,\"menu_crc\":%u,\"where_crc\":%u",(unsigned long long)t,menu.count,__real_gm_crc32(0,(const uint8_t*)&menu,sizeof menu),__real_gm_crc32(0,(const uint8_t*)where,sizeof where));
  #define FIELD(x) printf(",\"" #x "\":%llu",(unsigned long long)x)
  FIELD(opens);FIELD(dir_opens);FIELD(file_opens);FIELD(read_calls);FIELD(read_bytes);FIELD(dent_calls);FIELD(dent_entries);FIELD(logs);FIELD(log_bytes);FIELD(healths);FIELD(seeks);FIELD(io_ns);FIELD(crc_ns);FIELD(crc_calls);FIELD(crc_bytes);FIELD(lib_ns);FIELD(lib_calls);
