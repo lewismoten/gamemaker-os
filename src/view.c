@@ -159,16 +159,17 @@ static const char *const TAB_LINE[GM_CATS] = {
   "The Game-Maker CD: free gameware, then other people's shareware.",
   "Games in /sd/GAMES that the library index does not list.",
 };
+extern const uint16_t ha_pal[4];
+extern const uint8_t ha_bits[256];
 static void header(void) {
   fill(0, 0, GM_W, HEADER_H, C_HEADER);
-  int32_t x = 16;
-  for (const char *s = "GAME-MAKER"; *s; s++) x = text(F8, x, 16, s, 1, C_GOLD, 1) + 2;
-  x += 8;
-  const char *ed = "SANDBOX EDITION";
-  int32_t w = width(F5, ed, len(ed), 1) + 10;
-  box(x, 12, w, 16, 2, 1, C_GOLD, 0, 0);
-  text0(F5, x + 5, 16, ed, C_GOLD);
-  text0(F5, x + w + 12, 16, "Game-Maker OS", C_GOLD);
+  for (int32_t j = 0; j < 32; j++) for (int32_t i = 0; i < 32; i++) {
+    unsigned v = (ha_bits[(j * 32 + i) / 4] >> (6 - 2 * ((j * 32 + i) & 3))) & 3u;
+    if (v) dot16(8 + i, 4 + j, ha_pal[v]);
+  }
+  int32_t x = 48;
+  for (const char *s = "GAME-MAKER OS"; *s; s++) x = text(F8, x, 6, s, 1, C_GOLD, 1) + 2;
+  text0(F5, 48, 26, "SANDBOX EDITION", 0xf8d450u);
   const char *nav = "Games";
   int32_t nw = width(F8, nav, len(nav), 1);
   text0(F8, (int32_t)GM_W - 16 - nw, 16, nav, C_GOLD);
