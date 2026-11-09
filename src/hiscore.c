@@ -24,7 +24,11 @@ int his_place(const struct his_table *t, int32_t score) {
 int his_insert(struct his_table *t, int32_t score, const char *name) {
   int at = his_place(t, score); if (at < 0) return 0;
   for (int k = HIS_ROWS - 1; k > at; k--) t->row[k] = t->row[k - 1];
-  t->row[at].score = score; memset(t->row[at].name, 0, HIS_NAME);
-  for (unsigned i = 0; name && name[i] && i < HIS_NAME_MAX; i++) t->row[at].name[i] = (uint8_t)name[i];
+  /* DOS sets only yourname[0] = 0 before the prompt (HISCOREL.C), so the shifted-in
+     row's old name bytes stay behind the new name; match it byte for byte. */
+  t->row[at].score = score; t->row[at].name[0] = 0;
+  /* DOS's GGet writes the typed text and its terminator. */
+  unsigned i = 0; for (; name && name[i] && i < HIS_NAME_MAX; i++) t->row[at].name[i] = (uint8_t)name[i];
+  t->row[at].name[i] = 0;
   return at + 1;
 }

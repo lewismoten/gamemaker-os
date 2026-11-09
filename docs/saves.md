@@ -14,7 +14,7 @@ written to a real card.
   games never share files. The game's own folder and ZIP/GMP sources are never modified.
 - **Power cut safe.** `save_put` writes `NAME.TMP`, syncs, closes, then renames over the real
   name; the kernel's rename is copy-on-write. After a cut the real file is the old one or the
-  new one. A leftover `.TMP` is harmless.
+  new one. A leftover `.TMP` is never read; the kernel gives apps no delete, so the next save of that file overwrites and renames it away.
 - **Not transparent DOS discovery.** DOS looks for `.HIS` next to the game, not in `OS/SAVES`.
   Moving a card between the Pi and DOSBox needs an explicit copy of the game's folder.
 
@@ -23,7 +23,7 @@ written to a real card.
 Ten records of a signed 32-bit little-endian score and 30 name bytes: 340 bytes, no header. DOS
 reads whatever exists (a short or missing file gives zero rows). A score takes the first row it
 strictly beats, so a tie sits below the equal score; lower rows shift down and the last drops;
-a score of 0 or less never places. The name prompt takes 22 characters, zero padded. DOS also
+a score of 0 or less never places. The name prompt takes 22 characters and DOS clears only the first byte of the row before it, so the old name's tail bytes stay after the new name's terminator; `his_insert` does the same. DOS also
 rewrites the file when nothing placed; the Pi doesn't, to spare the card.
 
 ## Code

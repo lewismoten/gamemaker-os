@@ -60,6 +60,16 @@ int main(void) {
   his_insert(&n, 9, "ABCDEFGHIJKLMNOPQRSTUVWXYZ"); int at = his_place(&n, 1);
   assert(at >= 0); assert(n.row[1].name[21] == 'V' && n.row[1].name[22] == 0);
   puts("PASS place, tie, shift, drop, short file, 22-char name");
+  /* DOS keeps the old row's name bytes behind the new name (it only clears yourname[0]):
+     row 0 held "LONGERNAME", so typing "AB" leaves "AB\0GERNAME". The row also moved down intact. */
+  uint8_t before[340] = {0}, want[340] = {0}, got_dos[340];
+  put32(before, 500); strcpy((char *)before + 4, "LONGERNAME"); put32(before + 34, 100); strcpy((char *)before + 38, "SECOND");
+  memcpy(want, before, 340); put32(want + 34, 500); memcpy(want + 38, "LONGERNAME", 11); /* shifted down whole */
+  put32(want + 68, 100); memcpy(want + 72, "SECOND", 7);
+  put32(want, 900); memcpy(want + 4, "AB\0GERNAME", 11);
+  his_parse(&t, before, 340); assert(his_insert(&t, 900, "AB") == 1); his_serialize(&t, got_dos);
+  assert(!memcmp(got_dos, want, 340));
+  puts("PASS DOS stale name tail kept");
 
   /* 3. Save and load through the fake. */
   struct fake k; memset(&k, 0, sizeof k); k.cut_at = -1; k.chunk = 100; struct save_ops o = ops(&k);
@@ -108,5 +118,11 @@ int main(void) {
     assert(x ? (x->n == 340 && !memcmp(x->d, newv, 340)) : e != 0);
   }
   puts("PASS power cut at every step leaves old or new");
+  /* A stale .TMP from a cut is ignored by a load and cleared by the next save. */
+  memset(&k, 0, sizeof k); k.chunk = 100; k.cut_at = -1; o = ops(&k);
+  seed(&k, "/sd/OS/SAVES/DICE/DICE.TMP", "garbage", 7); seed(&k, "/sd/OS/SAVES/DICE/DICE.HIS", oldv, 340);
+  assert(save_his_load(&o, "DICE", &t) == 0 && t.row[0].score == 111);
+  assert(save_put(&o, "DICE", "DICE.HIS", newv, 340) == 0 && !find(&k, "/sd/OS/SAVES/DICE/DICE.TMP"));
+  puts("PASS stale temp ignored then cleared");
   puts("ALL PASS"); return 0;
 }

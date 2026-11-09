@@ -26,7 +26,7 @@ int save_put(const struct save_ops *o, const char *game, const char *name, const
   char dst[40], tmp[40]; int e;
   if ((e = make_path(dst, game, name, 0)) || (e = make_path(tmp, game, name, 1))) return e;
   if (!strcmp(dst, tmp)) return SAVE_EINVAL; /* the name's own stem.TMP; refuse rather than rename onto itself */
-  uint64_t fd; if ((e = o->open_write(o->ctx, tmp, &fd))) return e;
+  uint64_t fd; if ((e = o->open_write(o->ctx, tmp, &fd))) return e; /* truncates a stale NAME.TMP left by a power cut */
   const uint8_t *p = data; uint32_t at = 0;
   while (at < n) {
     uint32_t done = 0; e = o->write(o->ctx, fd, p + at, n - at, &done);
@@ -39,6 +39,8 @@ int save_put(const struct save_ops *o, const char *game, const char *name, const
 }
 int save_get(const struct save_ops *o, const char *game, const char *name, void *buf, uint32_t cap, uint32_t *n) {
   char path[40]; int e; if ((e = make_path(path, game, name, 0))) return e;
+  /* A NAME.TMP left by a power cut is never read; if the real file is missing the load
+     reports that. The kernel offers no delete to apps, so the next save_put overwrites it. */
   uint64_t fd; if ((e = o->open_read(o->ctx, path, &fd))) return e;
   uint8_t *p = buf; uint32_t at = 0; *n = 0;
   for (;;) {

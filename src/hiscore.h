@@ -21,6 +21,7 @@ void his_serialize(const struct his_table *t, uint8_t out[HIS_BYTES]);
    less never do, as in DOS). */
 int his_place(const struct his_table *t, int32_t score);
 /* Insert at his_place(), shifting lower rows down and dropping the last.
-   name is cut at HIS_NAME_MAX and padded with zeros; NULL leaves it empty.
+   name is cut at HIS_NAME_MAX and zero terminated, like DOS, which does not clear
+   the rest: bytes of the name that was in that row before stay after the terminator.
    Returns the 1-based position, or 0 if the score didn't place (t unchanged). */
 int his_insert(struct his_table *t, int32_t score, const char *name);
