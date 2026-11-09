@@ -51,9 +51,9 @@ int save_get(const struct save_ops *o, const char *game, const char *name, void 
     at += got;
   }
 }
-static void his_name(char out[16], const char *game) {size_t g = strlen(game); memcpy(out, game, g); memcpy(out + g, ".HIS", 5);}
+static int his_name(char out[16], const char *game) {size_t g = strlen(game); if (g > 11) return SAVE_EINVAL; memcpy(out, game, g); memcpy(out + g, ".HIS", 5); return 0;}
 int save_his_load(const struct save_ops *o, const char *game, struct his_table *t) {
-  char name[16]; uint8_t raw[HIS_BYTES]; uint32_t n = 0; his_name(name, game);
+  char name[16]; uint8_t raw[HIS_BYTES]; uint32_t n = 0; if (his_name(name, game)) return SAVE_EINVAL;
   int e = save_get(o, game, name, raw, sizeof raw, &n);
   if (e == SAVE_EFBIG) e = 0, n = HIS_BYTES; /* DOS reads the first ten records and ignores the rest */
   if (e == SAVE_ENOENT) {e = 0; n = 0;}
@@ -63,7 +63,7 @@ int save_his_load(const struct save_ops *o, const char *game, struct his_table *
 int save_his_record(const struct save_ops *o, const char *game, int32_t score, const char *name, int *place) {
   struct his_table t; int e = save_his_load(o, game, &t); *place = 0; if (e) return e;
   int at = his_insert(&t, score, name); if (!at) return 0;
-  uint8_t out[HIS_BYTES]; char f[16]; his_name(f, game); his_serialize(&t, out);
+  uint8_t out[HIS_BYTES]; char f[16]; if (his_name(f, game)) return SAVE_EINVAL; his_serialize(&t, out);
   if ((e = save_put(o, game, f, out, sizeof out))) return e;
   *place = at; return 0;
 }
