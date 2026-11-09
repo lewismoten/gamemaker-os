@@ -5,10 +5,8 @@
 #include "rgb565.h"
 #define BG 0x101428u
 #define WHITE 0xF8FCF8u
-#define YELLOW 0xF8D450u
 #define MUTED 0xA0ACD0u
 #define NAVY 0x182C78u
-#define BLUE 0x7898F8u
 static uint16_t *P; static uint32_t S;
 static void rect(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t c) {
   uint16_t v = gm_565(c);
@@ -43,27 +41,22 @@ static void badge(int32_t x, int32_t y, uint32_t size) {
 /* The loading bars: a highlight travels along them once every BA_CYCLE_MS. A segment is light blue at rest and eases
    to yellow as the highlight passes (16 shades, exact in RGB565); the background-like navy is not used, so every
    segment stays visible. segs is 4 (24 px, 4 px gaps) or 8 (12 px, 2 px gaps). */
-uint32_t ba_ramp_mode = BA_RAMP; /* 0 dip through dark, 1 hue path (the host test renders both) */
+uint32_t ba_ramp_mode = BA_RAMP; /* 0 blue base, gold comet; 1 gold base (the host test renders both) */
 static uint32_t mix(uint32_t a, uint32_t b, uint32_t t, uint32_t n) { /* a toward b, t of n, per channel */
   uint32_t o = 0;
   for (int sh = 16; sh >= 0; sh -= 8) {uint32_t x = a >> sh & 255u, y = b >> sh & 255u; o = o << 8 | (x * (n - t) + y * t + n / 2u) / n;}
   return o;
 }
-static uint32_t hsv(uint32_t h, uint32_t sat, uint32_t v) { /* h in degrees 0..359, sat and v 0..255 */
-  uint32_t sector = h / 60u, f = (h % 60u) * 255u / 60u, p = v * (255u - sat) / 255u, q = v * (255u - sat * f / 255u) / 255u, t = v * (255u - sat * (255u - f) / 255u) / 255u;
-  static const uint8_t pick[6][3] = {{0, 3, 2}, {1, 0, 2}, {2, 0, 3}, {2, 1, 0}, {3, 2, 0}, {0, 2, 1}};
-  uint32_t c[4] = {v, q, p, t}, o = 0; /* index 0 v, 1 q, 2 p, 3 t */
-  for (int i = 0; i < 3; i++) o = o << 8 | c[pick[sector][i]];
-  return o;
-}
-/* The shade k (0..16) of a segment: light blue at rest (0), yellow at the peak (16). Never white, never gray.
-   Mode 0: darken the blue to a mid blue (0 to 5), then rise as gold from dark gold to yellow (6 to 16), so blue and
-   yellow never blend. Mode 1: walk the hue from blue through cyan and green to yellow at a steady saturation. */
+/* The shade of a segment k/16 of the way into the comet (0 outside it, 16 at the peak). No segment is ever darker
+   than the resting one. GOLD is yellow #F8D450 dimmed to the relative luminance of the resting light blue #7898F8
+   (a hair above it once both are rounded to RGB565), so a segment switches blue to gold with no brightness change.
+   Mode 0: blue at rest, gold from the edge of the comet, brightening to yellow at the peak. Mode 1: gold at rest. */
+#define BLUE 0x7898F8u
+#define GOLD 0xB79C39u
+#define YELLOW 0xF8D450u
 static uint32_t ramp(uint32_t k) {
-  if (k == 0) return 0x7898F8u;
-  if (k >= 16) return 0xF8D450u;
-  if (ba_ramp_mode == 0) return k <= 5 ? mix(0x7898F8u, 0x28386Eu, k, 5u) : mix(0x4A3C18u, 0xF8D450u, k - 6u, 10u);
-  return hsv(224u - 175u * k / 16u, 133u + 40u * k / 16u, 248u);
+  if (k == 0) return ba_ramp_mode == 0 ? BLUE : GOLD;
+  return mix(GOLD, YELLOW, k - 1u, 15u);
 }
 static void bar(uint32_t ms, uint32_t segs) {
   uint32_t w = segs == 8u ? 12u : 24u, pitch = segs == 8u ? 14u : 28u; int32_t x0 = segs == 8u ? 425 : 426;
