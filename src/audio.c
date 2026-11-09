@@ -20,6 +20,7 @@ int au_play_loaded(struct au *a, uint32_t n) {
   if (cmf_load(&a->cmf, a->music, n)) {cmf_stop(&a->cmf); return -1;}
   a->until_q16 = 0; a->music_loads++; a->vol_target = AU_VOL_ONE; return 0;
 }
+void au_set_playing(struct au *a, int playing) {if (a->playing != (playing != 0)) {a->playing = playing != 0; a->last_pump_ns = 0;}}
 int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, uint32_t), void *user) {
   int started = 0;
   if (a->music_pending) {
@@ -69,8 +70,10 @@ void au_render(struct au *a, int16_t *out, unsigned n) {
 int au_pump(struct au *a, const struct au_sink *s) {
   uint32_t queued = 0, cap = 0, sent = 0;
   if (s->query(s->user, &queued, &cap)) return -1;
-  if (queued >= AU_LOW_FRAMES && !a->hold_len) return 0;
-  uint32_t want = AU_FILL_FRAMES - (queued < AU_FILL_FRAMES ? queued : AU_FILL_FRAMES);
+  uint32_t low = a->playing ? AU_PLAY_LOW_FRAMES : AU_LOW_FRAMES, fill = a->playing ? AU_PLAY_FILL_FRAMES : AU_FILL_FRAMES;
+  if (a->playing) {uint64_t t = s->now(s->user); if (a->last_pump_ns && t - a->last_pump_ns > a->gap_max_ns) a->gap_max_ns = t - a->last_pump_ns; a->last_pump_ns = t;}
+  if (queued >= low && !a->hold_len) return 0;
+  uint32_t want = fill - (queued < fill ? queued : fill);
   if (cap) {uint32_t room = cap > queued ? cap - queued : 0; if (room < want) want = room;}
   while (a->hold_len || want >= AU_CHUNK) {
     if (!a->hold_len) {

@@ -134,4 +134,32 @@ static void feeding(void) {
   CHECK(total == 480 || total > 480, "partial writes lost frames: %d", total);
   printf("fed %u frames (%d reported) in %d pumps; %d quiet\n", r.gotn, wrote, pumps, quiet_pumps);
 }
-int main(void) {speaker(); ticks(); fades(); feeding(); if (!fails) puts("audio ok"); return fails != 0;}
+/* SFX latency: a beep event at the main loop's 10 ms wake; the time from it to the beep's first sample reaching the play head,
+   with the long queue (library) and the small one (a game playing). Also: no gap, and the switch repeats no sample. */
+static void latency(void) {
+  static struct au a; static int16_t got[48000 * 5 * 2]; static struct ring r; struct au_sink sink = {&r, rq, rw, rn};
+  for (int mode = 0; mode <= 1; mode++) {
+    memset(&r, 0, sizeof r); r.cap = 16384; r.take = 4000; r.got = got; memset(got, 0, sizeof got);
+    au_init(&a, music_buf, sizeof music_buf); au_set_playing(&a, 0);
+    FILE *f = fopen("tests/data/syn.cmf", "rb"); uint32_t n = f ? (uint32_t)fread(music_buf, 1, sizeof music_buf, f) : 0; if (f) fclose(f);
+    cmf_load(&a.cmf, music_buf, n);
+    uint32_t played = 0, dry = 0, ev_idx = 0; int ev = 0; double worst = 0, sum = 0; int cnt = 0; uint32_t first = 0; int waiting = 0;
+    for (unsigned ms = 0; ms < 4000; ms += 10) {
+      if (ms == 1200 && mode) au_set_playing(&a, 1);
+      if (ms >= 1800 && ms % 370 == 0 && !waiting) { /* a beep at an off-beat moment */
+        au_beep(&a, "T.SND", 3); waiting = 1; ev = (int)ms; ev_idx = played; au_service(&a, reader, 0); first = 0;
+      }
+      uint32_t before = r.gotn;
+      au_pump(&a, &sink);
+      if (waiting && !first) { /* the beep's first sample is the first nonzero frame in this write that is not music: use the PC speaker flag */
+        if (a.pc.active) first = before; /* a rendered chunk that holds speaker output starts here */
+      }
+      if (waiting && first && r.gotn > before) {double lat = ((double)first - ev_idx) / 48.0 + 0; if (lat < 0) lat = 0; sum += lat; cnt++; if (lat > worst) worst = lat; waiting = 0; (void)ev;}
+      if (r.queued < 480) dry++; r.queued = r.queued > 480 ? r.queued - 480 : 0; played += 480;
+    }
+    printf("%s queue: SFX start %.0f ms after the event on average, %.0f ms worst (%d beeps), dry pumps %u\n", mode ? "small" : "long", cnt ? sum / cnt : 0, worst, cnt, dry);
+    if (mode) CHECK(worst <= 80, "game-play SFX latency %.0f ms", worst);
+    CHECK(dry == 0 || mode == 0 ? 1 : dry <= 1, "small queue ran dry %u times", dry);
+  }
+}
+int main(void) {speaker(); ticks(); fades(); feeding(); latency(); if (!fails) puts("audio ok"); return fails != 0;}

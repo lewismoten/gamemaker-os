@@ -358,7 +358,8 @@ static void audio_log(const char *what) { /* the kernel's counters, and what the
   p = put(p, ", underruns "); p = num(p, (uint32_t)i.underruns); p = put(p, ", overruns "); p = num(p, (uint32_t)i.overruns);
   p = put(p, ", eagain "); p = num(p, aud.eagain); p = put(p, ", songs "); p = num(p, aud.music_loads);
   p = put(p, ", beeps "); p = num(p, aud.beeps); p = put(p, ", synth CPU "); p = num(p, t > au_prev_t ? (uint32_t)((aud.total_ns - au_prev_ns) * 1000u / (t - au_prev_t)) : 0);
-  put(p, " per mille since the last line"); say(line);
+  p = put(p, " per mille, longest pump gap "); p = num(p, (uint32_t)(aud.gap_max_ns / 1000u)); p = put(p, " us, longest sound read "); p = num(p, (uint32_t)(aud.svc_max_ns / 1000u));
+  put(p, " us (while playing); since the last line"); say(line); aud.gap_max_ns = aud.svc_max_ns = 0;
   au_prev_ns = aud.total_ns; au_prev_t = t;
 }
 static void audio_open(void) {
@@ -381,7 +382,7 @@ static void audio_take(void) {
 static int bg_state; static uint64_t bg_t0, bg_next; static uint32_t bg_fail, bg_loops0, bg_picks, bg_seed = 12345u;
 static void bg_return(const char *why) {
   if (!aud_on) return;
-  au_silence(&aud); aud.music = bgm_buf; aud.music_cap = sizeof bgm_buf; bg_state = 0; bg_next = clock_ns() + 800000000ull; doing = "list";
+  au_set_playing(&aud, 0); au_silence(&aud); aud.music = bgm_buf; aud.music_cap = sizeof bgm_buf; bg_state = 0; bg_next = clock_ns() + 800000000ull; doing = "list";
   audio_log(why);
 }
 static void bg_leave(void) {
@@ -530,7 +531,9 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     if (started) {game.t0 = clock_ns(); game.ticks = 0; started = 0;} /* a level's clock starts once its files are read and its first frame is up */
     uint64_t wake = gs_wake(&game, clock_ns());
     if (aud_on) {
-      au_service(&aud, game.read, game.user); audio_poll();
+      uint64_t s0 = clock_ns(); au_service(&aud, game.read, game.user);
+      if (aud.playing && clock_ns() - s0 > aud.svc_max_ns) aud.svc_max_ns = clock_ns() - s0;
+      audio_poll();
       uint64_t soon = clock_ns() + 10000000ull; /* wake every 10 ms to keep the ring fed */
       if (wake > soon) wake = soon;
     }
@@ -554,6 +557,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     if (game.phase == GS_PLAY) {uint64_t due = gs_wake(&game, t); if (t > due) {uint32_t l = (uint32_t)((t - due) / 1000u); if (l > late_max) late_max = l;}}
     uint32_t before = game.total_ticks; int was = game.phase;
     r = gs_step(&game, t);
+    au_set_playing(&aud, aud_on && game.phase == GS_PLAY); if (!aud.playing) audio_poll();
     uint32_t dt = (uint32_t)((clock_ns() - t) / 1000u); if (game.ran && dt > step_max) step_max = dt;
     if (was != GS_PLAY && game.phase == GS_PLAY) started = 1;
     if (was == GS_PLAY && game.phase == GS_CARDS) { /* the level ended: the session lets go of every key */

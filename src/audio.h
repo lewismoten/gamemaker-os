@@ -10,6 +10,8 @@
 #define AU_LOW_FRAMES 12000u  /* write when fewer frames than this are queued (250 ms: longer than any read the OS does) */
 #define AU_FILL_FRAMES 15000u /* and top up to this many (312 ms; the kernel ring holds 16384, an older one 4096) */
 #define AU_VOL_ONE 32768u     /* master volume 1.0 (Q15); it ramps one step a sample: 0.68 s from silence to full */
+#define AU_PLAY_LOW_FRAMES 2400u  /* while a game plays: write when fewer than this are queued (50 ms) so a sound starts within a PLAYGAME tick */
+#define AU_PLAY_FILL_FRAMES 3120u /* and top up to this many (65 ms) */
 #define AU_CHUNK 480u        /* frames rendered per write (10 ms); pcspeaker.h's limit is 1920 */
 #define AU_NAME_MAX 16u
 struct au_sink {
@@ -31,6 +33,8 @@ struct au {
   /* Requests from the session, served by au_service (which reads files). */
   char want_music[AU_NAME_MAX + 1]; uint8_t music_pending;
   char want_snd[AU_NAME_MAX + 1]; int want_tune; uint8_t beep_pending;
+  uint8_t playing;             /* 1: the small queue (a game is being played); 0: the long one (library, preview, loads) */
+  uint64_t last_pump_ns, gap_max_ns, svc_max_ns; /* longest time between pumps and longest au_service, while playing */
   /* Counters. */
   uint64_t frames, total_ns; uint32_t writes, eagain, music_loads, beeps;
 };
@@ -51,5 +55,8 @@ void au_volume(struct au *a, uint32_t target);
 int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, uint32_t), void *user);
 /* Renders n frames (at most AU_CHUNK) of stereo s16 into out: the sequencer ticks, the synth, the speaker. */
 void au_render(struct au *a, int16_t *out, unsigned n);
+/* The queue to keep: small while a game plays (a draining queue is simply not topped up; the samples stay continuous, so nothing clicks),
+   long otherwise (the next pump refills it in one go). Call it with 0 before any slow read. */
+void au_set_playing(struct au *a, int playing);
 /* Feeds the ring if it is low; the frames written, or -1 when the query failed. */
 int au_pump(struct au *a, const struct au_sink *sink);
