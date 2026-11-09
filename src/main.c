@@ -21,6 +21,7 @@
 #include "session.h"
 #include "thumb.h"
 #include "view.h"
+#include "bootart.h"
 #ifndef GMOS_SCAN_VERBOSE
 #define GMOS_SCAN_VERBOSE 0
 #endif
@@ -50,6 +51,7 @@ static void scan_summary(void) {
     put(p, " detail messages suppressed (SCAN_VERBOSE=1 to show)"); say(line);
   }
 }
+static int no_index; /* read_index found no LIBRARY.JSL */
 static void heartbeat(void) {sbx_health(generation, ++beat);}
 static int ends_with_gam(const char *s, unsigned n) {
   return n > 4 && s[n - 4] == '.' && (s[n - 3] == 'G'||s[n - 3]=='g') && (s[n - 2] == 'A'||s[n - 2]=='a') && (s[n - 1] == 'M'||s[n - 1]=='m');
@@ -143,7 +145,7 @@ static void read_index(void) {
     have=0;path="/sd/GAMES/LIBRARY.JSL";
     if(sbx_open(path,21,SBX_O_RDONLY,&fd)){
       path="/sd/OS/LIBRARY.JSL";
-      if(sbx_open(path,18,SBX_O_RDONLY,&fd)){say("GMOS no library index; titles from the .GAM files");return;}
+      if(sbx_open(path,18,SBX_O_RDONLY,&fd)){no_index=1;say("GMOS no library index; titles from the .GAM files");return;}
     }
     int status=0;
     while (have < sizeof index_text && !(status=sbx_read(fd, index_text + have, sizeof index_text - have, &got)) && got) have += (uint32_t)got;
@@ -504,6 +506,14 @@ static int load_next_thumb(void) {
 }
 /* Draws the games page and presents it; once every card on it is drawn, logs the frame's CRC (the host tests render the same frame). */
 static void show_list(uint16_t *px) {
+  if (!menu.count) { /* an empty or unreadable library: the OS says why (bootart.h) */
+    static char l3[40], l5[48]; char *p;
+    p = put(l3, "SCAN NOTES: "); num(p, scan_detail_count); p = put(l5, "INDEX: "); put(p, no_index ? "NO LIBRARY.JSL FOUND" : "READ");
+    const char *const why[] = {"NO GAMES FOUND.", "LOOKED IN /SD/GAMES AND /SD/POCKET FOR", "FOLDERS WITH A .GAM, AND .GMP, .ZIP, .EXE FILES.", l3, l5,
+                               "CHECK THE CARD IS IN, AND COPY GAMES TO /SD/GAMES."};
+    ba_diag(px, GM_W, why, sizeof why / sizeof why[0]);
+    sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H); say("GMOS library diagnostics"); return;
+  }
   const struct gm_game *g = gm_selected(&menu);
   if (menu.view == GM_DETAILS && g && big_id != (int)(g - menu.games)) {big_id = (int)(g - menu.games); big_ok = !title_picture(g, big_px, big_pal);}
   gm_draw(px, GM_W, &menu, menu.view == GM_DETAILS && big_ok ? big_px : 0, big_pal);
@@ -532,6 +542,7 @@ int main(const sbx_startup *start) {
     say("GMOS needs a /dev/fb0 that takes 960x540x16"); return 4;
   }
   px = (uint16_t *)surface;
+  ba_splash(px, GM_W); sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H); say("GMOS boot splash"); /* until the list is ready */
   find_games();
   p = put(line, "GMOS "); p = num(p, menu.count); p = put(p, menu.count == 1 ? " game" : " games"); put(p, " in /sd/GAMES"); say(line);
   for (unsigned i = 0; i < menu.count; i++) {

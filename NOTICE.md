@@ -7,12 +7,14 @@ AI models used on this repository:
 | Model | Tool | What it did |
 | --- | --- | --- |
 | GPT-6.1 Sol (OpenAI) | Hermes Agent (openai-codex) | Isolated unlinked PC-speaker PCM producer, bounded PCM8 VOC decoder/resampler and stereo mixer, source/corpus oracles, host/ARM qualification, tests and documentation (2026-11-08); no live dispatch or HDMI output |
+| GPT-6.1 Sol (OpenAI) | ChatGPT | The boot art in `art/` (castle badge, HDMI boot and diagnostics layouts, e-ink screens, favicon, social preview), made from the maintainer's directions; MIT (`art/LICENSE.txt`) (2026-11-09) |
 | Claude Opus 5.5 (Anthropic) | Claude Code | Wrote the README (2026-11-06) |
 | Claude Opus 5.5 (Anthropic) | Claude Code | First program GMOS.ELF: games list, .GAM title reader, bitmap font (lowercase and punctuation drawn new), layout, input handling, host tests, build notes, board runs (2026-11-07) |
 | Claude Opus 5.5 (Anthropic) | Claude Code | Playing games: the DOS file loader for the shared play core, the GIF port, the session (cards, ticks, keys), the clock and sleep in the main loop, host tests against the Pocket Player, the board driver and check, docs (2026-11-07) |
 | Claude Sonnet 5.5 (Anthropic) | Claude Code | The games page after the web site's Games page: library index reader, title screens on the cards, tabs, grid and details view, host tests and renderer, board check (2026-11-07) |
 | Claude Opus 5.5 (Anthropic) | Claude Code | Pages between scenes: the FLI, text page and backdrop ports, palette fades, the key buffer, pre-3.00 `.GAM` conversion, reference hashes from the Sandbox Edition engine and the tests against them, board runs of more Starters, docs (2026-11-07) |
 | Claude Opus 5.5 (Anthropic) | Claude Code | Packed games: the .GMP reader (volume sets, the DOS files inside), the card's packs in /sd/GAMES and /sd/POCKET, host tests, fuzzing, docs/gmp.md (2026-11-07) |
+| Claude Sonnet 5.5 (Anthropic) | Claude Code | Boot splash and library diagnostics screen: `tools/make_bootart.py`, `src/bootart.c`, host tests, docs/boot-art.md (2026-11-09) |
 | Claude Sonnet 5.5 (Anthropic) | Claude Code | JS.ELF spike: the DOM-like element tree, the QuickJS-ng bindings and prelude, the game element and screen modes, HELLO and BENCH apps, host runner and tests, docs/js.md (2026-11-07) |
 
 ## Third-party code
