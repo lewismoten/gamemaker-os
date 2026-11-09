@@ -4,6 +4,9 @@
 int abs(int v) {return v < 0 ? -v : v;}
 /* The .GMP index (gmsmall.h) compares and measures entry names. */
 size_t strlen(const char *s) {size_t n = 0; while (s[n]) n++; return n;}
+char *strchr(const char *s, int c) { /* savefile.c */
+  for (;; s++) {if (*s == (char)c) return (char *)s; if (!*s) return 0;}
+}
 int strcmp(const char *a, const char *b) {
   while (*a && *a == *b) {a++; b++;}
   return (unsigned char)*a - (unsigned char)*b;

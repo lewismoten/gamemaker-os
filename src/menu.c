@@ -124,6 +124,7 @@ int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
       if (m->button == GM_BTN_PLAY) return GM_CHOSEN;
       m->view = GM_GRID; return GM_MOVED;
     }
+    if (code == 35) return GM_SCORES;           /* H */
     if (code == 1 || code == 14) {m->view = GM_GRID; return GM_MOVED;} /* Esc, Backspace */
     return GM_NONE;
   }
@@ -133,6 +134,7 @@ int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
   int r = grid_move(m, code);
   if (r != GM_NONE || value != 1) return r;      /* no repeats past here */
   if (code == 28 && gm_selected(m)) {m->view = GM_DETAILS; m->button = GM_BTN_PLAY; m->message[0] = 0; return GM_MOVED;} /* KEY_ENTER */
+  if (code == 35 && gm_selected(m)) return GM_SCORES; /* KEY_H */
   if (code == 1 || code == 16) return GM_QUIT;   /* KEY_ESC, KEY_Q */
   return GM_NONE;
 }

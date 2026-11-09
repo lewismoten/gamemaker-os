@@ -364,9 +364,28 @@ uint64_t gs_wake(const struct gs_session *s, uint64_t now) {
   }
   return at < now ? now : at < poll ? at : poll;
 }
+int gs_scores_picture(struct gs_session *s, int open, gp_read_fn read, void *user, const char *gam, uint8_t *px, uint8_t *pal) {
+  if (open) {s->read = read; s->user = user; if (gp_open(read, user, gam) < 0) return -1;}
+  const char *name = gp_graphic(GP_SCORES, 0);
+  int bkd = ext_is(name, "bkd");
+  if (!(ext_is(name, "gif") || bkd)) return -1;
+  int32_t x, y, n = read_picture(s, name, bkd, &x, &y);
+  zero(px, GP_W * GP_H); zero(pal, 768);
+  return n < 0 || gp_gif_draw(file, (uint32_t)n, x, y, pal, px) ? -1 : 0;
+}
 static uint32_t rgb(const uint8_t *pal, uint8_t i) {
   uint32_t r = pal[i * 3] & 63, g = pal[i * 3 + 1] & 63, b = pal[i * 3 + 2] & 63;
   return ((r << 2 | r >> 4) << 16) | ((g << 2 | g >> 4) << 8) | (b << 2 | b >> 4);
+}
+void gs_show(const uint8_t *px, const uint8_t *pal, uint32_t *fb, uint32_t stride) {
+  uint32_t lut[256];
+  for (unsigned i = 0; i < 256; i++) lut[i] = rgb(pal, (uint8_t)i);
+  for (uint32_t y = 0; y < 480; y++) {
+    uint32_t *row = fb + y * stride;
+    if (y < GS_CARD_Y || y >= GS_CARD_Y + 2 * GP_H) {for (uint32_t x = 0; x < 640; x++) row[x] = 0; continue;}
+    const uint8_t *src = px + ((y - GS_CARD_Y) >> 1) * GP_W;
+    for (uint32_t x = 0; x < GP_W; x++) {uint32_t c = lut[src[x]]; row[2 * x] = c; row[2 * x + 1] = c;}
+  }
 }
 void gs_draw(const struct gs_session *s, uint32_t *fb, uint32_t stride) {
   uint32_t lut[256];

@@ -13,6 +13,8 @@
  * or Q on the grid quits. */
 #include <sandbox/syscall.h>
 #include "gam.h"
+#include "hiscreen.h"
+#include "hisload.h"
 #include "menu.h"
 #include "sdpack.h"
 #include "sdzip.h"
@@ -309,6 +311,53 @@ static int screen_mode(uint32_t w, uint32_t h, uint32_t format) {
   say(line); return bad;
 }
 static struct gs_session game;
+static struct hs_screen hsc;
+static uint8_t hs_px[GP_W * GP_H], hs_pal[768], back_px[GP_W * GP_H], back_pal[768];
+/* PLAYGAME's CheckHighScores and ShowHighScores: the Top Ten screens in the 640x480x32 mode.
+   score is the game's (a name entry first if it places), or -1 for the list alone; open is 1 when no
+   game is open in the play core yet. The table is read from /OS/SAVES/<GAME>/, else seeded from the
+   game's own .HIS (read only); a new name is written back there. */
+static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int open) {
+  char line[96], stem[9], *p; void *user; gp_read_fn read = reader(g, &user);
+  const char *gam = where[g - menu.games].gam;
+  if (!gam[0] || !read || hl_stem(gam, stem)) {say("GMOS no Top Ten for this game"); return;}
+  struct his_table t; int seeded = 0, can_write = abi_minor >= 7;
+  int e = hl_load(&save_sbx_ops, stem, read, user, &t, &seeded);
+  if (e) {p = put(line, "GMOS Top Ten read failed "); num(p, (uint32_t)-e); say(line);}
+  if (seeded) say("GMOS Top Ten seeded from the game's own .HIS");
+  if (!can_write && score > 0) {say("GMOS saving needs the kernel's /OS/SAVES (ABI 1.7)"); score = -1;}
+  int back = !gs_scores_picture(&game, open, read, user, gam, back_px, back_pal);
+  if (screen_mode(PLAY_W, PLAY_H, SBX_FB_XRGB8888)) return;
+  static sbx_input_event ev[16]; uint64_t got;
+  while (have_input && !sbx_read(in_fd, ev, sizeof ev, &got)) {} /* keys left from the game are not an answer */
+  hs_start(&hsc, &t, score, clock_ns());
+  p = put(line, "GMOS Top Ten "); p = put(p, stem); put(p, hsc.stage == HS_NAME ? ": name entry" : ": list"); say(line);
+  int r = HS_DRAW;
+  for (;;) {
+    heartbeat();
+    if (r & HS_DRAW) {hs_draw(&hsc, hs_px, hs_pal, back ? back_px : 0, back_pal); gs_show(hs_px, hs_pal, px, PLAY_W); sbx_fb_present(fb_fd, 0, 0, PLAY_W, PLAY_H);}
+    if (r & HS_DONE) break;
+    r = 0;
+    uint64_t now = clock_ns(), wake = hs_wake(&hsc, now); if (wake > now + 500000000ull) wake = now + 500000000ull;
+    sbx_sleep_until(wake);
+    int32_t s = -SBX_EAGAIN;
+    while (have_input && !(s = sbx_read(in_fd, ev, sizeof ev, &got))) {
+      for (uint32_t i = 0; i < got / sizeof ev[0] && !(r & HS_DONE); i++) {
+        int a = hs_event(&hsc, ev[i].type, ev[i].code, ev[i].value, clock_ns());
+        if (a & HS_COMMIT) {
+          int w = hl_save(&save_sbx_ops, stem, &hsc.t);
+          p = put(line, "GMOS Top Ten "); p = put(p, stem); p = put(p, w ? " save failed " : " saved "); num(p, (uint32_t)-w); say(line);
+        }
+        r |= a;
+      }
+      if (r & HS_DONE) break;
+    }
+    if (have_input && s != -SBX_EAGAIN) {sbx_close(in_fd); have_input = 0; say("GMOS input removed");}
+    if (!have_input) open_input();
+    r |= hs_step(&hsc, clock_ns());
+  }
+  say("GMOS back from the Top Ten");
+}
 /* Plays the chosen game until Esc or its end. Each tick logs its number and the
    view's hash (the Pocket Player host test's), each game key the tick it lands
    before, and every 5 s the timing: the host tests replay those lines. */
@@ -379,6 +428,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
       frames = step_max = draw_max = late_max = 0; since = clock_ns();
     }
   }
+  if (game.begun) top_ten(px, g, gp_score(), 0); /* PLAYGAME checks the Top Ten however the game ended */
   say("GMOS back to the games list");
 }
 /* The title screen of a game (thumb.h), read from its folder; -1 when it has none. */
@@ -470,6 +520,14 @@ int main(const sbx_startup *start) {
         menu.message[0] = 0; menu.shift = 0; redraw = 1;
         big_id = -1; /* the game used the play core: read the title screen again */
         if (have_input) {sbx_input_state st; sbx_input_state_get(in_fd, &st);} /* keys held in the game are not the list's */
+        break;
+      }
+      if (a == GM_SCORES) {
+        const struct gm_game *g = gm_selected(&menu);
+        top_ten((uint32_t *)surface, g, -1, 1);
+        if (screen_mode(GM_W, GM_H, SBX_FB_RGB565)) return 4;
+        menu.shift = 0; redraw = 1; big_id = -1;
+        if (have_input) {sbx_input_state st; sbx_input_state_get(in_fd, &st);}
         break;
       }
       if (a == GM_QUIT) {say("GMOS quit"); return 0;}

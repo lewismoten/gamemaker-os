@@ -32,7 +32,7 @@ struct gm_menu {
   int shift;                        /* a Shift key is held (Shift+Tab) */
   char message[GM_MESSAGE_MAX + 1]; /* footer line; empty shows the key help */
 };
-enum {GM_NONE, GM_MOVED, GM_CHOSEN, GM_QUIT, GM_RESYNC};
+enum {GM_NONE, GM_MOVED, GM_CHOSEN, GM_QUIT, GM_RESYNC, GM_SCORES}; /* GM_SCORES: H, the selected game's Top Ten */
 /* Add a game (dir is its folder's name, gam its .GAM file, title from that
    file, crc the .GAM's CRC-32); false when the list is full. */
 bool gm_add(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc);
@@ -44,8 +44,8 @@ int gm_library_line(struct gm_menu *m, const char *line, uint32_t n);
 void gm_finish(struct gm_menu *m);
 /* One input event (Linux codes). Grid: arrows move, PgUp/PgDn turn the page,
    Home/End, Tab and Shift+Tab (or [ and ]) change the tab, Enter opens the
-   details, Esc or Q quits. Details: Left/Right/Tab pick a button, Enter or
-   Space presses it (Play chooses the game), Esc goes back. SYN_DROPPED asks
+   details, Esc or Q quits, H shows the selected game's Top Ten. Details: Left/Right/Tab pick a button, Enter or
+   Space presses it (Play chooses the game), H shows the Top Ten, Esc goes back. SYN_DROPPED asks
    the caller to resynchronize. */
 int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value);
 /* The selected game (0 when the list is empty), and the cards of a tab. */

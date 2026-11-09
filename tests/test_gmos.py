@@ -6,7 +6,7 @@ person to look at. GMOS_GAMES may name a folder of game folders (each with a
 .GAM) to title real games too."""
 import ctypes as C
 import os, pathlib, struct, subprocess, sys, unittest, zlib
-from gmos_page import (Page, lib, png, crc, q, rgb, gam_of, W, H, TW, TH, PAGE, NONE, MOVED, CHOSEN, QUIT, RESYNC,
+from gmos_page import (Page, lib, png, crc, q, rgb, gam_of, W, H, TW, TH, PAGE, NONE, MOVED, CHOSEN, QUIT, RESYNC, SCORES,
                        STARTER, SANDBOX, BIZARRE, CD, OTHER, GRID, DETAILS)
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUT = ROOT / os.environ.get('GMOS_HOST', 'build/host')  # make test-asan: build/asan
@@ -201,6 +201,15 @@ class Layout(unittest.TestCase):
             self.assertEqual([rgb(px[(68 + 2 * y + dy) * W + 36 + 2 * x + dx]) for y in (0, 99, 199) for x in (0, 160, 319)],
                              [q(vga(y * 320 + x)) for y in (0, 99, 199) for x in (0, 160, 319)])
         p.key('right'); png(OUT / 'games-details-back.png', p.render())
+    def test_high_scores_key(self):
+        p = Page(); p.add_folder(DICE); p.index(INDEX); p.finish()
+        self.assertEqual(p.key('h'), SCORES)                  # the grid: the selected game's Top Ten
+        self.assertEqual(p.key('h', 0), NONE)                 # a release does nothing
+        p.key('enter'); self.assertEqual(p.view, DETAILS)
+        self.assertEqual(p.key('h'), SCORES); self.assertEqual(p.view, DETAILS)
+        px = p.render(); png(OUT / 'games-details-hint.png', px)
+        p.key('esc'); png(OUT / 'games-grid-hint.png', p.render())
+        self.assertEqual(Page().finish().key('h'), NONE)      # no games: nothing to show
     def test_empty(self):
         px = page().render(); png(OUT / 'games-list-empty.png', px)
         self.assertTrue(any(rgb(px[y * W + x]) == q(0xeef0f6) for y in range(230, 256) for x in range(100, 860)))
