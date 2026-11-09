@@ -55,10 +55,25 @@ struct gs_session {
   uint8_t colors[768];          /* PLAYGAME's `colors`: the menu picture's palette, then each level's */
   uint8_t listpal[768]; uint8_t listid; /* a list's NewCols: the palette of its last picture */
   struct gs_sound sound;        /* SND log lines (sound.h); its dir is set before gs_start */
+  uint8_t demo;                 /* a demo preview runs (gs_demo_start): level one from its start, no pages, no sound */
+  uint32_t demo_n, demo_i;      /* its .REC's records, and the next one to play */
+  uint32_t demo_timer, demo_last; /* Recording::RecordTimer and LastKeyPress, in game ticks */
 };
 /* Opens the game (its .GAM in the folder the reader reads) and queues the
    title pages; 0, or -1 if it cannot be played. */
 int gs_start(struct gs_session *s, gp_read_fn read, void *user, const char *gam_name, uint64_t now_ns);
+/* The demo preview (docs/demo.md): plays the game's demo .REC (the .GAM's scene 0 file slot 11, as
+   PLAYGAME's Rec->InitPlayback(Game.File(0,11)) does) from the start of level one, with no pages and
+   no sound, drawn into px and pal like a play. The .REC is read into session.c's text buffer (3000
+   bytes at most). 0, or -1 when the game has no demo or cannot be played. gs_step then returns
+   GS_EXIT when the demo ends (its Esc, a win or the last life lost); gs_demo_stop ends it at once. */
+int gs_demo_start(struct gs_session *s, gp_read_fn read, void *user, const char *gam_name, uint64_t now_ns);
+void gs_demo_stop(struct gs_session *s);
+/* The rules main.c applies on the details view: the preview starts once nothing has been pressed
+   for GS_DEMO_IDLE_NS, and any key press (Linux input event: type 1, value 1) stops it. */
+#define GS_DEMO_IDLE_NS 3000000000ull
+int gs_demo_idle_due(uint64_t last_input_ns, uint64_t now_ns);
+int gs_demo_stops(uint16_t type, int32_t value);
 /* One input event (Linux codes). Esc leaves the game (returns GS_EXIT). */
 int gs_event(struct gs_session *s, uint16_t type, uint16_t code, int32_t value);
 /* Moves time on to now: fades, animation frames, pauses and pages, or the game
