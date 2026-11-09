@@ -59,7 +59,7 @@ int au_pump(struct au *a, const struct au_sink *s) {
   if (s->query(s->user, &queued, &cap)) return -1;
   if (queued >= AU_LOW_FRAMES && !a->hold_len) return 0;
   uint32_t want = AU_FILL_FRAMES - (queued < AU_FILL_FRAMES ? queued : AU_FILL_FRAMES);
-  if (cap && cap > queued && cap - queued < want) want = cap - queued;
+  if (cap) {uint32_t room = cap > queued ? cap - queued : 0; if (room < want) want = room;}
   while (a->hold_len || want >= AU_CHUNK) {
     if (!a->hold_len) {
       uint64_t t0 = s->now(s->user);

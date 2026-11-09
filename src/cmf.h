@@ -12,7 +12,7 @@ struct cmf {
   const uint8_t *data;          /* the whole file, owned by the caller while it plays */
   uint32_t len, music, off;     /* file length; where the music block starts; PlayIt's offset into it */
   uint32_t inst_at; uint16_t ninst;
-  int32_t wait;
+  int32_t wait; uint32_t ticks; /* cmf_tick calls so far (tests) */
   uint8_t channel, funct, rhythm, rhythm_keys, playing;
   int16_t notes[16];
   uint8_t programs[16];

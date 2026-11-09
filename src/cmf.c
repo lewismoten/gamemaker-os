@@ -109,6 +109,7 @@ static void note_off(struct cmf *c, unsigned ch, unsigned note) {
 }
 void cmf_tick(struct cmf *c) {
   if (!c->playing) return;
+  c->ticks++;
   if (c->off == 0) {c->wait = 1; paws(c);}
   c->wait--;
   unsigned guard = 0;
