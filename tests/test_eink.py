@@ -19,11 +19,11 @@ class Eink(unittest.TestCase):
         c = api(); b = (C.c_uint8 * N)(); c.ei_page(b, b'LIBRARY', 42, b'Dice Roller of the Deep and More')
         frame = (C.c_uint8 * N).in_dll(c, 'ei_status_frame')
         self.assertEqual(list(b[:48 * 32]), list(frame[:48 * 32]))  # mark and title untouched
-        self.assertGreater(sum(px(b, x, y) for x in range(76, 250) for y in range(48, 62)), 50)
-        self.assertEqual(sum(px(b, x, y) for x in range(76, 250) for y in range(62, 70)), 0)
+        self.assertGreater(sum(px(b, x, y) for x in range(80, 250) for y in range(48, 62)), 50)
+        self.assertEqual(sum(px(b, x, y) for x in range(80, 250) for y in range(62, 70)), 0)
         self.assertEqual(sum(px(b, x, y) for x in range(250 - 6, 250) for y in range(0, 8)), 0)  # kernel's error corner stays white
-        # clipped to 14 characters: nothing past x = 76 + 14 * 12
-        self.assertEqual(sum(px(b, x, y) for x in range(76 + 14 * 12, 250) for y in range(92, 106)), 0)
+        # clipped to 14 characters: nothing past x = 80 + 13 * 12
+        self.assertEqual(sum(px(b, x, y) for x in range(80 + 13 * 12, 250) for y in range(92, 106)), 0)
     def test_mark_is_the_40x40_pbm(self):
         m = bytes((C.c_uint8 * 200).in_dll(api(), 'ei_mark')); self.assertEqual(m, (ROOT / 'art/eink/eink-mark-40.pbm').read_bytes()[-200:])
     def test_policy(self):

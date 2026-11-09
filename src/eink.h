@@ -11,7 +11,7 @@
 extern const uint8_t ei_status_frame[EI_PAGE_BYTES];
 extern const uint8_t ei_mark[200];
 /* The status page: the frame plus MODE, GAMES and GAME values (upper case, clipped to EI_VALUE_CHARS). */
-#define EI_VALUE_CHARS 14u
+#define EI_VALUE_CHARS 13u
 void ei_page(uint8_t *out, const char *mode, unsigned games, const char *game);
 struct ei_state {
   uint8_t page[EI_PAGE_BYTES], sent[EI_PAGE_BYTES];

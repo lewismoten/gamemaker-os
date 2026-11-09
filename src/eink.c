@@ -18,7 +18,7 @@ void ei_page(uint8_t *out, const char *mode, unsigned games, const char *game) {
   for (unsigned i = 0; i < EI_PAGE_BYTES; i++) out[i] = ei_status_frame[i];
   char num[11]; int k = 0, j = 0; unsigned v = games; do num[k++] = (char)('0' + v % 10); while (v /= 10);
   char buf[11]; while (k) buf[j++] = num[--k]; buf[j] = 0;
-  draw(out, 76, 48, mode, EI_VALUE_CHARS); draw(out, 76, 70, buf, EI_VALUE_CHARS); draw(out, 76, 92, game, EI_VALUE_CHARS);
+  draw(out, 80, 48, mode, EI_VALUE_CHARS); draw(out, 80, 70, buf, EI_VALUE_CHARS); draw(out, 80, 92, game, EI_VALUE_CHARS);
 }
 void ei_init(struct ei_state *s) {
   s->have_sent = 0; s->changed_ns = s->sent_ns = s->retry_ns = 0;
