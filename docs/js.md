@@ -7,6 +7,8 @@ only moves things around. The element tree, layout, drawing, files and the
 Game-Maker play core are C. It was built as a spike on 2026-11-07. The numbers
 and the recommendation are in sandbox-kernel's `docs/js-spike.md`.
 
+For the whole picture (boot, what a program may do, limits, USB development) see sandbox-kernel's [OS author's guide](https://github.com/lewismoten/sandbox-kernel/blob/develop/docs/os-authors.md).
+
 ## Make your own shell in two files
 
 ```
