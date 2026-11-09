@@ -7,8 +7,9 @@
 #pragma once
 #include "cmf.h"
 #include "pcspeaker.h"
-#define AU_LOW_FRAMES 2400u  /* write when fewer frames than this are queued (50 ms) */
-#define AU_FILL_FRAMES 7200u /* and top up to this many (150 ms) */
+#define AU_LOW_FRAMES 12000u  /* write when fewer frames than this are queued (250 ms: longer than any read the OS does) */
+#define AU_FILL_FRAMES 15000u /* and top up to this many (312 ms; the kernel ring holds 16384, an older one 4096) */
+#define AU_VOL_ONE 32768u     /* master volume 1.0 (Q15); it ramps one step a sample: 0.68 s from silence to full */
 #define AU_CHUNK 480u        /* frames rendered per write (10 ms); pcspeaker.h's limit is 1920 */
 #define AU_NAME_MAX 16u
 struct au_sink {
@@ -21,6 +22,7 @@ struct au_sink {
 };
 struct au {
   struct opl opl; struct cmf cmf; struct pcspeaker pc;
+  uint32_t vol, vol_target;    /* master volume, Q15, ramped per sample so nothing clicks */
   uint32_t until_q16;          /* samples to the next sequencer tick, 16 fractional bits */
   int16_t hold[AU_CHUNK * 2]; uint32_t hold_len, hold_off; /* a rendered chunk the ring has not taken yet */
   uint8_t *music; uint32_t music_cap; /* the caller's scratch for a song (the biggest in the games is 19.8 KB) */
@@ -37,7 +39,14 @@ void au_init(struct au *a, uint8_t *music, uint32_t music_cap);
 /* The session's events (sound.h): a song (name "" stops it), a beep (tune n of the .SND), everything stops. */
 void au_music(struct au *a, const char *cmf);
 void au_beep(struct au *a, const char *snd, int tune);
+/* A song change or stop fades the playing song out first (au_service does the switch at silence), then fades the new one in. */
 void au_stop(struct au *a);
+/* At once, no fade: the song, the speaker and any request stop, the chip is reset and the volume is 0 (what the ring already holds still plays). */
+void au_silence(struct au *a);
+/* Starts the song already read into the music buffer (n bytes) and fades it in; 0, or -1 when it is refused. */
+int au_play_loaded(struct au *a, uint32_t n);
+/* A fade to this volume (0..AU_VOL_ONE) begins. */
+void au_volume(struct au *a, uint32_t target);
 /* Reads the files the requests name through read (game.h's gp_read_fn); returns 1 when something started. */
 int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, uint32_t), void *user);
 /* Renders n frames (at most AU_CHUNK) of stereo s16 into out: the sequencer ticks, the synth, the speaker. */

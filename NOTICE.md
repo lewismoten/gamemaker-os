@@ -16,6 +16,7 @@ AI models used on this repository:
 | Claude Opus 5.5 (Anthropic) | Claude Code | Packed games: the .GMP reader (volume sets, the DOS files inside), the card's packs in /sd/GAMES and /sd/POCKET, host tests, fuzzing, docs/gmp.md (2026-11-07) |
 | Claude Sonnet 5.5 (Anthropic) | Claude Code | Boot splash and library diagnostics screen: `tools/make_bootart.py`, `src/bootart.c`, host tests, docs/boot-art.md (2026-11-09) |
 | Claude Sonnet 5.5 (Anthropic) | Claude Code | JS.ELF spike: the DOM-like element tree, the QuickJS-ng bindings and prelude, the game element and screen modes, HELLO and BENCH apps, host runner and tests, docs/js.md (2026-11-07) |
+| Claude Sonnet 5.5 (Anthropic) | Claude Code | Sound on the board: the integer OPL2 synth and CMF player (`src/opl.c`, `src/cmf.c`, tables), the `/dev/audio` mixer and feeder (`src/audio.c`), the background music cycle with fades, preview sound, host tests, and Game-Maker OS's own tune composed in code (`tools/make_ostune.ts`, `src/ostune_data.c`, MIT) (2026-11-09) |
 
 ## Third-party code
 
@@ -24,6 +25,7 @@ AI models used on this repository:
 - `src/pcspeaker.c`: format, 36-step timing and speaker level behavior follow RSD's `code/GM/SOUND.H` (Oliver Stone) and `PLAYGAME.C`, plus Sandbox Edition's `formats/sound.ts`, `audio/cmfPlayer.ts` and `audio/engine.ts` at commit `5353512a5b8e87e72321c8a0ba87c5443ef878eb` (MIT, copyright (c) 2014 gandrewstone; (c) 2026 Lewis Moten modifications). The integer oscillator/rational-clock implementation is original here, not a browser oscillator port. This producer remains unlinked. See `docs/pcspeaker-host.md` for source coordinates and fidelity limits.
 
 
+- `src/opl.c`, `src/cmf.c`, `tools/make_opl_tables.py`: C ports, in integer math, of the Sandbox Edition's `web/packages/engine/src/audio/opl.ts`, `cmfPlayer.ts` and `cmfLoad.ts` (MIT, copyright (c) 2014 gandrewstone; (c) 2026 Lewis Moten modifications), which port PlayIt() of RSD's `code/GM/SBMUSIC.C`. No Nuked-OPL, DOSBox or other emulator code is used. `tools/make_ostune.ts` uses that repository's song tools (`music/compose.ts`, `kit/song.ts`).
 - `sdk/`: the sandbox-kernel SDK (headers, `crt0.S`, `mem.c`, link map), MIT, copyright (c) 2026 Lewis Moten; the commit is in `sdk/PINNED`.
 - `tools/font.txt`: the capitals, digits and `- : . /` come from sandbox-kernel's 5x7 status font (MIT, same author).
 - `third_party/gmcore/` (`gmcore.h`, `gmmon.h`): the play core of the Pocket Player in [Game-Maker: Sandbox Edition](https://github.com/lewismoten/GameMaker-SandboxEdition), copied unchanged at the commit in `third_party/gmcore/PINNED`, with that repository's MIT license (`third_party/gmcore/LICENSE`: copyright (c) 2014 gandrewstone; copyright (c) 2026 Lewis Moten for the modifications). It ports that project's web engine, which follows `PLAYGAME.C` from RSD Game-Maker 3.0 (Recreational Software Designs, 1991-1995), whose source was released under the MIT License in 2014. The two files were written with Claude Sonnet 5.5 (Anthropic), as that repository's history and NOTICE.md record.

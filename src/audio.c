@@ -5,20 +5,30 @@ static int same(const char *a, const char *b) {unsigned i = 0; while (a[i] && a[
 void au_init(struct au *a, uint8_t *music, uint32_t music_cap) {
   uint8_t *b = (uint8_t *)a;
   for (unsigned i = 0; i < sizeof *a; i++) b[i] = 0;
-  a->music = music; a->music_cap = music_cap;
+  a->music = music; a->music_cap = music_cap; a->vol = a->vol_target = AU_VOL_ONE;
   cmf_init(&a->cmf, &a->opl); pc_init(&a->pc);
 }
 void au_music(struct au *a, const char *cmf) {copy(a->want_music, cmf); a->music_pending = 1;}
 void au_beep(struct au *a, const char *snd, int tune) {copy(a->want_snd, snd); a->want_tune = tune; a->beep_pending = 1;}
 void au_stop(struct au *a) {a->want_music[0] = 0; a->music_pending = 1; a->beep_pending = 0; pc_stop(&a->pc);}
+void au_volume(struct au *a, uint32_t target) {a->vol_target = target > AU_VOL_ONE ? AU_VOL_ONE : target;}
+void au_silence(struct au *a) {
+  a->music_pending = 0; a->beep_pending = 0; a->hold_len = 0;
+  cmf_stop(&a->cmf); pc_stop(&a->pc); a->vol = a->vol_target = 0;
+}
+int au_play_loaded(struct au *a, uint32_t n) {
+  if (cmf_load(&a->cmf, a->music, n)) {cmf_stop(&a->cmf); return -1;}
+  a->until_q16 = 0; a->music_loads++; a->vol_target = AU_VOL_ONE; return 0;
+}
 int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, uint32_t), void *user) {
   int started = 0;
   if (a->music_pending) {
     a->music_pending = 0;
+    if (a->cmf.playing && a->vol) {a->vol_target = 0; a->music_pending = 1; return 0;} /* fade out first; the switch is at silence */
     cmf_stop(&a->cmf); /* the buffer is about to change under the pump (the read calls the heartbeat) */
     if (a->want_music[0]) {
       int32_t n = read ? read(user, a->want_music, a->music, a->music_cap) : -1;
-      if (n > 0 && !cmf_load(&a->cmf, a->music, (uint32_t)n)) {a->until_q16 = 0; a->music_loads++; started = 1;}
+      if (n > 0 && !au_play_loaded(a, (uint32_t)n)) started = 1;
       else cmf_stop(&a->cmf);
     }
   }
@@ -50,6 +60,8 @@ void au_render(struct au *a, int16_t *out, unsigned n) {
   }
   for (unsigned k = 0; k < n; k++) {
     int32_t v = acc[k]; if (v > 32767) v = 32767; if (v < -32768) v = -32768;
+    if (a->vol != a->vol_target) a->vol = a->vol < a->vol_target ? a->vol + 1 : a->vol - 1;
+    v = (int32_t)((int64_t)v * a->vol >> 15);
     out[k * 2] = out[k * 2 + 1] = (int16_t)v;
   }
   a->frames += n;

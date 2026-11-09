@@ -7,9 +7,11 @@
 #include "audio.h"
 static int fails;
 #define CHECK(c, ...) do {if (!(c)) {fails++; printf("FAIL line %d: ", __LINE__); printf(__VA_ARGS__); printf("\n");}} while (0)
-static uint8_t music_buf[65536], snd_file[2160];
+static uint8_t music_buf[65536], snd_file[2160], cmf_file[4096]; static uint32_t cmf_len;
 static int32_t reader(void *u, const char *name, uint8_t *buf, uint32_t cap) {
-  (void)u; if (strcmp(name, "T.SND")) return -1;
+  (void)u;
+  if (!strcmp(name, "S.CMF")) {uint32_t k = cmf_len < cap ? cmf_len : cap; memcpy(buf, cmf_file, k); return (int32_t)k;}
+  if (strcmp(name, "T.SND")) return -1;
   uint32_t n = sizeof snd_file < cap ? sizeof snd_file : cap; memcpy(buf, snd_file, n); return (int32_t)n;
 }
 static void render(struct au *a, int16_t *out, unsigned n) {for (unsigned i = 0; i < n; i += AU_CHUNK) au_render(a, out + i * 2, n - i < AU_CHUNK ? n - i : AU_CHUNK);}
@@ -42,6 +44,41 @@ static void speaker(void) {
   render(&a, out, 10); CHECK(abs(out[0]) == 3146, "retrigger did not restart");
   au_stop(&a); au_service(&a, reader, 0); render(&a, out, 10); CHECK(out[0] == 0, "stop did not silence");
   au_beep(&a, "NOPE.SND", 1); CHECK(au_service(&a, reader, 0) == 0, "a missing file started a sound");
+}
+static int peak(const int16_t *o, unsigned n) {int m = 0; for (unsigned i = 0; i < n; i++) {int v = abs(o[i * 2]); if (v > m) m = v;} return m;}
+/* A song that stops, switches or is cut by a preview leaves no note ringing; a switch fades out, goes silent, then fades in. */
+static void fades(void) {
+  static struct au a; static int16_t out[AU_CHUNK * 2 * 100];
+  FILE *f = fopen("tests/data/syn.cmf", "rb"); if (!f) {CHECK(0, "no syn.cmf"); return;}
+  cmf_len = (uint32_t)fread(cmf_file, 1, sizeof cmf_file, f); fclose(f);
+  au_init(&a, music_buf, sizeof music_buf);
+  au_music(&a, "S.CMF"); CHECK(au_service(&a, reader, 0) == 1, "song not started");
+  render(&a, out, 4800); CHECK(peak(out, 4800) > 100, "the song is silent");
+  /* stop mid-note: the chip is reset, so 50 ms later (and at once) the output is exactly silent */
+  cmf_stop(&a.cmf); render(&a, out, 2400); CHECK(peak(out + 2 * 2400 - 2 * 100, 100) == 0 && peak(out, 2400) == 0, "a note rings after cmf_stop (peak %d)", peak(out, 2400));
+  /* a switch while playing: fade out first, no load until silent */
+  au_music(&a, "S.CMF"); uint32_t loads = a.music_loads;
+  CHECK(au_service(&a, reader, 0) == 1 && a.music_loads == loads + 1, "a stopped player did not start the new song");
+  render(&a, out, 4800);
+  au_music(&a, "S.CMF"); CHECK(au_service(&a, reader, 0) == 0 && a.vol_target == 0 && a.music_loads == loads + 1, "a switch did not fade first");
+  unsigned frames = 0, bad = 0; uint32_t last = a.vol;
+  while (a.vol && frames < 48000) {
+    unsigned n = AU_CHUNK; au_render(&a, out, n); frames += n;
+    for (unsigned i = 0; i < n; i++) {int d = abs(out[i * 2] - (i ? out[(i - 1) * 2] : out[0])); if (d > 4000) bad++;} /* no click: no jump to or from a level */
+    if (a.vol > last) bad++; last = a.vol; if (!a.vol) break;
+  }
+  CHECK(a.vol == 0 && frames >= 32000 && frames <= 36000, "fade out took %u frames (0.68 s is 32768)", frames);
+  CHECK(bad == 0, "%u clicks or rises while fading out", bad);
+  CHECK(au_service(&a, reader, 0) == 1 && a.music_loads == loads + 2 && a.vol_target == AU_VOL_ONE, "the switch did not happen at silence");
+  au_render(&a, out, AU_CHUNK); CHECK(a.vol > 0 && a.vol < 1000, "the new song did not fade in (vol %u)", a.vol);
+  /* the preview's key: everything at once, nothing rings, the speaker too */
+  au_beep(&a, "T.SND", 3); au_service(&a, reader, 0); render(&a, out, 480);
+  au_silence(&a); render(&a, out, 4800); CHECK(peak(out, 4800) == 0 && !a.cmf.playing && !a.pc.active, "au_silence left sound (peak %d)", peak(out, 4800));
+  /* a song with a note that never releases (release rate 0): still silent after a stop */
+  uint8_t held[4096]; memcpy(held, cmf_file, cmf_len); for (unsigned i = 0; i < 16; i++) held[40 + i * 16 + 6] = held[40 + i * 16 + 7] = 0xf0; /* RR 0 */
+  CHECK(cmf_load(&a.cmf, held, cmf_len) == 0, "held song refused"); a.vol = a.vol_target = AU_VOL_ONE;
+  render(&a, out, 9600); int held_peak = peak(out, 9600); cmf_stop(&a.cmf); render(&a, out, 2400);
+  CHECK(held_peak > 100 && peak(out, 2400) == 0, "a note with release rate 0 rings after the stop (peak %d)", peak(out, 2400));
 }
 static void ticks(void) {
   static struct au a; static int16_t out[AU_CHUNK * 2];
@@ -97,4 +134,4 @@ static void feeding(void) {
   CHECK(total == 480 || total > 480, "partial writes lost frames: %d", total);
   printf("fed %u frames (%d reported) in %d pumps; %d quiet\n", r.gotn, wrote, pumps, quiet_pumps);
 }
-int main(void) {speaker(); ticks(); feeding(); if (!fails) puts("audio ok"); return fails != 0;}
+int main(void) {speaker(); ticks(); fades(); feeding(); if (!fails) puts("audio ok"); return fails != 0;}

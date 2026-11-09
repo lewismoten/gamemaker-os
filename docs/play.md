@@ -220,6 +220,27 @@ most (the last effect started, the one heard), and the same effect again within
 3 ticks is left out. A log write never waits for the USB side. Each line is
 under 80 characters. `tests/test_sound.py` checks them.
 
+## Sound on the board (ABI 1.8, test kernel only)
+
+With a kernel that has `/dev/audio` (ABI 1.8) GMOS opens it once and plays through HDMI, 16-bit stereo at 48 kHz.
+The synth runs in the main loop, never blocking the 18.2 Hz tick or the heartbeat: `au_pump` (`src/audio.c`) asks the
+ring's level and writes only when under 250 ms is queued (the heartbeat pumps too, so long reads inside a step keep
+feeding). Needs a ring of 16384 frames (the kernel's `feature/hdmi-audio`; a 4096 ring still works but cannot cover a
+title-screen read).
+
+- `src/opl.c`, `src/cmf.c`: an integer OPL2 and CMF player, a port of the web engine's `audio/opl.ts` and `audio/cmfPlayer.ts`
+  (tables from `tools/make_opl_tables.py`, no floats in the sample loop). `tools/compare_opl.py` renders songs with both and
+  prints the difference (1 to 6% RMS on most songs, envelopes within 2%).
+- `src/pcspeaker.c`: the PC-speaker effects (36 steps of 1/145.67 s, a square wave at 12% x 0.8).
+- VOC clips are not played yet (they stay `SND voc` lines).
+- Every song change fades the old one out (0.68 s), resets the chip (all channels keyed off) and fades the new one in.
+- A game's own sound, or a preview's (its menu song and the game's effects, as PLAYGAME's demo plays them), replaces the
+  library's background tune. The background cycle (`bg_tick` in `src/main.c`): the OS's own tune (`tools/make_ostune.ts`,
+  composed in code) every third pick, otherwise a random library game's first-level song (its menu song if none), a
+  short gap between tunes. Songs over 8 KB are skipped for the background.
+- The log has `GMOS audio ...` lines with the kernel's counters, the synth's CPU in per mille, and each underrun with
+  what the loop was doing.
+
 ## Next
 
 - Sound on the board itself: PC speaker effects first (the core already queues

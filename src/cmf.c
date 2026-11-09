@@ -66,7 +66,9 @@ int cmf_load(struct cmf *c, const uint8_t *d, uint32_t len) {
   c->off = 0; c->playing = c->music < len;
   return 0;
 }
-void cmf_stop(struct cmf *c) {all_off(c); c->off = 0; c->playing = 0;}
+/* Every stop keys off all nine channels and the rhythm bits, then resets the chip, so no note can keep ringing
+   (a release rate of 0 would hold it for ever). */
+void cmf_stop(struct cmf *c) {all_off(c); c->off = 0; c->playing = 0; init(c);}
 static void set_mode(struct cmf *c, unsigned r) {
   all_off(c); c->rhythm = r != 0; opl_write(c->opl, 0xbd, 0xc0 | (c->rhythm ? 0x20u : 0));
   if (c->rhythm) for (unsigned ch = 11; ch < 16; ch++) program(c, ch, c->programs[ch]);
@@ -130,9 +132,9 @@ void cmf_tick(struct cmf *c) {
       case 0xe0: c->off += 3; break;
       case 0xf0:
         if (a == 0xf7 || a == 0xf0) {c->off++; c->off += paws(c); c->off++;}
-        else {all_off(c); c->off = 0;}
+        else {all_off(c); c->off = 0; c->loops++;}
         break;
-      default: all_off(c); c->off = 0;
+      default: all_off(c); c->off = 0; c->loops++;
     }
     c->wait = (int32_t)paws(c);
   }
