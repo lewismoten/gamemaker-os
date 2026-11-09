@@ -28,6 +28,8 @@ static int scan_join(char out[256],const char *base,const char *name) {
  unsigned a=length(base),b=length(name);if(a+b+1>255)return 0;
  put(put(out,base),"/");put(out+a+1,name);return 1;
 }
+/* name_bytes is one byte, so the 256-byte name buffers below always hold a name and its NUL. */
+_Static_assert(sizeof(((sbx_dirent *)0)->name_bytes)==1,"scan name buffers are 256 bytes");
 /* Validate the whole record before accessing name bytes. */
 static int cache_dent(const sbx_dirent_meta *e,uint32_t left) {
  return left>=sizeof *e&&e->length>=sizeof *e&&e->length<=left&&!(e->length&7u)&&

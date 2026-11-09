@@ -74,6 +74,23 @@ struct KeyEnt { int key, seq, frame; };
 typedef bool (*LevelInfo)(void* user, int level, Level& out);
 typedef bool (*MapLoader)(void* user, int level, uint8_t* blocks, uint8_t* mons, uint8_t* mm, bool* hasMons);
 
+// Everything a level entry carries over from the levels before it: enterLevel's arguments and what it does not reset
+// (score, hit points, lives, the 30 counters (money among them), what the hero carries, the clock, the monster seed)
+// and the hero files the previous level left (a level that names none keeps them; Assets fills and restores those).
+// World::restore(e) enters the level again exactly as it was entered: Restart level, and Continue after a power cycle
+// (the board keeps one in NVS). A board convenience: PLAYGAME had no restart and its saves are untouched.
+struct EntryState {
+  uint32_t magic;  // ENTRY_MAGIC: the layout this build reads
+  int16_t level, sx, sy, prevToX, prevToY, heroN;
+  int32_t hitpts, lives, score;
+  int32_t meter[30];
+  int16_t inv[MAXINV];
+  uint32_t seed, clock, ticks;
+  char heroCbl[16], heroChr[16];
+};
+constexpr uint32_t ENTRY_MAGIC = 0x31544e45;  // "ENT1"
+typedef void (*HeroSync)(void* user, EntryState& e, bool restore);
+
 struct World {
   // Assets (not owned).
   const uint8_t* bbl = nullptr;  // 150 x 420
@@ -199,7 +216,13 @@ struct World {
     return f;
   }
 
-  int mapBlock(int x, int y) const { return map[y * MLEN + x]; }
+  // DOS wraps x,y by MLEN/MWID (PLAYBACK.C ADJBLOC); a cell above BACKBL is empty (DOS reads past blkmap).
+  int mapBlock(int x, int y) const {
+    x %= MLEN; if (x < 0) x += MLEN;
+    y %= MWID; if (y < 0) y += MWID;
+    int c = map[y * MLEN + x];
+    return c > BACKBL ? BACKBL : c;
+  }
   int shown(int b) const { return blkmap[b]; }
 
   // ---- keys (keys.ts) -----------------------------------------------------------------------
@@ -316,7 +339,7 @@ struct World {
   // DoBlockTouchChar. 0: refused (a counter is empty), 1: done, 2: done and an effect started.
   int doBlockTouchChar(const Attr& b) {
     bool snded = false;
-    if ((b.effect >= 20 || b.effect == 3) && meter[b.effect] + b.eamt <= 0) return 0;
+    if ((b.effect >= 20 || b.effect == 3) && b.effect < 30 && meter[b.effect] + b.eamt <= 0) return 0;
     if (cseq != DIESEQ) {
       if (b.chHitPt <= 0) hitpts = wrap16(hitpts + b.chHitPt);
       else if ((uint16_t)(hitpts + b.chHitPt) < INF_REPEAT) hitpts = wrap16(hitpts + b.chHitPt);
@@ -341,7 +364,7 @@ struct World {
       if (b.eamt > 0) snded = doSound(ADDLIFESOUND);
       lives = wrap16(lives + b.eamt);
     }
-    if (b.effect > 2 && meter[b.effect] != INF_REPEAT && b.effect < 30) {
+    if (b.effect > 2 && b.effect < 30 && meter[b.effect] != INF_REPEAT) {
       if (!snded) {
         if (b.effect == 3) {
           if (b.eamt > 0) snded = doSound(ADDMONEYSOUND);
@@ -865,8 +888,43 @@ struct World {
     memset(held, 0, sizeof held);
   }
 
+  // The state the current level was entered with (filled at the start of every enterLevel).
+  EntryState entry = {};
+  HeroSync heroSync = nullptr;  // Assets: copies its hero file names into an entry, or back (user: loadUser)
+  void saveEntry(int lv, int sx, int sy) {
+    EntryState& e = entry;
+    memset(&e, 0, sizeof e);
+    e.magic = ENTRY_MAGIC;
+    e.level = (int16_t)lv; e.sx = (int16_t)sx; e.sy = (int16_t)sy; e.prevToX = (int16_t)prevToX; e.prevToY = (int16_t)prevToY;
+    e.hitpts = hitpts; e.lives = lives; e.score = score;
+    for (int i = 0; i < 30; i++) e.meter[i] = meter[i];
+    for (int i = 0; i < MAXINV; i++) e.inv[i] = (int16_t)inv[i];
+    e.seed = seed; e.clock = clock; e.ticks = ticks;
+    if (heroSync) heroSync(loadUser, e, false);
+  }
+  // Enters the level of `e` again as it was entered (a copy is taken: `e` may be `entry` itself). False when the
+  // record is not this build's or the level does not load.
+  bool restore(const EntryState& src) {
+    EntryState e = src;
+    if (e.magic != ENTRY_MAGIC || e.level < 0 || e.level >= MAXLEVELS || e.sx < 0 || e.sx >= MLEN || e.sy < 0 || e.sy >= MWID) return false;
+    prevToX = e.prevToX; prevToY = e.prevToY;
+    hitpts = e.hitpts; lives = e.lives; score = e.score;
+    for (int i = 0; i < 30; i++) meter[i] = e.meter[i];
+    for (int i = 0; i < MAXINV; i++) inv[i] = e.inv[i];
+    seed = e.seed; clock = e.clock; ticks = e.ticks;
+    won = false; pendKind = 0; dropSlot = -1; nsnd = 0;
+    if (heroSync) heroSync(loadUser, e, true);
+    lvlIdx = -1;
+    bool ok = enterLevel(e.level, e.sx, e.sy);
+    buildDrawList();
+    return ok;
+  }
+  // Restart level: the current level from its entry, at no cost of a life.
+  bool restartLevel() { return restore(entry); }
+
   // Enters level `lv` with the character on block (sx, sy): loadscene + StartSceneInits + initScroll.
   bool enterLevel(int lv, int sx, int sy) {
+    saveEntry(lv, sx, sy);
     level = lv;
     gen++;
     bool hasMons = false;
@@ -1043,7 +1101,7 @@ struct World {
       int bx = xx / BLEN, wx = xx % BLEN;
       int n = BLEN - wx;
       if (x + n > SIZEX) n = SIZEX - x;
-      int b = blkmap[map[cellY * MLEN + (mx + bx) % MLEN]];
+      int b = blkmap[mapBlock((mx + bx) % MLEN, cellY)];
       const uint8_t* src = b < nbl ? bbl + b * BLOCK_BYTES + wy * BLEN + wx : nullptr;
       if (src) memcpy(out + x, src, n);
       else memset(out + x, 0, n);

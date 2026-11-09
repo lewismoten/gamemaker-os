@@ -37,13 +37,19 @@ bool haveHero;
 
 int u16(uint32_t at) { return at + 1 < gamN ? gam[at] | gam[at + 1] << 8 : 0; }
 int i16(uint32_t at) { return (int16_t)u16(at); }
+// A hero position wraps by the map size, as PLAYGAME does (PLAYBACK.C).
+int wrapX(int v) { return ((v % gm::MLEN) + gm::MLEN) % gm::MLEN; }
+int wrapY(int v) { return ((v % gm::MWID) + gm::MWID) % gm::MWID; }
 uint32_t sceneAt(int s) { return HEAD + (uint32_t)s * SCENE; }
 // File slot `f` of scene `s`: a name in the pool, "" when empty.
 const char *fileOf(int s, int f) {
   uint32_t pool = sceneAt(nscenes), len = (uint32_t)u16(pool);
   uint32_t o = (uint32_t)u16(sceneAt(s) + 43 + 2 * f);
   if (!o || o >= len || pool + 2 + o >= gamN) return "";
-  return (const char *)gam + pool + 2 + o;
+  const char *name = (const char *)gam + pool + 2 + o;
+  for (uint32_t i = pool + 2 + o; i < gamN; i++)
+    if (!gam[i]) return name;
+  return "";  // an unterminated name is no name
 }
 bool same(const char *a, const char *b) {
   while (*a && *a == *b) a++, b++;
@@ -154,8 +160,8 @@ uint32_t convertOld(const uint8_t *d, uint32_t n) {
 bool info(void *, int level, gm::Level &out) {
   if (level < 0 || level >= nplay) return false;
   uint32_t s = sceneAt(play[level]);
-  out.startX = level == 0 ? i16(sceneAt(0) + 83 + 6) : 0;
-  out.startY = level == 0 ? i16(sceneAt(0) + 83 + 8) : 0;
+  out.startX = level == 0 ? wrapX(i16(sceneAt(0) + 83 + 6)) : 0;
+  out.startY = level == 0 ? wrapY(i16(sceneAt(0) + 83 + 8)) : 0;
   out.scrollUp = gam[s + 6]; out.scrollDown = gam[s + 7]; out.scrollLeft = gam[s + 8]; out.scrollRight = gam[s + 9];
   out.nlinks = 0;
   for (int l = 0; l < 20 && out.nlinks < gm::MAXLINKS; l++) {
@@ -164,7 +170,7 @@ bool info(void *, int level, gm::Level &out) {
     if (to == NOSCENE) continue;
     int lv = levelOf(to);
     if (lv == -2) continue;  // a link to a scene that is not a level (the Pocket Player leaves such a game out)
-    out.links[out.nlinks++] = {i16(k + 2), i16(k + 4), lv, i16(k + 6), i16(k + 8)};
+    out.links[out.nlinks++] = {i16(k + 2), i16(k + 4), lv, wrapX(i16(k + 6)), wrapY(i16(k + 8))};
   }
   return true;
 }
