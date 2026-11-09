@@ -67,3 +67,122 @@ int save_his_record(const struct save_ops *o, const char *game, int32_t score, c
   if ((e = save_put(o, game, f, out, sizeof out))) return e;
   *place = at; return 0;
 }
+
+/* DOS PLAYGAME 3.00 wire records (RSD, MIT); see docs/game-save.md.
+ * Hermes OpenAI Codex GPT-6.1 Sol. No native struct/pointer serialization. */
+static uint16_t game_u16(const uint8_t *p) {
+  return (uint16_t)((uint16_t)p[0] | (uint16_t)p[1] << 8);
+}
+static int16_t game_i16(const uint8_t *p) {
+  uint16_t v = game_u16(p);
+  return (int16_t)(v <= 32767u ? (int32_t)v : (int32_t)v - 65536);
+}
+static uint32_t game_u32(const uint8_t *p) {
+  return (uint32_t)p[0] | (uint32_t)p[1] << 8 |
+         (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+static void game_put16(uint8_t *p, uint16_t v) {
+  p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8);
+}
+static void game_put32(uint8_t *p, uint32_t v) {
+  p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8);
+  p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24);
+}
+/* Subtraction avoids address-end overflow and unrelated-pointer subtraction. */
+static int game_overlap(const void *a, size_t an, const void *b, size_t bn) {
+  uintptr_t x = (uintptr_t)a, y = (uintptr_t)b;
+  return an && bn && (x <= y ? y - x < an : x - y < bn);
+}
+uint32_t save_game_size(const struct save_game *g) {
+  if (!g || g->block_count > SAVE_GAME_BLOCKS || g->record_count < 0 ||
+      g->record_count > SAVE_GAME_RECORDS) return 0;
+  return SAVE_GAME_MIN_BYTES + 5u * g->block_count + 3u * (uint32_t)g->record_count;
+}
+int save_game_decode(struct save_game *g, const void *wire, uint32_t n) {
+  const uint8_t *p = wire;
+  if (!g || !p || n < SAVE_GAME_MIN_BYTES || n > SAVE_GAME_MAX_BYTES ||
+      game_overlap(g, sizeof *g, p, n)) return SAVE_EINVAL;
+  unsigned blocks = p[0];
+  if (blocks > SAVE_GAME_BLOCKS) return SAVE_EINVAL;
+  /* All variable-array bounds and whole-file framing are checked before any
+   * destination mutation. Recording starts after 37685 + 5M bytes. */
+  uint32_t rec = 37685u + 5u * blocks;
+  if (n < rec + 70u) return SAVE_EINVAL;
+  int16_t records = game_i16(p + rec);
+  if (records < 0 || records > SAVE_GAME_RECORDS ||
+      n != rec + 70u + 3u * (uint32_t)records) return SAVE_EINVAL;
+  memset(g, 0, sizeof *g);
+  g->block_count = *p++;
+  g->prevscene = game_i16(p); p += 2;
+  g->doscene = game_i16(p); p += 2;
+  g->linkin = game_i16(p); p += 2;
+  g->sound_clock = game_u32(p); p += 4;
+  for (unsigned i = 0; i < SAVE_GAME_BLOCKS; i++, p += 4) g->next_change[i] = game_u32(p);
+#define GAME_READ_BYTES(member) do { memcpy(g->member, p, sizeof g->member); p += sizeof g->member; } while (0)
+  GAME_READ_BYTES(block_map);
+  GAME_READ_BYTES(character_info);
+  GAME_READ_BYTES(character);
+  g->map_x = game_i16(p); p += 2;
+  g->map_y = game_i16(p); p += 2;
+  GAME_READ_BYTES(monster_info);
+  GAME_READ_BYTES(monster_map);
+  GAME_READ_BYTES(map);
+  g->monster_count = *p++;
+  for (unsigned i = 0; i < blocks; i++) {
+    g->blocks[i].block = *p++; g->blocks[i].next_time = game_u32(p); p += 4;
+  }
+  g->record_count = game_i16(p); p += 2;
+  g->last_recorded_key = game_i16(p); p += 2;
+  GAME_READ_BYTES(record_file);
+  g->record_pointer = game_u32(p); p += 4;
+  g->record_timer = game_u32(p); p += 4;
+  g->record_flag = *p++;
+  g->last_key_press = game_u32(p); p += 4;
+  g->record_paused = game_u16(p); p += 2;
+  for (int i = 0; i < records; i++) {
+    g->records[i].delta_time = game_u16(p); p += 2; g->records[i].key = *p++;
+  }
+#undef GAME_READ_BYTES
+  return 0;
+}
+int save_game_encode(const struct save_game *g, void *wire, uint32_t cap, uint32_t *n) {
+  uint8_t *p = wire;
+  uint32_t size = save_game_size(g);
+  if (!size || !p || !n || game_overlap(g, sizeof *g, p, cap) ||
+      game_overlap(g, sizeof *g, n, sizeof *n) ||
+      game_overlap(p, cap, n, sizeof *n)) return SAVE_EINVAL;
+  if (cap < size) return SAVE_EFBIG;
+  *p++ = g->block_count;
+  game_put16(p, (uint16_t)g->prevscene); p += 2;
+  game_put16(p, (uint16_t)g->doscene); p += 2;
+  game_put16(p, (uint16_t)g->linkin); p += 2;
+  game_put32(p, g->sound_clock); p += 4;
+  for (unsigned i = 0; i < SAVE_GAME_BLOCKS; i++, p += 4) game_put32(p, g->next_change[i]);
+#define GAME_WRITE_BYTES(member) do { memcpy(p, g->member, sizeof g->member); p += sizeof g->member; } while (0)
+  GAME_WRITE_BYTES(block_map);
+  GAME_WRITE_BYTES(character_info);
+  GAME_WRITE_BYTES(character);
+  game_put16(p, (uint16_t)g->map_x); p += 2;
+  game_put16(p, (uint16_t)g->map_y); p += 2;
+  GAME_WRITE_BYTES(monster_info);
+  GAME_WRITE_BYTES(monster_map);
+  GAME_WRITE_BYTES(map);
+  *p++ = g->monster_count;
+  for (unsigned i = 0; i < g->block_count; i++) {
+    *p++ = g->blocks[i].block; game_put32(p, g->blocks[i].next_time); p += 4;
+  }
+  game_put16(p, (uint16_t)g->record_count); p += 2;
+  game_put16(p, (uint16_t)g->last_recorded_key); p += 2;
+  GAME_WRITE_BYTES(record_file);
+  game_put32(p, g->record_pointer); p += 4;
+  game_put32(p, g->record_timer); p += 4;
+  *p++ = g->record_flag;
+  game_put32(p, g->last_key_press); p += 4;
+  game_put16(p, g->record_paused); p += 2;
+  for (int i = 0; i < g->record_count; i++) {
+    game_put16(p, g->records[i].delta_time); p += 2; *p++ = g->records[i].key;
+  }
+#undef GAME_WRITE_BYTES
+  *n = size;
+  return 0;
+}
