@@ -1,9 +1,10 @@
 # Saves and high scores on the Pi
 
-Status: file layer and high scores are linked into `GMOS.ELF`. A pure DOS `GAME0.SAV`
-wire codec is now available through `src/savefile.c/.h` ([layout, API and tests](game-save.md));
-there is still no gameplay snapshot bridge or live save/load command. Demos (`.REC`)
-remain a separate slice. Nothing here establishes real-card save acceptance.
+Status: file layer, high scores and F5/F6 save/load are linked into `GMOS.ELF`.
+The [save/load guide](game-save.md) covers controls, the DOS wire codec and live
+state bridge. Host checks cover the codec and state round trip; real-card writes
+and runtime DOS interchange remain **hardware-untested**.
+[Demo preview playback](demo.md) is also implemented; recording new demos is not.
 
 ## Decisions
 
@@ -11,13 +12,20 @@ remain a separate slice. Nothing here establishes real-card save acceptance.
   card's folder can be copied to a DOS game folder and back. No headers, JSON or checksums
   inside a DOS file.
 - **One place to write.** The kernel lets an app write only to `/sd/OS/SAVES/<GAME>/`
-  (sandbox-kernel `docs/saves-storage.md`). `<GAME>` is the game's 8.3 stem, so two
-  games never share files. The game's own folder and ZIP/GMP sources are never modified.
-- **Power cut safe.** `save_put` writes `NAME.TMP`, syncs, closes, then renames over the real
-  name; the kernel's rename is copy-on-write. After a cut the real file is the old one or the
-  new one. A leftover `.TMP` is never read; the kernel gives apps no delete, so the next save of that file overwrites and renames it away.
+  (sandbox-kernel `docs/saves-storage.md`), besides the separate cache scope.
+  `<GAME>` is a key made from up to four stem letters and four hex digits of a
+  hash of the source path and `.GAM` name. This separates same-named games in
+  different folders, but a 16-bit hash can collide and moving a source changes
+  the key. The `.GAM` stem must be 1–8 letters, digits, `_` or `-`; long or
+  unsupported stems have no Top Ten or F5/F6 screen. Game folders and ZIP/GMP
+  sources are never modified.
+- **Staged file replacement (hardware-untested).** `save_put` writes `NAME.TMP`, syncs, closes, then renames over the real
+  name; the kernel's rename is copy-on-write. The intended contract keeps the old or new real file after a cut; host fake-kernel
+  checks do not establish physical-card durability. A leftover `.TMP` is never read; the kernel gives apps no delete, so the next save of that file overwrites and renames it away.
 - **Not transparent DOS discovery.** DOS looks for `.HIS` next to the game, not in `OS/SAVES`.
-  Moving a card between the Pi and DOSBox needs an explicit copy of the game's folder.
+  Moving scores between the Pi and DOSBox needs an explicit copy of the `.HIS` file
+  between the save folder and DOS game folder. Live `.SAV` interchange still needs
+  runtime acceptance.
 
 ## `.HIS` (from `code/GM/HISCOREL.C`)
 
@@ -42,21 +50,21 @@ rewrites the file when nothing placed; the Pi doesn't, to spare the card.
   beats a row gets `hiscreen.c`'s name entry ("Congratulations!", "You scored number N on the Top
   Ten!", "Enter Your Name:", 22 characters, Enter or Esc accepts, Backspace or Left erases, a blinking
   box cursor), then the Top Ten with "Your Latest Score" and "Hit any key" (30 s or any key). A score
-  that doesn't place goes straight to the list, as in DOS.
+  that doesn't place returns to the details view.
 - **From the list**: `H` (high scores) on the grid or the details view shows the selected game's Top Ten
   alone; the key-help line says so.
-- **Where it lives**: `hisload.c` reads `/OS/SAVES/<GAME>/<GAME>.HIS`; with none yet it seeds from the
-  game's own `<GAME>.HIS` (read only), so DOS scores carry over. A new name is written back to
+- **Where it lives**: `hisload.c` reads `/OS/SAVES/<KEY>/<STEM>.HIS`; with none yet it seeds from the
+  older `/OS/SAVES/<STEM>/<STEM>.HIS`, then the game's own `<STEM>.HIS` (read only), so DOS scores carry over. A new name is written back to
   `/OS/SAVES` only. On a kernel older than ABI 1.7 the entry is skipped (it could not be saved).
 - The game's own high score picture (`File(0,8)`) is the list's backdrop, as in DOS.
 - Tests: `tests/test_hiscreen.py` (flow; renders `build/host/top-ten/*.png`).
 
-## Still to do (later slices)
+## Still to check
 
-1. Bridge the [DOS wire codec](game-save.md) to live gameplay for `GAME0.SAV` to
-   `GAME9.SAV`, and implement `SAVNAMES.DAT`. The codec handles 37755 + 5M + 3R
-   bytes (max 41505); the core still drops monster status fields and keeps no
-   recorder. Runtime interchange and the live bridge remain separate acceptance gates.
-2. Re-vendoring the SDK once the kernel with `/OS/SAVES` is released (`sdk/PINNED` names 5732b42).
-3. Real-card checks: power cut during a save, card full, long run.
-4. Demos (`.REC`), later.
+- Real-card power cuts, card-full errors and long runs (**hardware-untested**).
+- DOS↔Pi runtime save interchange; byte layout and host round trips do not prove it.
+- Save/load menu behavior on the board, including failed reads and writes.
+- New demo recording; existing `.REC` preview playback is separate.
+
+The SDK already includes save storage (ABI 1.7) and is pinned at ABI 1.10;
+no SDK refresh is needed to expose the current calls.

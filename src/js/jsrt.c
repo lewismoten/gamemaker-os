@@ -76,12 +76,18 @@ static JSValue call_native(const char *name, int argc, JSValueConst *argv) {
 
 /* Files: "/sd/..." paths; the reader the play core and pictures use. */
 static uint8_t io[256 * 1024];
-static int32_t dir_read(void *user, const char *name, uint8_t *buf, uint32_t cap) {
-  char path[96]; int n = snprintf(path, sizeof path, "%s/", (const char *)user);
+static int32_t path_read(const char *dir, const char *name, uint8_t *buf, uint32_t cap) {
+  char path[96]; int n = snprintf(path, sizeof path, "%s/", dir);
   for (; *name && n < (int)sizeof path - 1; name++) path[n++] = *name >= 'a' && *name <= 'z' ? (char)(*name - 32) : *name;
   path[n] = 0;
   plat_heartbeat();
   return plat_read(path, buf, cap);
+}
+static int32_t dir_read(void *user, const char *name, uint8_t *buf, uint32_t cap) {
+  return path_read(user, name, buf, cap);
+}
+static int32_t picture_read(void *user, const char *name, uint8_t *buf, uint32_t cap) {
+  return path_read(*(const char *const *)user, name, buf, cap);
 }
 struct find {char gam[16];};
 static void find_gam(void *user, const char *name, uint32_t n, int dir, uint32_t size) {
@@ -100,7 +106,10 @@ static int load_picture(const char *src, uint8_t *px, uint8_t *pal) {
   if (game_started) return -1; /* the title reader uses the play core */
   struct find f = {{0}};
   if (plat_list(src, find_gam, &f) < 0 || !f.gam[0]) return -1;
-  return gm_title_picture(dir_read, (void *)src, f.gam, px, pal);
+  /* gp_open retains the reader context until the next game is opened. */
+  static const char *picture_dir;
+  picture_dir = src;
+  return gm_title_picture(picture_read, &picture_dir, f.gam, px, pal);
 }
 static void draw_game(void *game, uint32_t *fb, uint32_t stride) {gs_draw(game, fb, stride);}
 

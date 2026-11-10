@@ -30,7 +30,7 @@ int plat_sbx_init(const sbx_startup *start) {
 uint64_t plat_clock_ns(void) {uint64_t t = 0; sbx_clock_ns(&t); return t;}
 void plat_sleep_until(uint64_t ns) {sbx_sleep_until(ns);}
 void plat_heartbeat(void) {sbx_health(generation, ++beat);}
-void plat_log(const char *s, uint32_t n) {sbx_log(log_fd, s, n > 120 ? 120 : n);}
+void plat_log(const char *s, uint32_t bytes) {sbx_log(log_fd, s, bytes > 120 ? 120 : bytes);}
 int32_t plat_read(const char *path, uint8_t *buf, uint32_t cap) {
   uint64_t fd, got; uint32_t have = 0;
   if (sbx_open(path, (uint32_t)strlen(path), SBX_O_RDONLY, &fd)) return -1;
@@ -44,11 +44,11 @@ int32_t plat_list(const char *path, void (*fn)(void *, const char *, uint32_t, i
   uint64_t fd, got; int32_t count = 0;
   if (sbx_open(path, (uint32_t)strlen(path), SBX_O_RDONLY, &fd)) return -1;
   while (!sbx_getdents(fd, dents, sizeof dents, &got) && got) {
-    for (uint32_t at = 0; at < got;) {
-      const sbx_dirent *e = (const sbx_dirent *)(const void *)(dents + at);
-      if (e->length < sizeof *e || e->length > got - at) break;
-      fn(user, (const char *)(dents + at + sizeof *e), e->name_bytes, e->type == SBX_DT_DIR, e->size);
-      count++; at += e->length;
+    for (uint32_t offset = 0; offset < got;) {
+      const sbx_dirent *e = (const sbx_dirent *)(const void *)(dents + offset);
+      if (e->length < sizeof *e || e->length > got - offset) break;
+      fn(user, (const char *)(dents + offset + sizeof *e), e->name_bytes, e->type == SBX_DT_DIR, e->size);
+      count++; offset += e->length;
     }
   }
   sbx_close(fd);

@@ -12,7 +12,7 @@ The demo is the `.REC` named in scene 0's file slot 11 of the game's `.GAM`, the
 since the previous key event) and a scan code (bit 7 set: released). At most 1000 records.
 
 `src/session.c` `gs_demo_start` opens the game, reads the `.REC` into the session's text-page
-buffer (3000 bytes at most; nothing new is allocated, GMOS stays at 7.89 MiB) and begins level one.
+buffer (3000 bytes at most; nothing new is allocated for the recording) and begins level one.
 `demo_feed` is PLAYGAME's `Recording::DoPlayBack`, run once before each game tick: the timer counts
 up, and every record whose time has come presses its key (`gp_key`). So a record at time T is
 pressed before tick T, tick for tick as in the web engine (`tests/test_demo.py` compares the view's
@@ -21,7 +21,10 @@ hash after every tick with the play core fed the same keys by hand).
 - The demo ends at its Esc (the recording's last key), a win or the loss of the last life.
 - A link to another level or a lost life continues at once, keys let go.
 - A gap over 4096 ticks is a DOS demo's wait at a page the preview does not show; it counts as one tick.
-- No sound, not even `SND` lines. The first level's pages (title, intro) are skipped.
+- On this branch, `GMOS.ELF` plays the menu CMF song and demo effects through
+  optional ABI 1.8 `/dev/audio`, independently of the library **M** toggle
+  (library music defaults off). Missing or failed audio falls back to silence;
+  HDMI playback is **hardware-untested**. The first level's pages (title, intro) are skipped.
 
 ## The screen
 

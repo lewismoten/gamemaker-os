@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include "hostio.h"
 #include "gmcore.h"
-gm::World &gp_world();
 int main(int argc, char **argv) {
   if (argc < 4) return 2;
   static struct host_gmp pack;

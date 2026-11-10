@@ -1,64 +1,119 @@
-/* SPDX-License-Identifier: MIT; see eink.h. Draws the values with the OS's 5x7 capitals at 2x (14 px tall, as the labels). */
+/* SPDX-License-Identifier: MIT */
 #include "eink.h"
+#include "bootart.h"
 #include "font.h"
-static void put_px(uint8_t *p, int x, int y) {if (x >= 0 && x < 250 && y >= 0 && y < 122) p[y * 32 + x / 8] |= (uint8_t)(0x80u >> (x & 7));}
-static void draw(uint8_t *p, int x, int y, const char *s, unsigned n, int sc) {
-  for (unsigned i = 0; i < n && s[i]; i++) {
-    unsigned c = (unsigned char)s[i];
-    if (c >= 'a' && c <= 'z') c -= 32u;
-    if (c < 32 || c > 126) c = '?';
-    for (int r = 0; r < 7; r++) for (int col = 0; col < 5; col++)
-      if (gm_font[c - 32][r] >> (4 - col) & 1) for (int dy = 0; dy < sc; dy++) for (int dx = 0; dx < sc; dx++) put_px(p, x + col * sc + dx, y + r * sc + dy);
-    x += 6 * sc;
+#include <sandbox/syscall.h>
+#include <string.h>
+#define GAP_NS 2100000000ull
+static struct {
+  uint64_t fd, next;
+  int enabled, boot, clear, library, playing, saving, sent;
+  unsigned games;
+  uint8_t mark[SBX_EINK_MARK_BYTES];
+  char game[17], last[17];
+} panel;
+
+/* Reuse the boot badge's 96x96 RLE, sampled at pixel centers. The dark
+ * background and black outlines are white on paper; colored castle is black. */
+static void castle(void) {
+  uint8_t row[96]; unsigned at = 0, left = 0, color = 0; int have = -1;
+  for (unsigned y = 0; y < 40; y++) {
+    int sy = (int)((2 * y + 1) * 96 / 80);
+    while (have < sy) {
+      for (unsigned x = 0; x < 96; x++, left--) {
+        if (!left) {left = (ba_rle[at] & 15u) + 1; color = ba_rle[at++] >> 4;}
+        row[x] = (uint8_t)color;
+      }
+      have++;
+    }
+    for (unsigned x = 0; x < 40; x++) {
+      unsigned c = row[(2 * x + 1) * 96 / 80];
+      if (c != 0 && ba_pal[c]) panel.mark[y * 5 + x / 8] |= (uint8_t)(0x80u >> (x % 8));
+    }
   }
 }
-/* Length of the first line of s (at most EI_LINE_CHARS), breaking at a space when the text goes on; *skip is the characters to step over. */
-static unsigned line_of(const char *s, unsigned *skip) {
-  unsigned n = 0; while (s[n] && n < EI_LINE_CHARS) n++;
-  *skip = n;
-  if (!s[n]) return n;
-  if (s[n] == ' ') {*skip = n + 1; return n;}
-  unsigned k = n; while (k && s[k - 1] != ' ') k--;
-  if (!k) return n;               /* one long word: break it */
-  *skip = k; return k - 1;
+static void text(uint8_t *page, unsigned x, unsigned y, const char *s, unsigned scale) {
+  for (; *s; s++, x += 6 * scale) {
+    unsigned c = (unsigned char)*s;
+    if (c < 32 || c > 126) c = '?';
+    for (unsigned r = 0; r < 7; r++) for (unsigned col = 0; col < 5; col++)
+      if (gm_font[c - 32][r] & (1u << (4 - col)))
+        for (unsigned dy = 0; dy < scale; dy++) for (unsigned dx = 0; dx < scale; dx++) {
+          unsigned px = x + col * scale + dx, py = y + r * scale + dy;
+          if (px < 250 && py < 122) page[py * 32 + px / 8] |= (uint8_t)(0x80u >> (px % 8));
+        }
+  }
 }
-void ei_page(uint8_t *out, const char *mode, unsigned games, const char *game) {
-  for (unsigned i = 0; i < EI_PAGE_BYTES; i++) out[i] = ei_status_frame[i];
-  for (unsigned y = 20; y < 122; y++) for (unsigned x = y < 44 ? 6u : 0u; x < 32; x++) out[y * 32 + x] = 0; /* the frame's own labels go; the mark (x < 48) stays */
-  draw(out, 50, 26, mode, 24, 1);
-  char head[24] = "GAMES: "; unsigned h = 7, v = games; char t[11]; int k = 0;
-  do {t[k++] = (char)('0' + v % 10);} while (v /= 10);
-  while (k) head[h++] = t[--k];
-  head[h] = 0;
-  draw(out, 4, 46, head, h, 2);
-  unsigned skip, n = line_of(game, &skip); draw(out, 4, 66, game, n, 2);
-  const char *rest = game + skip; while (*rest == ' ') rest++;
-  if (!*rest) return;
-  char l2[EI_LINE_CHARS + 1]; unsigned n2 = line_of(rest, &skip); const char *after = rest + skip; while (*after == ' ') after++;
-  if (*after) {  /* more than two lines: the second ends in "..." */
-    if (n2 > EI_LINE_CHARS - 3) {n2 = EI_LINE_CHARS - 3; while (n2 && rest[n2 - 1] == ' ') n2--;}
-    for (unsigned i = 0; i < n2; i++) l2[i] = rest[i];
-    l2[n2++] = '.'; l2[n2++] = '.'; l2[n2++] = '.'; l2[n2] = 0;
-  } else {for (unsigned i = 0; i < n2; i++) l2[i] = rest[i]; l2[n2] = 0;}
-  draw(out, 4, 86, l2, n2, 2);
+static int boot_page(void) {
+  uint8_t page[SBX_EINK_PAGE_BYTES] = {0};
+  for (unsigned y = 0; y < 40; y++) for (unsigned x = 0; x < 40; x++)
+    if (panel.mark[y * 5 + x / 8] & (0x80u >> (x % 8))) {
+      unsigned px = 105 + x;
+      page[(12 + y) * 32 + px / 8] |= (uint8_t)(0x80u >> (px % 8));
+    }
+  text(page, 54, 65, "GAME-MAKER OS", 2);
+  text(page, 80, 94, "LOADING LIBRARY", 1);
+  /* x242..249,y0..7 stays white for the kernel's error indicator. */
+  return sbx_eink_page(panel.fd, page);
 }
-void ei_init(struct ei_state *s) {
-  s->have_sent = 0; s->changed_ns = s->sent_ns = s->retry_ns = 0;
-  for (unsigned i = 0; i < EI_PAGE_BYTES; i++) s->page[i] = s->sent[i] = 0;
+void ge_init(unsigned major, unsigned minor) {
+  memset(&panel, 0, sizeof panel);
+  if (major != 1 || minor < 9) return;
+  if (sbx_open("/dev/eink", 9, SBX_O_WRONLY, &panel.fd)) return;
+  panel.enabled = panel.boot = 1;
+  castle();
+  ge_poll();
 }
-int ei_update(struct ei_state *s, uint64_t now_ns, unsigned games, const char *game) {
-  uint8_t next[EI_PAGE_BYTES]; ei_page(next, "LIBRARY", games, game);
-  int differs = 0; for (unsigned i = 0; i < EI_PAGE_BYTES; i++) if (next[i] != s->page[i]) {differs = 1; break;}
-  if (differs || (!s->changed_ns && !s->have_sent)) {for (unsigned i = 0; i < EI_PAGE_BYTES; i++) s->page[i] = next[i]; s->changed_ns = now_ns ? now_ns : 1;}
-  int pending = !s->have_sent; if (!pending) for (unsigned i = 0; i < EI_PAGE_BYTES; i++) if (s->page[i] != s->sent[i]) {pending = 1; break;}
-  if (!pending) return 0;
-  if (now_ns - s->changed_ns < (uint64_t)EI_SETTLE_MS * 1000000ull) return 0;
-  if (s->have_sent && now_ns - s->sent_ns < (uint64_t)EI_MIN_GAP_MS * 1000000ull) return 0;
-  if (now_ns < s->retry_ns) return 0;
-  return 1;
+void ge_library(unsigned games) {panel.games = games; panel.library = 1; panel.playing = panel.saving = 0;}
+void ge_play(const char *title) {
+  unsigned i = 0;
+  for (; i < 16 && title[i]; i++) {
+    unsigned c = (unsigned char)title[i];
+    if (c >= 'a' && c <= 'z') c -= 32;
+    panel.game[i] = (char)((c >= 32 && c <= 126) ? c : '?');
+  }
+  panel.game[i] = 0; panel.playing = 1; panel.saving = 0;
 }
-void ei_sent(struct ei_state *s, uint64_t now_ns, int ok) {
-  if (!ok) {s->retry_ns = now_ns + (uint64_t)EI_RETRY_MS * 1000000ull; return;}
-  for (unsigned i = 0; i < EI_PAGE_BYTES; i++) s->sent[i] = s->page[i];
-  s->have_sent = 1; s->sent_ns = now_ns;
+void ge_saving(int saving) {panel.saving = saving;}
+void ge_poll(void) {
+  uint64_t now = 0;
+  if (!panel.enabled || sbx_clock_ns(&now) || now < panel.next) return;
+  /* TITLE does not remove a PAGE. Clear it on its own cadence slot before
+   * installing our title; otherwise the boot bitmap would cover every status. */
+  if (panel.clear) {
+    if (!panel.library) return;
+    int status = sbx_eink_clear(panel.fd);
+    panel.next = now + GAP_NS;
+    if (!status) panel.clear = 0;
+    else if (status != -SBX_EAGAIN) {sbx_close(panel.fd); panel.enabled = 0;}
+    return;
+  }
+  char line[17] = {0};
+  if (!panel.boot) {
+    if (!panel.library) return;
+    if (panel.saving) memcpy(line, "SAVING", 7);
+    else if (panel.playing) memcpy(line, panel.game, sizeof line);
+    else {
+      char digits[11]; unsigned n = panel.games, k = 0, i = 0;
+      do {digits[k++] = (char)('0' + n % 10);} while (n /= 10);
+      while (k) line[i++] = digits[--k];
+      memcpy(line + i, " GAMES", 7);
+    }
+    if (panel.sent && !strcmp(line, panel.last)) return;
+  }
+  int status;
+  if (panel.boot) status = boot_page();
+  else {
+    sbx_eink_title_rec title;
+    status = sbx_eink_title(panel.fd, &title, "GAME-MAKER OS", 13, panel.mark, line);
+  }
+  panel.next = now + GAP_NS;
+  if (!status) {
+    if (panel.boot) {panel.boot = 0; panel.clear = 1;}
+    else {memcpy(panel.last, line, sizeof line); panel.sent = 1;}
+  } else if (status != -SBX_EAGAIN) {
+    /* ENODEV (including a driver failure mid-run), ENOSYS, EBUSY, etc.
+     * are optional-feature failures. Release the handle and stay silent. */
+    sbx_close(panel.fd); panel.enabled = 0;
+  }
 }

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT; Copyright (c) 2026 Lewis Moten
- * Isolated host qualification, NOT linked into GMOS. Hermes GPT-6.1 Sol.
+ * PC-speaker PCM producer, linked into GMOS audio and host qualification.
  * RSD SOUND.H/PLAYGAME.C and Sandbox audio/engine.ts define format/clock/level;
  * new integer rational-clock/phase implementation, no third-party synth code.
  */

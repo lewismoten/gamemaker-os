@@ -1,9 +1,37 @@
-# DOS `GAME0.SAV` wire codec
+# Save/load and the DOS `GAME0.SAV` wire codec
 
-Status: pure byte codec in `src/savefile.c/.h`; no live save/load command, file I/O
-wrapper, slot-name support or portable-core state bridge. The same DOS layout
-applies to slots 0–9; this module does not select a filename or acquire write authority.
-It does not change the existing high-score or filesystem implementation.
+Status: F5/F6 save/load is linked into `GMOS.ELF`, using `src/saveplay.c`,
+`gp_state_save` / `gp_state_load` in `src/game.cpp`, and the byte codec in
+`src/savefile.c/.h`. The codec and state round trip have host checks. The menu,
+real-card writes and DOS↔Pi runtime interchange remain **hardware-untested**.
+
+## During play
+
+During a level, F5 opens Save Game and F6 opens Load Game, pausing play.
+Up/Down selects one of ten slots; Enter selects it. On Save, type a name
+(up to 20 characters), use Backspace or Left to erase, and Enter to write.
+Esc cancels. A result message lasts two seconds or until a new key press.
+The game's own Save/Load picture is used when present.
+
+Slots are `GAME0.SAV` through `GAME9.SAV`; `SAVNAMES.DAT` holds ten 21-byte
+name records. Both use `/sd/OS/SAVES/<KEY>/`, like [high scores](saves.md).
+The key depends on source path and `.GAM` name; moving a game changes it.
+A valid 1–8 character DOS stem is required for these screens. Kernel ABI 1.7+
+is needed to write; the menu itself is not gated by that minor version.
+This command belongs to native GMOS play, not the JS `<game>` element.
+
+Names are written before the slot, in separate staged transactions. A slot
+write can fail after its name changes; the pair is not one atomic save.
+Missing or refused saves show a message. The loader backs up current play
+before replacement and attempts rollback if loading a level fails; failure of
+both load and rollback ends the game. No checksum or game identifier exists
+in the DOS file, so not every damaged or wrong-game file can be detected.
+
+The live bridge maps portable-core state to DOS records and validates the
+fields it uses on load. Invalid monster records keep the fresh level's record.
+Fields absent from the core, including DOS screen pointers and the recorder,
+are zero on save; the codec below preserves opaque bytes independently.
+This is not full DOS runtime equivalence or demo recording support.
 
 ## Reference and compatibility boundary
 
@@ -106,14 +134,18 @@ not reproduced. Other DOS versions, recorder-disabled builds and differently
 packed/recompiled executables are unsupported.
 
 The state object is roughly 43 KiB. Allocate it in owned bounded storage, not a
-small board stack. A future core bridge must parse/validate opaque fields against
-the actual game, relocate or discard DOS pointers, restore required state absent
-from the current portable core and reproduce DOS's post-load resets
-(`PLAYGAME.C:1795–1832`). That bridge and runtime DOS↔Pi, real-card and power-loss
-acceptance are outside this codec. Byte preservation alone does not enable saves
-on the Pi or establish safe gameplay restoration.
+small board stack. The live bridge uses the session's bounded storage and
+restores fields understood by the portable core, including post-load drawing
+and key resets. Runtime DOS↔Pi, real-card and power-loss acceptance are still
+open. Byte preservation by this codec alone does not establish safe gameplay
+restoration.
 
 ## Host verification
+
+`tests/test_state_save.py` checks live-state round trips, truncated wire files
+and sampled mutations. It allows damaged fields that the bridge can accept;
+it does not prove that every corruption is refused or exercise the F5/F6 menu.
+The checks below cover the separate wire codec and save-file layer.
 
 ```sh
 python3 -m unittest discover -s tests -p test_game_save.py -v

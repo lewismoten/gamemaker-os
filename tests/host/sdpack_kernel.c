@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: MIT; optional real-kernel host smoke transport.
  * Same SDK records, but a callback instead of ARM svc. No ARM execution. */
 #include <sandbox/syscall.h>
+/* Exports called by the Python ctypes tests. */
+void sdk_bridge(int32_t (*fn)(uint32_t, void *, uint32_t));
 static int32_t (*dispatch)(uint32_t, void *, uint32_t);
 void sdk_bridge(int32_t (*fn)(uint32_t, void *, uint32_t)) {dispatch = fn;}
 #define H(T) {sizeof(T), 0, 0, 0}

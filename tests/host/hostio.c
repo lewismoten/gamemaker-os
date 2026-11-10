@@ -4,6 +4,34 @@
 #include <stdlib.h>
 #include "hostio.h"
 #include "session.h"
+#include "menu.h"
+/* Exports called by the Python ctypes tests. */
+int32_t gmos_host_read(void *user, const char *name, uint8_t *buf, uint32_t cap);
+struct gmp *gmos_gmp_open(const char *path);
+const char *gmos_gmp_gam(const struct gmp *g);
+int gmos_gmp_pocket(const struct gmp *g);
+int gmos_gmp_volumes(const struct gmp *g);
+void gmos_gmp_close(struct gmp *g);
+struct gs_session *gmos_session_new(void);
+void gmos_session_say(struct gs_session *s, void (*say)(const char *));
+int gmos_session_phase(const struct gs_session *s);
+int gmos_session_stage(const struct gs_session *s);
+int gmos_session_card(const struct gs_session *s);
+int gmos_session_ticks(const struct gs_session *s);
+int gmos_session_showing_card(const struct gs_session *s);
+int gmos_session_shown(const struct gs_session *s);
+int gmos_session_keys(const struct gs_session *s);
+const uint8_t *gmos_session_px(const struct gs_session *s);
+const uint8_t *gmos_session_pal(const struct gs_session *s);
+int gmos_fli_open(const uint8_t *d, uint32_t n);
+void gmos_fli_next(uint8_t *px, uint8_t *pal);
+int gmos_menu_state(const struct gm_menu *m, int what);
+int gmos_menu_music(const struct gm_menu *m);
+void gmos_menu_message(struct gm_menu *m, const char *s);
+void gmos_menu_pic(struct gm_menu *m, unsigned id, int pic);
+int gmos_tab_game(const struct gm_menu *m, unsigned tab, unsigned i);
+unsigned gmos_record_bytes(void);
+void gmos_session_sound_dir(struct gs_session *s, const char *dir);
 int32_t gmos_host_read(void *user, const char *name, uint8_t *buf, uint32_t cap) {return host_read(user, name, buf, cap);}
 /* A .GMP for the ctypes tests: gs_start(s, gmp_read, gmos_gmp_open(path), gmos_gmp_gam(g), 0). */
 struct gmp *gmos_gmp_open(const char *path) {
