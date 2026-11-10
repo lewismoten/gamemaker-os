@@ -1,0 +1,12 @@
+# Digitized VOC sound clips
+
+A game's effect with a Sound Blaster clip plays through `/dev/audio` as one more voice (`src/vocplay.c`, `src/vocplay.h`; wired in `src/audio.c`, `src/sound.c`, `src/main.c`).
+
+- **Decoding** follows the web engine's `formats/voc.ts` (`decodeVoc`): 8-bit PCM, the three Creative ADPCM codecs, 16-bit PCM (block 9), silence, repeat blocks, the extended block's rate, the first rate winning, blocks cut short by the end of the file, a 10,000-visit guard, and the 16,000,000-sample cap (`VOC_MAX_SAMPLES`). Two deliberate differences, both refusals: a rate above 1 MHz, and more than 256 block visits in a row that carry no samples.
+- **Resampling** is linear interpolation to 48 kHz, at 0.8 of full scale (the web engine's level). Output is mono, summed into `au_render`'s accumulator with the song and the PC speaker, then clamped and scaled by the master volume.
+- **Priority** is the web engine's `playVoc`: one clip at a time, a new clip cuts the old one at once (before the new one is opened, so a refused clip leaves silence), and the speaker and the song go on. Stop (the game ends, Esc) cuts the clip, the speaker and the song.
+- **Streaming**: the file is read through a 384-byte window. A game in a folder on the card is read with `seek` and `read` on an open file (the length is found by seeking), so a 200 KB clip never sits in memory. A game inside a pack or a zip has no random access: its clip is read whole into `index_text` (the library scan's 256 KB buffer, idle while a game plays); a clip that does not fit is refused. The quota stays at 64 KiB of headroom, which is why the window is small.
+- **Stall budget**: opening a clip does the scan (a few small reads) in `au_service`, which is measured in the `svc_max` log figure; playback reads one window about every 384 source bytes inside the audio pump.
+- **Log**: the audio line carries `vocs <started>/<refused>`.
+
+Tests: `tests/test_vocplay.py` (limits, streaming, cutting, the sum with the speaker, saturation). `tools/voc_compare.ts` plays every VOC of the games and the CD, and made-up clips for each codec, through the C player and the web engine's decoder and prints the RMS difference (`GM_VOC=<formats/voc.ts> VOCHOST=<tests/host/vocplay.c built> npx vite-node tools/voc_compare.ts <folders>` from the Sandbox Edition's `web/`). `docs/voc-host.md`'s older whole-file qualification module is left as it was.
