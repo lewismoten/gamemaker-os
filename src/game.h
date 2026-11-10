@@ -18,7 +18,7 @@ extern "C" {
 typedef int32_t (*gp_read_fn)(void *user, const char *name, uint8_t *buf, uint32_t cap);
 /* Scene 0's title graphic and scene 1's won and lost graphics, a level's
    intro and exit graphics (ShowGraphic's file slots), and scene 0's menu picture. */
-enum {GP_TITLE, GP_WON, GP_LOST, GP_INTRO, GP_EXIT, GP_MENU, GP_SCORES};
+enum {GP_TITLE, GP_WON, GP_LOST, GP_INTRO, GP_EXIT, GP_MENU, GP_SCORES, GP_LOADPIC, GP_SAVEPIC};
 /* Reads the .GAM (version 3.00, or an older one converted as GameClass::Load
    converts it); returns the number of levels (scenes of type 10), or -1. */
 int gp_open(gp_read_fn read, void *user, const char *gam_name);
@@ -60,6 +60,14 @@ enum {GP_SONG_TITLE, GP_SONG_WON, GP_SONG_LOST, GP_SONG_LEVEL};
 const char *gp_song(int slot, int level);
 /* FNV-1a of the 312 x 196 view, row by row: the Pocket Player host test's frameHash. */
 uint32_t gp_frame_hash(void);
+/* Save and load a game as PLAYGAME does (SaveGame and LoadGame, PLAYGAME.C 1836-1892, 1737-1834),
+   through the DOS wire records of savefile.h. gp_state_save fills g from the play in progress (0, or -1
+   with no game running). gp_state_load checks g first and changes nothing when it refuses (-1); when
+   the level's files cannot be read after the checks it returns -2 with the play half replaced, and the
+   caller loads the state it saved before. */
+struct save_game;
+int gp_state_save(struct save_game *g);
+int gp_state_load(const struct save_game *g);
 #ifdef __cplusplus
 }
 #endif

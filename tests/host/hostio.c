@@ -45,6 +45,7 @@ void gmos_fli_next(uint8_t *px, uint8_t *pal) {
 }
 /* The games list's state for the tests: 0 tab, 1 position in the tab, 2 view, 3 button, 4 the selected game's index (-1: none). */
 #include "menu.h"
+int gmos_menu_music(const struct gm_menu *m) {return m->background_music;}
 int gmos_menu_state(const struct gm_menu *m, int what) {
   const struct gm_game *g = gm_selected(m);
   return what == 0 ? (int)m->tab : what == 1 ? (int)m->pos[m->tab] : what == 2 ? (int)m->view : what == 3 ? (int)m->button : g ? (int)(g - m->games) : -1;

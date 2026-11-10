@@ -17,6 +17,7 @@
 #include "hisload.h"
 #include "menu.h"
 #include "sdpack.h"
+#include "saveplay.h"
 #include "sdzip.h"
 #include "session.h"
 #include "thumb.h"
@@ -319,7 +320,7 @@ static uint32_t crc32(const void *data, uint32_t bytes) {
   for (uint32_t i = 0; i < bytes; i++) c = table[(c ^ b[i]) & 0xff] ^ c >> 8;
   return ~c;
 }
-/* ABI 1.8: /dev/audio, opened once for the OS's life (audio.h). The library plays its own background tunes
+/* ABI 1.8: /dev/audio, opened once for the OS's life (audio.h). The library plays background tunes only when enabled by its owner
    (bg_*), a game's or a preview's sound replaces them, and every switch fades and keys all channels off. */
 static struct gs_session game;
 static int demo_on, demo_none = -1; /* the preview (below) */
@@ -330,6 +331,7 @@ static uint64_t last_under, audio_t_open, au_prev_ns, au_prev_t;
 static int32_t au_query(void *u, uint32_t *queued, uint32_t *cap) {
   (void)u; sbx_audio_info i; int32_t rc = sbx_audio_query(audio_fd, &i);
   if (!rc) {
+    if (i.rate != SBX_AUDIO_RATE || !i.capacity_frames || i.capacity_frames > UINT32_MAX || i.queued_frames > i.capacity_frames) return -1;
     *queued = (uint32_t)i.queued_frames; *cap = (uint32_t)i.capacity_frames;
     if (i.underruns > last_under) { /* a stall: the ring ran dry (silence, never a repeat) */
       char line[120], *p = put(line, "GMOS audio underrun +"); p = num(p, (uint32_t)(i.underruns - last_under)); p = put(p, " at ");
@@ -345,7 +347,19 @@ static int32_t au_write(void *u, const void *pcm, uint32_t bytes) {
 }
 static uint64_t au_now(void *u) {(void)u; uint64_t t = 0; sbx_clock_ns(&t); return t;}
 static const struct au_sink au_sink = {0, au_query, au_write, au_now};
-static void audio_poll(void) {if (aud_on && !aud_busy) {aud_busy = 1; au_pump(&aud, &au_sink); aud_busy = 0;}}
+static void audio_poll(void) {
+  if (aud_on && !aud_busy) {
+    /* Leave the newly opened device unstarted while the library is silent.
+       Once started, keep feeding silence between sounds: the kernel counts every short drain. */
+    if (!aud.frames && !aud.cmf.playing && !aud.pc.active && aud.vp.state != VP_PLAYING) return;
+    aud_busy = 1;
+    if (au_pump(&aud, &au_sink) < 0) {
+      aud_on = 0; audio_hook = 0; game.sound.event = 0;
+      au_silence(&aud); sbx_close(audio_fd); audio_fd = 0;
+    }
+    aud_busy = 0;
+  }
+}
 /* A clip of the playing game for vocplay.h: a folder's file is streamed (an open fd, 384-byte reads); a pack's or zip's is read whole
  * into index_text (the library's scan buffer, idle while a game plays; a clip that does not fit is refused). */
 static uint64_t voc_fd, voc_pos; static uint32_t voc_blob_n;
@@ -388,6 +402,7 @@ static void au_event(void *u, int kind, const char *name, int n) {
 static void audio_log(const char *what) { /* the kernel's counters, and what the synth cost since the last line */
   sbx_audio_info i; char line[320], *p = put(line, "GMOS audio "); p = put(p, what);
   uint64_t t = clock_ns();
+  if (!aud_on) return;
   if (sbx_audio_query(audio_fd, &i)) {put(p, ": no query"); say(line); return;}
   p = put(p, ": rendered "); p = num(p, (uint32_t)aud.frames); p = put(p, " frames, queued "); p = num(p, (uint32_t)i.queued_frames);
   p = put(p, ", underruns "); p = num(p, (uint32_t)i.underruns); p = put(p, ", overruns "); p = num(p, (uint32_t)i.overruns);
@@ -400,6 +415,11 @@ static void audio_log(const char *what) { /* the kernel's counters, and what the
 static void audio_open(void) {
   if (abi_minor < 8) {say("GMOS audio: kernel ABI below 1.8, SND lines only"); return;}
   if (sbx_open("/dev/audio", 10, SBX_O_WRONLY, &audio_fd)) {say("GMOS audio: /dev/audio not available"); return;}
+  sbx_audio_info info;
+  if (sbx_audio_query(audio_fd, &info) || info.rate != SBX_AUDIO_RATE ||
+      !info.capacity_frames || info.capacity_frames > UINT32_MAX || info.queued_frames > info.capacity_frames) {
+    sbx_close(audio_fd); audio_fd = 0; return; /* unavailable or incompatible: silent fallback */
+  }
   au_init(&aud, bgm_buf, sizeof bgm_buf); aud.voc_open = voc_open; game.sound.event = au_event; game.sound.event_user = 0; aud_on = 1; audio_hook = audio_poll;
   audio_t_open = au_prev_t = clock_ns();
   sbx_audio_info i; char line[80], *p = put(line, "GMOS audio open, ring ");
@@ -411,7 +431,7 @@ static void bg_leave(void);
 /* The game's or the preview's sound owns the player (music in the 64 KB scratch), until bg_return. */
 static void audio_take(void) {
   if (!aud_on) return;
-  bg_leave(); aud.music = pic_px; aud.music_cap = sizeof pic_px;
+  bg_leave(); aud.vol = aud.vol_target = AU_VOL_ONE; aud.music = pic_px; aud.music_cap = sizeof pic_px;
 }
 /* Back to the list: hard stop (every channel keyed off, chip reset), the tune buffer back, the cycle restarts after a pause. */
 static int bg_state; static uint64_t bg_t0, bg_next; static uint32_t bg_fail, bg_loops0, bg_picks, bg_seed = 12345u;
@@ -430,7 +450,7 @@ static void bg_leave(void) {
 /* The cycle: the OS's own tune every third pick, else a random game's first level song (its menu song if the level has none).
    One try a call, so the list stays responsive; the library index holds no secret game. */
 static void bg_tick(void) {
-  if (!aud_on || demo_on) return;
+  if (!aud_on || demo_on || !menu.background_music) return;
   uint64_t now = clock_ns();
   if (bg_state == 1) {
     if ((aud.cmf.loops > bg_loops0 && now - bg_t0 > 20000000000ull) || now - bg_t0 > 90000000000ull) {au_music(&aud, ""); bg_state = 2;}
@@ -548,7 +568,9 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   static sbx_input_event ev[16]; uint64_t got;
   uint32_t frames = 0, step_max = 0, draw_max = 0, late_max = 0, logged = 0, shown = 0;
   uint64_t since = clock_ns();
-  int r = GS_DRAW, started = 0;
+  int r = GS_DRAW, started = 0, sp_on = 0, sp_draw = 0;
+  static struct sp_menu sp; char sp_stem[9], sp_key[9]; int sp_ok = !hl_stem(gamname, sp_stem);
+  if (sp_ok) hl_key(sp_stem, where[g - menu.games].path, gamname, sp_key);
   for (;;) {
     heartbeat();
     if (r & GS_DRAW) {
@@ -566,7 +588,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     }
     if (r & GS_EXIT) break;
     if (started) {game.t0 = clock_ns(); game.ticks = 0; started = 0;} /* a level's clock starts once its files are read and its first frame is up */
-    uint64_t wake = gs_wake(&game, clock_ns());
+    uint64_t wake = sp_on ? sp_wake(&sp, clock_ns()) : gs_wake(&game, clock_ns());
     if (aud_on) {
       uint64_t s0 = clock_ns(); au_service(&aud, game.read, game.user);
       if (aud.playing && clock_ns() - s0 > aud.svc_max_ns) aud.svc_max_ns = clock_ns() - s0;
@@ -579,6 +601,18 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     while (have_input && !(s = sbx_read(in_fd, ev, sizeof ev, &got))) {
       for (uint32_t i = 0; i < got / sizeof ev[0]; i++) {
         if (ev[i].type == 0 && ev[i].code == 3) {sbx_input_state st; sbx_input_state_get(in_fd, &st); gp_release_all(); say("GMOS input resync after SYN_DROPPED"); break;}
+        if (sp_on || (ev[i].type == 1 && ev[i].value == 1 && (ev[i].code == 63 || ev[i].code == 64) && sp_ok && game.phase == GS_PLAY && !game.demo)) {
+          /* PLAYGAME's F5 (SaveGame) and F6 (LoadGame): the play waits while the screen is up (PLAYGAME.C 1609-1613) */
+          int q;
+          if (!sp_on) {
+            gp_release_all(); sp_on = 1;
+            sp_start(&sp, ev[i].code == 63 ? SP_SAVE : SP_LOAD, &save_sbx_ops, sp_key, &game, clock_ns()); q = SP_DRAW;
+          } else q = sp_event(&sp, ev[i].type, ev[i].code, ev[i].value, clock_ns());
+          if (q & SP_DRAW) sp_draw = 1;
+          if (q & SP_FATAL) {game.phase = GS_DONE; r = GS_EXIT; break;} /* a failed load that could not be undone */
+          if (q & SP_DONE) {sp_on = 0; game.showing_card = 0; gs_resume(&game, clock_ns()); sp_draw = 1;}
+          continue;
+        }
         if (ev[i].type == 1 && ev[i].value != 2 && game.phase == GS_PLAY && gs_scan(ev[i].code) && ev[i].code != 1) {
           p = put(line, "GMOS key "); p = num(p, (uint32_t)gs_scan(ev[i].code)); p = put(p, ev[i].value ? " down" : " up");
           p = put(p, " before tick "); num(p, game.total_ticks + 1); say(line);
@@ -593,8 +627,16 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     uint64_t t = clock_ns();
     if (game.phase == GS_PLAY) {uint64_t due = gs_wake(&game, t); if (t > due) {uint32_t l = (uint32_t)((t - due) / 1000u); if (l > late_max) late_max = l;}}
     uint32_t before = game.total_ticks; int was = game.phase;
+    if (sp_on) { /* the screen's own clock: the cursor blink, the two seconds of a message */
+      int q = sp_step(&sp, t); r = 0;
+      if (q & SP_DRAW) r = GS_DRAW;
+      if (q & SP_DONE) {sp_on = 0; game.showing_card = 0; gs_resume(&game, clock_ns()); r = GS_DRAW;}
+      if (sp_draw) {r |= GS_DRAW; sp_draw = 0;}
+      continue;
+    }
     r = gs_step(&game, t);
     au_set_playing(&aud, aud_on && game.phase == GS_PLAY); if (!aud.playing) audio_poll();
+    if (sp_draw) {r |= GS_DRAW; sp_draw = 0;}
     uint32_t dt = (uint32_t)((clock_ns() - t) / 1000u); if (game.ran && dt > step_max) step_max = dt;
     if (was != GS_PLAY && game.phase == GS_PLAY) started = 1;
     if (was == GS_PLAY && game.phase == GS_CARDS) { /* the level ended: the session lets go of every key */
@@ -786,6 +828,11 @@ int main(const sbx_startup *start) {
     int redraw = 0;
     for (uint32_t i = 0; i < got / sizeof ev[0]; i++) {
       int a = gm_event(&menu, ev[i].type, ev[i].code, ev[i].value);
+      if (a == GM_MUSIC) {
+        if (aud_on && !menu.background_music) bg_leave();
+        if (aud_on && menu.background_music) bg_next = clock_ns();
+        redraw = 1;
+      }
       if (a == GM_MOVED) redraw = 1;
       if (a == GM_RESYNC) {sbx_input_state st; sbx_input_state_get(in_fd, &st); menu.shift = 0; say("GMOS input resync after SYN_DROPPED"); break;}
       if (a == GM_CHOSEN) {

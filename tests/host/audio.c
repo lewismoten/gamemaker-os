@@ -99,7 +99,7 @@ static int32_t rq(void *u, uint32_t *q, uint32_t *c) {struct ring *r = u; *q = r
 static int32_t rw(void *u, const void *pcm, uint32_t bytes) {
   struct ring *r = u; uint32_t frames = bytes / 4, room = r->cap - r->queued;
   if (!room) return -11;
-  if (frames > room) frames = room;
+  if (frames > room) {r->low_writes++; frames = room;}
   if (frames > r->take) frames = r->take;
   memcpy(r->got + r->gotn * 2, pcm, frames * 4); r->gotn += frames; r->queued += frames;
   if (r->queued > r->max_queued) r->max_queued = r->queued;
@@ -138,8 +138,8 @@ static void feeding(void) {
    with the long queue (library) and the small one (a game playing). Also: no gap, and the switch repeats no sample. */
 static void latency(void) {
   static struct au a; static int16_t got[48000 * 5 * 2]; static struct ring r; struct au_sink sink = {&r, rq, rw, rn};
-  for (int mode = 0; mode <= 1; mode++) {
-    memset(&r, 0, sizeof r); r.cap = 16384; r.take = 4000; r.got = got; memset(got, 0, sizeof got);
+  for (unsigned cap = 4096; cap <= 16384; cap *= 4) for (int mode = 0; mode <= 1; mode++) {
+    memset(&r, 0, sizeof r); r.cap = cap; r.take = 4000; r.got = got; memset(got, 0, sizeof got);
     au_init(&a, music_buf, sizeof music_buf); au_set_playing(&a, 0);
     FILE *f = fopen("tests/data/syn.cmf", "rb"); uint32_t n = f ? (uint32_t)fread(music_buf, 1, sizeof music_buf, f) : 0; if (f) fclose(f);
     cmf_load(&a.cmf, music_buf, n);
@@ -162,4 +162,57 @@ static void latency(void) {
     CHECK(dry == 0 || mode == 0 ? 1 : dry <= 1, "small queue ran dry %u times", dry);
   }
 }
-int main(void) {speaker(); ticks(); fades(); feeding(); latency(); if (!fails) puts("audio ok"); return fails != 0;}
+/* Current and documented older rings, including a last write smaller than AU_CHUNK. */
+static void capacities(void) {
+  static struct au a; static int16_t got[20000 * 2];
+  const unsigned caps[] = {1, 479, 480, 4096, 16384};
+  for (unsigned k = 0; k < sizeof caps / sizeof caps[0]; k++) {
+    for (int play = 0; play <= 1; play++) {
+      struct ring r = {caps[k], 0, 100, 0, 0, got, 0, 0}; struct au_sink s = {&r, rq, rw, rn};
+      au_init(&a, music_buf, sizeof music_buf); au_set_playing(&a, play);
+      unsigned fill = play ? AU_PLAY_FILL_FRAMES : AU_FILL_FRAMES;
+      if (fill > r.cap) fill = r.cap;
+      CHECK(au_pump(&a, &s) == (int)fill && r.queued == fill && !a.hold_len,
+            "capacity %u play %d: queued %u, held %u", r.cap, play, r.queued, a.hold_len);
+      CHECK(au_pump(&a, &s) == 0, "wrote above threshold");
+      CHECK(!r.low_writes, "offered more frames than fit at capacity %u", r.cap);
+    }
+  }
+}
+static int retry_error;
+static int32_t retry_write(void *u, const void *p, uint32_t n) {
+  if (retry_error) {int e = retry_error; retry_error = 0; return e;}
+  return rw(u, p, n);
+}
+static void retries(void) {
+  static struct au a, ref; static int16_t got[5000 * 2], want[5000 * 2];
+  static uint8_t other[65536];
+  struct ring r = {4096, 0, 100, 0, 0, got, 0, 0}; struct au_sink s = {&r, rq, retry_write, rn};
+  au_init(&a, music_buf, sizeof music_buf); au_beep(&a, "T.SND", 3); au_service(&a, reader, 0);
+  au_init(&ref, other, sizeof other); au_beep(&ref, "T.SND", 3); au_service(&ref, reader, 0);
+  retry_error = -11;
+  CHECK(au_pump(&a, &s) == 0 && a.hold_len == AU_CHUNK * 4 && a.eagain == 1, "EAGAIN lost chunk");
+  r.queued = 4000; /* only 96 frames fit, less than the pending chunk */
+  CHECK(au_pump(&a, &s) == 96 && r.queued == r.cap, "held chunk exceeded ring room");
+  CHECK(a.hold_len == (AU_CHUNK - 96) * 4, "held tail lost");
+  r.queued = 0;
+  CHECK(au_pump(&a, &s) == 4096 && !a.hold_len, "retry did not refill");
+  render(&ref, want, r.gotn);
+  CHECK(!memcmp(got, want, r.gotn * 4), "retry lost or repeated samples");
+  r.queued = 0; retry_error = -5;
+  CHECK(au_pump(&a, &s) == -1 && a.eagain == 1, "fatal write treated as EAGAIN");
+  r.cap = 0; CHECK(au_pump(&a, &s) == -1, "zero capacity accepted");
+  r.cap = 4096; r.queued = 4097; CHECK(au_pump(&a, &s) == -1, "invalid queue accepted");
+}
+static void volumes(void) {
+  static struct au a; int16_t out[2];
+  for (unsigned v = 0; v <= 65535; v++) {
+    au_init(&a, music_buf, sizeof music_buf); au_volume(&a, v);
+    CHECK(a.vol_target == v, "volume %u rejected", v);
+    a.vol = v; au_beep(&a, "T.SND", 3); au_service(&a, reader, 0); au_render(&a, out, 1);
+    int expected = (int)((int64_t)3146 * v >> 15);
+    CHECK(abs(out[0]) >= expected - 1 && abs(out[0]) <= expected + 1 && out[0] == out[1], "volume %u wrapped", v);
+  }
+  au_volume(&a, 65536); CHECK(a.vol_target == 65535, "volume not clamped to uint16 range");
+}
+int main(void) {speaker(); ticks(); fades(); feeding(); latency(); capacities(); retries(); volumes(); if (!fails) puts("audio ok"); return fails != 0;}

@@ -12,7 +12,7 @@ void au_music(struct au *a, const char *cmf) {copy(a->want_music, cmf); a->music
 void au_beep(struct au *a, const char *snd, int tune) {copy(a->want_snd, snd); a->want_tune = tune; a->beep_pending = 1;}
 void au_voc(struct au *a, const char *voc) {vp_stop(&a->vp); copy(a->want_voc, voc); a->voc_pending = a->want_voc[0] != 0;}
 void au_stop(struct au *a) {a->want_music[0] = 0; a->music_pending = 1; a->beep_pending = 0; pc_stop(&a->pc); vp_stop(&a->vp); a->voc_pending = 0;}
-void au_volume(struct au *a, uint32_t target) {a->vol_target = target > AU_VOL_ONE ? AU_VOL_ONE : target;}
+void au_volume(struct au *a, uint32_t target) {a->vol_target = target > AU_VOL_MAX ? AU_VOL_MAX : target;}
 void au_silence(struct au *a) {
   a->music_pending = 0; a->beep_pending = 0; a->voc_pending = 0; a->hold_len = 0; vp_stop(&a->vp);
   cmf_stop(&a->cmf); pc_stop(&a->pc); a->vol = a->vol_target = 0;
@@ -72,9 +72,11 @@ void au_render(struct au *a, int16_t *out, unsigned n) {
   }
   vp_mix(&a->vp, acc, n);
   for (unsigned k = 0; k < n; k++) {
-    int32_t v = acc[k]; if (v > 32767) v = 32767; if (v < -32768) v = -32768;
+    int32_t v = acc[k];
     if (a->vol != a->vol_target) a->vol = a->vol < a->vol_target ? a->vol + 1 : a->vol - 1;
     v = (int32_t)((int64_t)v * a->vol >> 15);
+    if (v > 32767) v = 32767;
+    if (v < -32768) v = -32768;
     out[k * 2] = out[k * 2 + 1] = (int16_t)v;
   }
   a->frames += n;
@@ -84,20 +86,26 @@ int au_pump(struct au *a, const struct au_sink *s) {
   if (s->query(s->user, &queued, &cap)) return -1;
   uint32_t low = a->playing ? AU_PLAY_LOW_FRAMES : AU_LOW_FRAMES, fill = a->playing ? AU_PLAY_FILL_FRAMES : AU_FILL_FRAMES;
   if (a->playing) {uint64_t t = s->now(s->user); if (a->last_pump_ns && t - a->last_pump_ns > a->gap_max_ns) a->gap_max_ns = t - a->last_pump_ns; a->last_pump_ns = t;}
-  if (queued >= low && !a->hold_len) return 0;
-  uint32_t want = fill - (queued < fill ? queued : fill);
-  if (cap) {uint32_t room = cap > queued ? cap - queued : 0; if (room < want) want = room;}
-  while (a->hold_len || want >= AU_CHUNK) {
+  if (!cap || queued > cap) return -1;
+  if (low > cap) low = cap;
+  if (fill > cap) fill = cap;
+  if (queued >= low) return 0;
+  uint32_t want = fill > queued ? fill - queued : 0;
+  while (want) {
     if (!a->hold_len) {
+      uint32_t n = want < AU_CHUNK ? want : AU_CHUNK;
       uint64_t t0 = s->now(s->user);
-      au_render(a, a->hold, AU_CHUNK);
+      au_render(a, a->hold, n);
       a->total_ns += s->now(s->user) - t0;
-      a->hold_len = AU_CHUNK * 4u; a->hold_off = 0;
-      want -= AU_CHUNK;
+      a->hold_len = n * 4u; a->hold_off = 0;
     }
-    int32_t w = s->write(s->user, (const uint8_t *)a->hold + a->hold_off, a->hold_len);
-    if (w <= 0) {a->eagain++; break;} /* none fit: the rendered chunk is kept and offered first next time */
+    uint32_t bytes = a->hold_len;
+    if (bytes > want * 4u) bytes = want * 4u;
+    int32_t w = s->write(s->user, (const uint8_t *)a->hold + a->hold_off, bytes);
+    if (w == -11 || w == 0) {a->eagain++; break;} /* keep the unsent samples for the next pump */
+    if (w < 0 || (uint32_t)w > bytes || w % 4) return -1;
     a->writes++; a->hold_off += (uint32_t)w; a->hold_len -= (uint32_t)w; sent += (uint32_t)w / 4u;
+    want -= (uint32_t)w / 4u;
   }
   return (int)sent;
 }

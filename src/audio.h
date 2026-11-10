@@ -10,6 +10,7 @@
 #include "vocplay.h"
 #define AU_LOW_FRAMES 12000u  /* write when fewer frames than this are queued (250 ms: longer than any read the OS does) */
 #define AU_FILL_FRAMES 15000u /* and top up to this many (312 ms; the kernel ring holds 16384, an older one 4096) */
+#define AU_VOL_MAX 65535u     /* full uint16 gain range, Q15; saturated after mixing */
 #define AU_VOL_ONE 32768u     /* master volume 1.0 (Q15); it ramps one step a sample: 0.68 s from silence to full */
 #define AU_PLAY_LOW_FRAMES 2400u  /* while a game plays: write when fewer than this are queued (50 ms) so a sound starts within a PLAYGAME tick */
 #define AU_PLAY_FILL_FRAMES 3120u /* and top up to this many (65 ms) */
@@ -55,7 +56,7 @@ void au_stop(struct au *a);
 void au_silence(struct au *a);
 /* Starts the song already read into the music buffer (n bytes) and fades it in; 0, or -1 when it is refused. */
 int au_play_loaded(struct au *a, uint32_t n);
-/* A fade to this volume (0..AU_VOL_ONE) begins. */
+/* A fade to this volume (0..AU_VOL_MAX; AU_VOL_ONE = unity) begins. */
 void au_volume(struct au *a, uint32_t target);
 /* Reads the files the requests name through read (game.h's gp_read_fn); returns 1 when something started. */
 int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, uint32_t), void *user);
@@ -64,5 +65,5 @@ void au_render(struct au *a, int16_t *out, unsigned n);
 /* The queue to keep: small while a game plays (a draining queue is simply not topped up; the samples stay continuous, so nothing clicks),
    long otherwise (the next pump refills it in one go). Call it with 0 before any slow read. */
 void au_set_playing(struct au *a, int playing);
-/* Feeds the ring if it is low; the frames written, or -1 when the query failed. */
+/* Feeds the ring if low, clamped to its reported capacity; frames written, or -1 on a fatal sink error. */
 int au_pump(struct au *a, const struct au_sink *sink);

@@ -17,7 +17,8 @@
 /* Pictures and animations are read whole (the largest FLI in the Sandbox games is 658 KB). */
 uint8_t gp_file_buf[1024 * 1024]; /* also thumb.c's read buffer: thumbs load in the menu, never while a session plays */
 #define file gp_file_buf
-static uint8_t text[64 * 1024], saved[GP_W * GP_H], canvas[GP_FLI_PIXELS], canvas_pal[768];
+static uint8_t text[64 * 1024] __attribute__((aligned(8)));
+static uint8_t saved[GP_W * GP_H], canvas[GP_FLI_PIXELS], canvas_pal[768];
 static uint8_t listnext;
 static const uint8_t black[768];
 static char *put(char *p, const char *s) {while (*s) *p++ = *s++; *p = 0; return p;}
@@ -422,14 +423,24 @@ uint64_t gs_wake(const struct gs_session *s, uint64_t now) {
   }
   return at < now ? now : at < poll ? at : poll;
 }
-int gs_scores_picture(struct gs_session *s, int open, gp_read_fn read, void *user, const char *gam, uint8_t *px, uint8_t *pal) {
-  if (open) {s->read = read; s->user = user; if (gp_open(read, user, gam) < 0) return -1;}
-  const char *name = gp_graphic(GP_SCORES, 0);
+static int slot_picture(struct gs_session *s, int slot, uint8_t *px, uint8_t *pal) {
+  const char *name = gp_graphic(slot, 0);
   int bkd = ext_is(name, "bkd");
   if (!(ext_is(name, "gif") || bkd)) return -1;
   int32_t x, y, n = read_picture(s, name, bkd, &x, &y);
   zero(px, GP_W * GP_H); zero(pal, 768);
   return n < 0 || gp_gif_draw(file, (uint32_t)n, x, y, pal, px) ? -1 : 0;
+}
+int gs_scores_picture(struct gs_session *s, int open, gp_read_fn read, void *user, const char *gam, uint8_t *px, uint8_t *pal) {
+  if (open) {s->read = read; s->user = user; if (gp_open(read, user, gam) < 0) return -1;}
+  return slot_picture(s, GP_SCORES, px, pal);
+}
+int gs_slot_picture(struct gs_session *s, int slot, uint8_t *px, uint8_t *pal) {return slot_picture(s, slot, px, pal);}
+uint8_t *gs_wire(uint32_t *cap) {*cap = sizeof file; return file;}
+void *gs_state_buf(uint32_t *cap) {*cap = sizeof text; return text;}
+void gs_resume(struct gs_session *s, uint64_t now) {
+  gp_release_all(); render_play(s); copy(s->pal, gp_palette(), 768);
+  s->t0 = now; s->ticks = 0; s->keys = 0;
 }
 static uint32_t rgb(const uint8_t *pal, uint8_t i) {
   uint32_t r = pal[i * 3] & 63, g = pal[i * 3 + 1] & 63, b = pal[i * 3 + 2] & 63;
