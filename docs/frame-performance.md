@@ -172,3 +172,17 @@ slowing the game clock. Lower framebuffer traffic and removal of the redundant
 render should leave more of the tick budget available. Full-rate output still
 depends on the board fitting all work within that budget; this is not a measured
 Pi FPS claim. No hardware was flashed or started during this investigation.
+
+## Board result: the stalls were log loss and a report burst (2026-11-10)
+
+On PI-1 (Pi Zero W), holding Right, Left and Down in Year 2000 level 1:
+
+- The per-step `GMOS t N` lines showed tick gaps up to 11, but those gaps are serial
+  log lines the kernel dropped, not stalls: the 5 s lines counted 91 to 93 ticks and
+  91 to 92 frames per 5 s (18.2 Hz, every tick drawn). Do not read frame rate from the
+  `GMOS t` lines.
+- The device now counts it itself: `GMOS 5 s ticks per step: 1 x A, 2 x B, 3 x C, 4+ x D`.
+- A real stall remained: the 5 s report was a burst of about 12 serial lines in one
+  loop pass, holding the loop up to about 100 ms (late max 70 to 107 ms, one or two
+  2-tick steps per 5 s). The report now goes out one line per frame.
+- After: 91 to 92 steps of 1 tick per 5 s, none of 2 or more; late max 11 to 28 ms.
