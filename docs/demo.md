@@ -21,7 +21,10 @@ hash after every tick with the play core fed the same keys by hand).
 - The demo ends at its Esc (the recording's last key), a win or the loss of the last life.
 - A link to another level or a lost life continues at once, keys let go.
 - A gap over 4096 ticks is a DOS demo's wait at a page the preview does not show; it counts as one tick.
-- No sound, not even `SND` lines. The first level's pages (title, intro) are skipped.
+- On this branch, `GMOS.ELF` plays the menu CMF song and demo effects through
+  optional ABI 1.8 `/dev/audio`, independently of the library **M** toggle
+  (library music defaults off). Missing or failed audio falls back to silence;
+  HDMI playback is **hardware-untested**. The first level's pages (title, intro) are skipped.
 
 ## The screen
 

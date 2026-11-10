@@ -4,11 +4,48 @@
 [sandbox-kernel](https://github.com/lewismoten/sandbox-kernel) and uses only the
 kernel's published SDK.
 
+## Sound and library music
+
+Library background music defaults to **off** on every boot. Press **M** in the
+library grid or details to enable or disable it for the current run; the footer
+shows the setting. Game and demo music and effects follow the DOS game's events
+regardless of this library setting. Entering a game restores unity gain even
+when there was no background song to fade out. `GMOS.ELF` links CMF/OPL2 music,
+PC-speaker effects and supported streamed VOC clips; `JS.ELF` keeps remote `SND`
+events only. Local HDMI playback remains **hardware-untested**.
+
+Sound requires startup ABI major 1, minor >= 8 and a usable `/dev/audio`.
+Missing, busy, incompatible or failed devices fall back to silent playback;
+no audio failure aborts a game. Open is write-only, and the initial query must
+report stereo S16 PCM's fixed 48,000 Hz rate and a nonzero ring capacity.
+The vendored SDK's `sbx_audio_query` initializes all output fields to zero
+before the ioctl. `sbx_write` returns status separately from the transferred
+byte count: writes contain whole 4-byte stereo frames, short writes preserve
+the remaining samples, and `EAGAIN` retries on a later pump without blocking.
+Fatal errors close the device; close drops queued audio.
+
+Queue thresholds are bounded by the queried capacity. At the pinned kernel
+commit `a6044c2c28091035b922941b8f402841d49defc4`, `include/audio_ring.h`
+uses 16,384 frames, although `docs/audio-device.md` still describes 4,096;
+both sizes are tested. Games target 3,120 queued frames (65 ms) with a 2,400
+frame refill threshold; the library targets 15,000 with a 12,000 threshold,
+clamped for smaller rings. A new silent library does not write until a sound
+starts. After the first write, gaps count as underruns and the kernel outputs
+zeros, never stale samples; the OS keeps pumping, including silence, between
+sounds. Slow storage may still underrun; counters report the gaps. HDMI drains
+the ring when available; the kernel's null backend otherwise drains silently.
+
+The kernel's mixer is internal, not an ioctl API: its uint16 Q8 volumes range
+from 0 to 65,535, with 256 at unity. GMOS mixes its own voices into PCM and
+uses uint16 Q15 master gain (0..65,535, unity 32,768); widened multiplication
+and final S16 saturation support the whole range without wrapping. No mixer
+header or kernel-internal function is imported into the app.
+
 ## The SDK
 
 `sdk/` is a copy of the kernel repository's `sdk/` folder. `sdk/PINNED` names the
 kernel commit it came from: `a6044c2c28091035b922941b8f402841d49defc4`, ABI 1.10
-(`/dev/serial0`; this does not enable local sound). To move to a newer SDK, run
+(`/dev/serial0`; local sound uses the ABI 1.8 audio interface). To move to a newer SDK, run
 `scripts/vendor_sdk.sh <kernel checkout> [commit]`, then build and test. Nothing
 else from the kernel is used, and the kernel knows nothing about Game-Maker
 files: to it, `/sd/GAMES` is an ordinary folder.
@@ -16,9 +53,8 @@ files: to it, `/sd/GAMES` is an ordinary folder.
 GMOS requires major ABI 1 and minor 2 or newer for screen modes, input,
 `getdents`, the heartbeat, clock and sleep. Older minors exit with
 `GMOS needs screen modes (ABI 1.2)`. Later features are optional: ABI 1.3 seek,
-1.4 scan-cache metadata/writes, 1.5 long names, 1.7 save storage and 1.9 e-ink.
-The ABI 1.10 SDK also declares audio and serial interfaces; GMOS does not use
-them to provide local sound.
+1.4 scan-cache metadata/writes, 1.5 long names, 1.7 save storage, 1.8 local audio
+and 1.9 e-ink. Audio is optional and falls back to silence when unavailable.
 
 `third_party/gmcore/` is the Game-Maker play core from `gamemaker-pocket`,
 pinned at `1476df1e159c798633910e76f898d8347e12c3ee`.

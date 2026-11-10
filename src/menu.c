@@ -71,7 +71,7 @@ void gm_finish(struct gm_menu *m) {
   for (unsigned i = m->count; i--;) {unsigned t = m->games[m->order[i]].cat; m->tab_first[t] = i; m->tab_count[t]++;}
   m->tab = GM_CAT_SANDBOX;
   if (!m->tab_count[m->tab]) for (unsigned t = 0; t < GM_CATS; t++) if (m->tab_count[t]) {m->tab = t; break;}
-  m->view = GM_GRID; m->button = GM_BTN_PLAY; m->shift = 0; m->message[0] = 0;
+  m->view = GM_GRID; m->button = GM_BTN_PLAY; m->shift = 0; m->message[0] = 0; m->background_music = 0;
 }
 unsigned gm_tab_size(const struct gm_menu *m, unsigned tab) {return tab < GM_CATS ? m->tab_count[tab] : 0;}
 const struct gm_game *gm_tab_game(const struct gm_menu *m, unsigned tab, unsigned i) {
@@ -113,6 +113,7 @@ int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
   if (type != 1) return GM_NONE;
   if (code == 42 || code == 54) {m->shift = value != 0; return GM_NONE;} /* KEY_LEFTSHIFT, KEY_RIGHTSHIFT */
   if (!value) return GM_NONE;                    /* key presses and repeats only */
+  if (code == 50 && value == 1) {m->background_music = !m->background_music; return GM_MUSIC;} /* M: owner music setting */
   if (m->view == GM_DETAILS) {
     unsigned b = m->button;
     if (code == 105 && b) b--;                                         /* Left */

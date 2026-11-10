@@ -1,0 +1,111 @@
+/* SPDX-License-Identifier: MIT; Copyright (c) 2026 Lewis Moten; see audio.h. */
+#include "audio.h"
+static void copy(char *to, const char *from) {unsigned i = 0; while (from && from[i] && i < AU_NAME_MAX) {to[i] = from[i]; i++;} to[i] = 0;}
+static int same(const char *a, const char *b) {unsigned i = 0; while (a[i] && a[i] == b[i]) i++; return a[i] == b[i];}
+void au_init(struct au *a, uint8_t *music, uint32_t music_cap) {
+  uint8_t *b = (uint8_t *)a;
+  for (unsigned i = 0; i < sizeof *a; i++) b[i] = 0;
+  a->music = music; a->music_cap = music_cap; a->vol = a->vol_target = AU_VOL_ONE;
+  cmf_init(&a->cmf, &a->opl); pc_init(&a->pc); vp_init(&a->vp);
+}
+void au_music(struct au *a, const char *cmf) {copy(a->want_music, cmf); a->music_pending = 1;}
+void au_beep(struct au *a, const char *snd, int tune) {copy(a->want_snd, snd); a->want_tune = tune; a->beep_pending = 1;}
+void au_voc(struct au *a, const char *voc) {vp_stop(&a->vp); copy(a->want_voc, voc); a->voc_pending = a->want_voc[0] != 0;}
+void au_stop(struct au *a) {a->want_music[0] = 0; a->music_pending = 1; a->beep_pending = 0; pc_stop(&a->pc); vp_stop(&a->vp); a->voc_pending = 0;}
+void au_volume(struct au *a, uint32_t target) {a->vol_target = target > AU_VOL_MAX ? AU_VOL_MAX : target;}
+void au_silence(struct au *a) {
+  a->music_pending = 0; a->beep_pending = 0; a->voc_pending = 0; a->hold_len = 0; vp_stop(&a->vp);
+  cmf_stop(&a->cmf); pc_stop(&a->pc); a->vol = a->vol_target = 0;
+}
+int au_play_loaded(struct au *a, uint32_t n) {
+  if (cmf_load(&a->cmf, a->music, n)) {cmf_stop(&a->cmf); return -1;}
+  a->until_q16 = 0; a->music_loads++; a->vol_target = AU_VOL_ONE; return 0;
+}
+void au_set_playing(struct au *a, int playing) {if (a->playing != (playing != 0)) {a->playing = playing != 0; a->last_pump_ns = 0;}}
+int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, uint32_t), void *user) {
+  int started = 0;
+  if (a->music_pending) {
+    a->music_pending = 0;
+    if (a->cmf.playing && a->vol) {a->vol_target = 0; a->music_pending = 1; return 0;} /* fade out first; the switch is at silence */
+    cmf_stop(&a->cmf); /* the buffer is about to change under the pump (the read calls the heartbeat) */
+    if (a->want_music[0]) {
+      int32_t n = read ? read(user, a->want_music, a->music, a->music_cap) : -1;
+      if (n > 0 && !au_play_loaded(a, (uint32_t)n)) started = 1;
+      else cmf_stop(&a->cmf);
+    }
+  }
+  if (a->beep_pending) {
+    a->beep_pending = 0;
+    if (!same(a->snd_name, a->want_snd)) {
+      int32_t n = read && a->want_snd[0] ? read(user, a->want_snd, a->snd, sizeof a->snd) : -1;
+      a->snd_len = n > 0 ? (uint32_t)n : 0; copy(a->snd_name, n > 0 ? a->want_snd : "");
+    }
+    if (a->snd_len && a->want_tune >= 0 && !pc_start(&a->pc, a->snd, a->snd_len, (unsigned)a->want_tune)) {a->beeps++; started = 1;}
+  }
+  if (a->voc_pending) {
+    a->voc_pending = 0;
+    struct vp_io io; int st = VP_INVALID;
+    if (a->voc_open && !a->voc_open(a->want_voc, &io)) {
+      st = vp_begin(&a->vp, &io); /* the scan takes a few block reads; a clip of thousands of blocks is stopped by its budget */
+      for (unsigned i = 0; st == VP_PENDING && i < VP_MAX_VISITS / 64u + 2u; i++) st = vp_prepare(&a->vp, 64);
+      if (st == VP_PENDING) {vp_stop(&a->vp); st = VP_LIMIT;}
+    }
+    if (st == VP_OK) {a->vocs++; started = 1;} else a->voc_refused++;
+  }
+  return started;
+}
+void au_render(struct au *a, int16_t *out, unsigned n) {
+  int32_t acc[AU_CHUNK];
+  int16_t sp[AU_CHUNK * 2];
+  unsigned i = 0;
+  for (unsigned k = 0; k < n; k++) acc[k] = 0;
+  if (a->cmf.playing) while (i < n) { /* the worklet's loop: tick when due, then render up to the next one */
+    if ((int32_t)a->until_q16 <= 0) {cmf_tick(&a->cmf); a->until_q16 += CMF_TICK_Q16;}
+    unsigned run = (a->until_q16 + 65535u) >> 16;
+    if (run > n - i) run = n - i;
+    opl_render(&a->opl, acc + i, run);
+    a->until_q16 -= run << 16; i += run;
+  } else opl_render(&a->opl, acc, n); /* a stopped song's last notes ring out their release */
+  if (a->pc.active) {
+    pc_render(&a->pc, sp, n);
+    for (unsigned k = 0; k < n; k++) acc[k] += sp[k * 2];
+  }
+  vp_mix(&a->vp, acc, n);
+  for (unsigned k = 0; k < n; k++) {
+    int32_t v = acc[k];
+    if (a->vol != a->vol_target) a->vol = a->vol < a->vol_target ? a->vol + 1 : a->vol - 1;
+    v = (int32_t)((int64_t)v * a->vol >> 15);
+    if (v > 32767) v = 32767;
+    if (v < -32768) v = -32768;
+    out[k * 2] = out[k * 2 + 1] = (int16_t)v;
+  }
+  a->frames += n;
+}
+int au_pump(struct au *a, const struct au_sink *s) {
+  uint32_t queued = 0, cap = 0, sent = 0;
+  if (s->query(s->user, &queued, &cap)) return -1;
+  uint32_t low = a->playing ? AU_PLAY_LOW_FRAMES : AU_LOW_FRAMES, fill = a->playing ? AU_PLAY_FILL_FRAMES : AU_FILL_FRAMES;
+  if (a->playing) {uint64_t t = s->now(s->user); if (a->last_pump_ns && t - a->last_pump_ns > a->gap_max_ns) a->gap_max_ns = t - a->last_pump_ns; a->last_pump_ns = t;}
+  if (!cap || queued > cap) return -1;
+  if (low > cap) low = cap;
+  if (fill > cap) fill = cap;
+  if (queued >= low) return 0;
+  uint32_t want = fill > queued ? fill - queued : 0;
+  while (want) {
+    if (!a->hold_len) {
+      uint32_t n = want < AU_CHUNK ? want : AU_CHUNK;
+      uint64_t t0 = s->now(s->user);
+      au_render(a, a->hold, n);
+      a->total_ns += s->now(s->user) - t0;
+      a->hold_len = n * 4u; a->hold_off = 0;
+    }
+    uint32_t bytes = a->hold_len;
+    if (bytes > want * 4u) bytes = want * 4u;
+    int32_t w = s->write(s->user, (const uint8_t *)a->hold + a->hold_off, bytes);
+    if (w == -11 || w == 0) {a->eagain++; break;} /* keep the unsent samples for the next pump */
+    if (w < 0 || (uint32_t)w > bytes || w % 4) return -1;
+    a->writes++; a->hold_off += (uint32_t)w; a->hold_len -= (uint32_t)w; sent += (uint32_t)w / 4u;
+    want -= (uint32_t)w / 4u;
+  }
+  return (int)sent;
+}

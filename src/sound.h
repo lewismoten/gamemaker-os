@@ -15,14 +15,22 @@
 #pragma once
 #include <stdint.h>
 #define SND_REPEAT_TICKS 3u
+enum {SND_EV_MUSIC, SND_EV_BEEP, SND_EV_STOP, SND_EV_VOC};
 #define SND_DIR_MAX 8u
 struct gs_sound {
   void (*say)(const char *line);
+  /* Optional, for a driver that plays the sounds (audio.h): kind SND_EV_MUSIC (name: the .CMF, "" stops),
+     SND_EV_BEEP (name: the .SND, n: the tune), SND_EV_VOC (name: "NAME.VOC") or SND_EV_STOP. Called where the SND line is logged. */
+  void (*event)(void *user, int kind, const char *name, int n);
+  void *event_user;
   char dir[SND_DIR_MAX + 1];
   int active;          /* between "game" and "end" */
   int last_fx;         /* the last effect line's effect (-1: none) */
   uint32_t last_tick;  /* the tick it was logged on */
 };
+#define SND_VOC_NAME_MAX 13u
+/* "NAME.VOC" (upper case, as on the card) from a clip's name as the core gives it. */
+void snd_voc_file(char *out, const char *voc);
 /* The game's folder for the lines (call before gs_start; "" logs "-"). */
 void snd_dir(struct gs_sound *s, const char *dir);
 void snd_game(struct gs_sound *s, const char *gam);

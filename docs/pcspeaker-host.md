@@ -1,9 +1,14 @@
 # Isolated PC-speaker PCM producer
 
-`src/pcspeaker.c` / `.h` are unlinked qualification components. Neither GMOS.ELF,
-JS.ELF nor the host gameplay library links them. No game/session/sound dispatch,
-remote `SND` grammar or destructive `gp_take_sound` call changes. The sound branch is not merged; local audio is not shipped.
-Hardware playback remains **hardware-untested**. A separate host-only composition probe can render
+`src/pcspeaker.c` / `.h` are linked into `GMOS.ELF` and the host gameplay
+library on this branch, mixed with CMF/OPL2 music and supported VOC clips.
+`JS.ELF` keeps remote `SND` events only; the remote grammar is unchanged.
+Local playback requires ABI 1.8 `/dev/audio` and falls back to silence when
+unavailable. Library music defaults off; **M** toggles it without changing
+game/demo sound. HDMI playback remains **hardware-untested**.
+See [sound integration](build.md#sound-and-library-music).
+
+A separate host-only composition probe can render
 into private bounded scratch, submit copied bytes to the kernel ring, and commit
 the staged producer state only when the entire write succeeds. That probe is not
 a syscall integration or a scheduler.

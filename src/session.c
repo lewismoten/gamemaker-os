@@ -15,7 +15,10 @@
 #define INPUT_POLL_NS 20000000ull /* while a page shows, look at input every 20 ms */
 #define KEY_BUFFER 15u
 /* Pictures and animations are read whole (the largest FLI in the Sandbox games is 658 KB). */
-static uint8_t file[1024 * 1024], text[64 * 1024] __attribute__((aligned(8))), saved[GP_W * GP_H], canvas[GP_FLI_PIXELS], canvas_pal[768];
+uint8_t gp_file_buf[1024 * 1024]; /* also thumb.c's read buffer: thumbs load in the menu, never while a session plays */
+#define file gp_file_buf
+static uint8_t text[64 * 1024] __attribute__((aligned(8)));
+static uint8_t saved[GP_W * GP_H], canvas[GP_FLI_PIXELS], canvas_pal[768];
 static uint8_t listnext;
 static const uint8_t black[768];
 static char *put(char *p, const char *s) {while (*s) *p++ = *s++; *p = 0; return p;}
@@ -343,7 +346,12 @@ static int demo_step(struct gs_session *s, uint64_t now) {
     if (demo_feed(s)) {gs_demo_stop(s); return GS_EXIT;}
     char r = gp_tick();
     s->ticks++; s->total_ticks++; s->ran++;
-    gp_take_sound(); /* silent: the preview only shows */
+    {int n = gp_take_sound(); /* the preview plays the game's effects, as PLAYGAME's demo does (its play loop is the real one) */
+     if (n >= 0 && s->sound.event) {
+       const char *voc = gp_voc_name(n);
+       if (!voc[0]) s->sound.event(s->sound.event_user, SND_EV_BEEP, gp_sound_file(), n);
+       else {char nm[SND_VOC_NAME_MAX]; snd_voc_file(nm, voc); s->sound.event(s->sound.event_user, SND_EV_VOC, nm, 0);}
+     }}
     if (r == 'W' || (r == 'D' && gp_lives() <= 0) || ((r == 'L' || r == 'D') && gp_finish())) {gs_demo_stop(s); return GS_EXIT;}
     if (r) gp_release_all(); /* a link or a lost life: the next level or try starts at once, keys let go */
   }

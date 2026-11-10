@@ -16,6 +16,7 @@ AI models used on this repository:
 | Claude Opus 5.5 (Anthropic) | Claude Code | Packed games: the .GMP reader (volume sets, the DOS files inside), the card's packs in /sd/GAMES and /sd/POCKET, host tests, fuzzing, docs/gmp.md (2026-11-07) |
 | Claude Sonnet 5.5 (Anthropic) | Claude Code | Boot splash and library diagnostics screen: `tools/make_bootart.py`, `src/bootart.c`, host tests, docs/boot-art.md (2026-11-09) |
 | Claude Sonnet 5.5 (Anthropic) | Claude Code | JS.ELF spike: the DOM-like element tree, the QuickJS-ng bindings and prelude, the game element and screen modes, HELLO and BENCH apps, host runner and tests, docs/js.md (2026-11-07) |
+| Claude Sonnet 5.5 (Anthropic) | Claude Code | Sound on the board: the integer OPL2 synth and CMF player (`src/opl.c`, `src/cmf.c`, tables), the `/dev/audio` mixer and feeder (`src/audio.c`), the background music cycle with fades, preview sound, host tests, and Game-Maker OS's own tune composed in code (`tools/make_ostune.ts`, `src/ostune_data.c`, MIT) (2026-11-09) |
 
 ## Third-party code
 
@@ -26,6 +27,8 @@ AI models used on this repository:
 - `src/pcspeaker.c`: format, 36-step timing and speaker level behavior follow RSD's `code/GM/SOUND.H` (Oliver Stone) and `PLAYGAME.C`, plus Sandbox Edition's `formats/sound.ts`, `audio/cmfPlayer.ts` and `audio/engine.ts` at commit `5353512a5b8e87e72321c8a0ba87c5443ef878eb` (MIT, copyright (c) 2014 gandrewstone; (c) 2026 Lewis Moten modifications). The integer oscillator/rational-clock implementation is original here, not a browser oscillator port. This producer remains unlinked. See `docs/pcspeaker-host.md` for source coordinates and fidelity limits.
 
 
+- `src/vocplay.c`, `tools/voc_compare.ts`: a streaming C port of the Sandbox Edition's `formats/voc.ts` (`decodeVoc`, with its ADPCM tables from the Sound Blaster DSP as DOSBox's `sblaster.cpp` implements them) and the level and cutting rules of `audio/engine.ts` `playVoc` (MIT, copyright (c) 2014 gandrewstone; (c) 2026 Lewis Moten modifications), which stand in for the Creative driver RSD's `PlaySbVocFile()` in `SOUNDC.C` handed the file to. Written with Claude Sonnet 5.5 (Anthropic).
+- `src/opl.c`, `src/cmf.c`, `tools/make_opl_tables.py`: C ports, in integer math, of the Sandbox Edition's `web/packages/engine/src/audio/opl.ts`, `cmfPlayer.ts` and `cmfLoad.ts` (MIT, copyright (c) 2014 gandrewstone; (c) 2026 Lewis Moten modifications), which port PlayIt() of RSD's `code/GM/SBMUSIC.C`. No Nuked-OPL, DOSBox or other emulator code is used. `tools/make_ostune.ts` uses that repository's song tools (`music/compose.ts`, `kit/song.ts`).
 - **Silkscreen** (The Silkscreen Project Authors, SIL Open Font License 1.1), bundled as WOFF2 in `docs/fonts/` (from the `@fontsource/silkscreen` 5.1.0 package) for the project page's headings; the license text is `docs/fonts/OFL-Silkscreen.txt`. The page's pictures are made from the art in `art/` (ChatGPT GPT-6.1 Sol, credited above) and host renders of the games list, which show Game-Maker: Sandbox Edition Starter games (MIT).
 - `sdk/`: the sandbox-kernel SDK (headers, `crt0.S`, `mem.c`, link map), MIT, copyright (c) 2026 Lewis Moten; the commit is in `sdk/PINNED`.
 - `tools/font.txt`: the capitals, digits and `- : . /` come from sandbox-kernel's 5x7 status font (MIT, same author).

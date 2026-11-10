@@ -26,6 +26,7 @@ const uint8_t *gmos_session_pal(const struct gs_session *s);
 int gmos_fli_open(const uint8_t *d, uint32_t n);
 void gmos_fli_next(uint8_t *px, uint8_t *pal);
 int gmos_menu_state(const struct gm_menu *m, int what);
+int gmos_menu_music(const struct gm_menu *m);
 void gmos_menu_message(struct gm_menu *m, const char *s);
 void gmos_menu_pic(struct gm_menu *m, unsigned id, int pic);
 int gmos_tab_game(const struct gm_menu *m, unsigned tab, unsigned i);
@@ -72,6 +73,7 @@ void gmos_fli_next(uint8_t *px, uint8_t *pal) {
 }
 /* The games list's state for the tests: 0 tab, 1 position in the tab, 2 view, 3 button, 4 the selected game's index (-1: none). */
 #include "menu.h"
+int gmos_menu_music(const struct gm_menu *m) {return m->background_music;}
 int gmos_menu_state(const struct gm_menu *m, int what) {
   const struct gm_game *g = gm_selected(m);
   return what == 0 ? (int)m->tab : what == 1 ? (int)m->pos[m->tab] : what == 2 ? (int)m->view : what == 3 ? (int)m->button : g ? (int)(g - m->games) : -1;

@@ -203,8 +203,8 @@ at most 24.4 ms and a wake-up at most 4.5 ms late.
 
 ## Sound events
 
-Local sound is not linked into GMOS.ELF; the sound branch is not merged.
-The SDK's audio declarations do not enable playback. A game's sounds go out on the USB log as
+This branch links local audio into `GMOS.ELF` (see below). A game's sounds also
+go out on the USB log as
 `SND` lines (`src/sound.h`, from the session in `src/session.c`), for a page on
 the computer at the other end to play from its own copy of the game's files
 (the Sandbox Edition's Pi remote, `#/pi-remote`, with its Pi sound switch on):
@@ -224,17 +224,39 @@ most (the last effect started, the one heard), and the same effect again within
 3 ticks is left out. A log write never waits for the USB side. Each line is
 under 80 characters. `tests/test_sound.py` checks them.
 
+## Sound on the board (ABI 1.8)
+
+Local HDMI playback remains **hardware-untested**. Missing, busy, incompatible
+or failed devices fall back to silent play, preserving remote `SND` events.
+With ABI major 1, minor >= 8 and a usable `/dev/audio`, GMOS opens it once and plays through HDMI, 16-bit stereo at 48 kHz.
+The synth runs in the main loop, never blocking the 18.2 Hz tick or the heartbeat: `au_pump` (`src/audio.c`) asks the
+ring's level and writes only when under 250 ms is queued (the heartbeat pumps too, so long reads inside a step keep
+feeding). Queue targets are clamped to the reported capacity: kernel develop currently has 16,384 frames,
+while 4,096-frame rings also work with less protection against slow storage. Game play uses a shorter
+65 ms queue for effects. HDMI is used when available; otherwise the kernel's null backend drains silently.
+
+- `src/opl.c`, `src/cmf.c`: an integer OPL2 and CMF player, a port of the web engine's `audio/opl.ts` and `audio/cmfPlayer.ts`
+  (tables from `tools/make_opl_tables.py`, no floats in the sample loop). `tools/compare_opl.py` renders songs with both and
+  prints the difference (1 to 6% RMS on most songs, envelopes within 2%).
+- `src/pcspeaker.c`: the PC-speaker effects (36 steps of 1/145.67 s, a square wave at 12% x 0.8).
+- `src/vocplay.c`: streamed VOC clips mixed with the speaker and FM voices; unsupported clips are refused safely.
+- Every song change fades the old one out (0.68 s), resets the chip (all channels keyed off) and fades the new one in.
+- A game's own sound, or a preview's (its menu song and the game's effects, as PLAYGAME's demo plays them), replaces the
+  library's background tune when enabled. Library music defaults off at every boot; the owner can toggle
+  it with **M** in the library (the footer shows the setting). Game/demo sound follows the DOS game regardless
+  of that setting. The background cycle (`bg_tick` in `src/main.c`): the OS's own tune (`tools/make_ostune.ts`,
+  composed in code) every third pick, otherwise a random library game's first-level song (its menu song if none), a
+  short gap between tunes. Songs over 8 KB are skipped for the background.
+- The log has `GMOS audio ...` lines with the kernel's counters, the synth's CPU in per mille, and each underrun with
+  what the loop was doing.
+
 ## Next
 
-- Sound on the board itself: PC speaker effects first (the core already queues
-  them, and the session already reports them as `SND` lines), then Sound
-  Blaster clips and music.
 - Real input: a USB keyboard or gamepad, or a remote (HDMI-CEC, IR), in place of
   the synthetic device.
 - Pre-3.00 levels may use older `.CHR` and `.MON` layouts; only Roll the Dice
   converted to the old `.GAM` layout has been played so far, not the CD's
   shareware games themselves.
-- Sound on the Pi Zero W, which has no analog jack: HDMI audio first, since the
-  TV is already the screen and the speaker and it needs no extra parts; PWM on
-  GPIO 18 and 13 needs a filter and amplifier added to the board.
+- Additional audio backends: PWM on GPIO 18 and 13 would need a filter and amplifier
+  added to the board; HDMI is already supplied by kernel develop.
 - Presenting only what changed, to cut the 23 ms draw.

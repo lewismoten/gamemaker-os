@@ -28,11 +28,12 @@ struct gm_menu {
   uint16_t order[GM_MAX_GAMES];      /* games by tab, then by course and title */
   unsigned tab_first[GM_CATS], tab_count[GM_CATS];
   unsigned tab, view, button;
+  int background_music;             /* owner setting: off on boot, M toggles in the library */
   unsigned pos[GM_CATS];            /* the selected card in each tab (remembered) */
   int shift;                        /* a Shift key is held (Shift+Tab) */
   char message[GM_MESSAGE_MAX + 1]; /* footer line; empty shows the key help */
 };
-enum {GM_NONE, GM_MOVED, GM_CHOSEN, GM_QUIT, GM_RESYNC, GM_SCORES}; /* GM_SCORES: H, the selected game's Top Ten */
+enum {GM_NONE, GM_MOVED, GM_CHOSEN, GM_QUIT, GM_RESYNC, GM_SCORES, GM_MUSIC}; /* GM_SCORES: H, the selected game's Top Ten */
 /* Add a game (dir is its folder's name, gam its .GAM file, title from that
    file, crc the .GAM's CRC-32); false when the list is full. */
 bool gm_add(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc);

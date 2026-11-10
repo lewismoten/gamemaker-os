@@ -8,7 +8,7 @@ It runs on [sandbox-kernel](https://github.com/lewismoten/sandbox-kernel), a sma
 
 ## Status
 
-The first program runs on the board and plays games. `GMOS.ELF` lists the games in `/sd/GAMES` (each a folder with a `.GAM` file, or one packed `.GMP` file there or in `/sd/POCKET`, the same file the Pocket Player plays; see [docs/gmp.md](docs/gmp.md)) and shows them on HDMI at 960x540 (16 bits a pixel, which the GPU doubles to fill a 1080p screen) the way the Sandbox Edition web site's Games page does: category tabs, cards with each game's title screen read from its own files, and a details view with the blurb and Play. A library index on the card (`LIBRARY.JSL`, the Pocket Player's `library.jsonl` format, written by the Sandbox Edition's `web/scripts/gmosCard.ts`) gives the titles, categories and blurbs. Play plays the chosen game from its original DOS files: the pages between scenes as PLAYGAME shows them (GIF pictures and BKD backdrops fading in, FLI animations frame by frame, text pages in PLAYGAME's font, lists of them), then the levels at PLAYGAME's 18.2 ticks a second, doubled on a 640x480 screen, fading in and out. Games saved before Game-Maker 3.00 play too. The arrow keys, Space and Enter play; Esc leaves the game for its details view, as does the end of the game (after any Top Ten entry). On a Pi Zero W, Roll the Dice and five more Starters draw the same frames as the host tests, tick for tick. There is no sound on the board yet: each sound a game plays is logged as an `SND` line (`docs/play.md`, Sound events) for a page on the computer to play. Input is the kernel's synthetic device for now: the development computer sends key presses over USB.
+The first program runs on the board and plays games. `GMOS.ELF` lists the games in `/sd/GAMES` (each a folder with a `.GAM` file, or one packed `.GMP` file there or in `/sd/POCKET`, the same file the Pocket Player plays; see [docs/gmp.md](docs/gmp.md)) and shows them on HDMI at 960x540 (16 bits a pixel, which the GPU doubles to fill a 1080p screen) the way the Sandbox Edition web site's Games page does: category tabs, cards with each game's title screen read from its own files, and a details view with the blurb and Play. A library index on the card (`LIBRARY.JSL`, the Pocket Player's `library.jsonl` format, written by the Sandbox Edition's `web/scripts/gmosCard.ts`) gives the titles, categories and blurbs. Play plays the chosen game from its original DOS files: the pages between scenes as PLAYGAME shows them (GIF pictures and BKD backdrops fading in, FLI animations frame by frame, text pages in PLAYGAME's font, lists of them), then the levels at PLAYGAME's 18.2 ticks a second, doubled on a 640x480 screen, fading in and out. Games saved before Game-Maker 3.00 play too. The arrow keys, Space and Enter play; Esc leaves the game for its details view, as does the end of the game (after any Top Ten entry). On a Pi Zero W, Roll the Dice and five more Starters draw the same frames as the host tests, tick for tick. This branch links local CMF/OPL2 music, PC-speaker effects and supported VOC clips through the kernel ABI 1.8 `/dev/audio`, with silent fallback when unavailable. Library music defaults off; **M** toggles it in the grid or details view. Game/demo sound follows the game independently; HDMI playback remains **hardware-untested**. Games also log `SND` events for remote playback (`docs/play.md`, Sound events). Input is the kernel's synthetic device for now: the development computer sends key presses over USB.
 
 The screen shows the castle badge splash (`docs/boot-art.md`) from the moment `/dev/fb0` is open until the list is ready, and a library diagnostics screen when the library is empty.
 
@@ -38,16 +38,17 @@ is host-qualified; its new FAT-card/Pi workflow is **hardware-untested**.
 
 `GMOS.ELF` is built only against the sandbox-kernel SDK, vendored in `sdk/` at the kernel commit named in `sdk/PINNED`, and the shared play core in `third_party/gmcore` (commit in its `PINNED`). `make` builds it with the Arm GNU toolchain; `make test` builds the host tools and `GMOS.ELF`, checks the 8 MiB image quota with 64 KiB headroom, runs the host tests and renders PNG files in `build/host/`. `make js` builds the separate `build/JS.ELF`; it is not part of the default build. See [docs/build.md](docs/build.md) for installing it on a card and driving it over USB.
 
-The [isolated PC-speaker PCM producer](docs/pcspeaker-host.md) and
-[bounded PCM8 VOC decoder/resampler and mixer](docs/voc-host.md) are host
-qualification code only. They remain unlinked; board sound and remote SND are
-unchanged. The sound branch is not merged; local sound is not shipped.
+The [PC-speaker PCM producer](docs/pcspeaker-host.md) is linked into `GMOS.ELF`
+and the host gameplay library. Local audio combines it with CMF/OPL2 music and
+[streamed VOC clips](docs/voc.md); the separate [VOC host core](docs/voc-host.md)
+remains a qualification component. `JS.ELF` retains remote `SND` events without
+local audio. See [sound behavior and silent fallback](docs/build.md#sound-and-library-music).
 
 ## Plan
 
 - Boot to a games list on HDMI; play with a USB gamepad, the TV remote (HDMI-CEC) or an IR remote.
 - Games live in a `games` folder on the SD card that any computer can copy files into; Wi-Fi downloads come later.
-- PC speaker sound first, then digital sound (VOC) and FM music.
+- Qualify linked PC-speaker effects, VOC clips and CMF/OPL2 music on hardware.
 - Keep sharing the play core with [Game-Maker Pocket](https://github.com/lewismoten/gamemaker-pocket).
 - Later: more e-ink desk-buddy pages (games played and badges), a private game server for the home network, and other Pi models from the same SD card.
 

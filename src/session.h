@@ -55,7 +55,7 @@ struct gs_session {
   uint8_t colors[768];          /* PLAYGAME's `colors`: the menu picture's palette, then each level's */
   uint8_t listpal[768]; uint8_t listid; /* a list's NewCols: the palette of its last picture */
   struct gs_sound sound;        /* SND log lines (sound.h); its dir is set before gs_start */
-  uint8_t demo;                 /* a demo preview runs (gs_demo_start): level one from its start, no pages, no sound */
+  uint8_t demo;                 /* a demo preview runs (gs_demo_start): level one from its start, no pages, optional local sound */
   uint32_t demo_n, demo_i;      /* its .REC's records, and the next one to play */
   uint32_t demo_timer, demo_last; /* Recording::RecordTimer and LastKeyPress, in game ticks */
 };
@@ -64,7 +64,7 @@ struct gs_session {
 int gs_start(struct gs_session *s, gp_read_fn read, void *user, const char *gam_name, uint64_t now_ns);
 /* The demo preview (docs/demo.md): plays the game's demo .REC (the .GAM's scene 0 file slot 11, as
    PLAYGAME's Rec->InitPlayback(Game.File(0,11)) does) from the start of level one, with no pages and
-   no sound, drawn into px and pal like a play. The .REC is read into session.c's text buffer (3000
+   optional local sound (no SND log lines), drawn into px and pal like a play. The .REC is read into session.c's text buffer (3000
    bytes at most). 0, or -1 when the game has no demo or cannot be played. gs_step then returns
    GS_EXIT when the demo ends (its Esc, a win or the last life lost); gs_demo_stop ends it at once. */
 int gs_demo_start(struct gs_session *s, gp_read_fn read, void *user, const char *gam_name, uint64_t now_ns);

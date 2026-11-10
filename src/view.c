@@ -229,6 +229,7 @@ static void footer(const struct gm_menu *m) {
   fill(0, FOOT_Y, GM_W, GM_H - FOOT_Y, C_FOOT);
   fill(0, FOOT_Y, GM_W, 1, C_LINE2);
   int32_t x = 16, y = FOOT_Y + 18;
+  keycap(&x, y, "M", m->background_music ? "music on" : "music off");
   if (m->message[0]) {text0(F8, x, y, m->message, C_GOLD); return;}
   if (m->view == GM_DETAILS) {keycap(&x, y, "Left/Right", "choose"); keycap(&x, y, "Enter", "press"); keycap(&x, y, "H", "high scores"); keycap(&x, y, "Esc", "back to the games"); return;}
   keycap(&x, y, "Arrows", "choose"); keycap(&x, y, "Enter", "open");

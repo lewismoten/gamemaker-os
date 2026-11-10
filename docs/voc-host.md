@@ -3,9 +3,13 @@
 `src/voc_host.c` / `.h` are **not in any production build list**. They do not
 open an audio device, consume a game event, read a game file, schedule a producer,
 or enable HDMI/DMA/IRQ. `sound.c`, the one destructive `gp_take_sound()` call,
-remote SND grammar, SDK/ABI and all boot paths are unchanged. This is a bounded
-host qualification component, not an available Pi audio feature. The sound
-branch is not merged; local playback remains **hardware-untested**.
+remote SND grammar, SDK/ABI and all boot paths are unchanged. This remains a bounded
+host qualification component. This branch separately links `src/vocplay.c`
+into `GMOS.ELF`, mixing supported VOC clips with CMF/OPL2 music and PC-speaker
+effects through optional ABI 1.8 `/dev/audio`. Unavailable or failed devices
+fall back to silence. Library music defaults off; **M** toggles it independently
+of game/demo sound. Local HDMI playback remains **hardware-untested**.
+See [streamed VOC playback](voc.md) and [sound integration](build.md#sound-and-library-music).
 
 ## Ownership and calls
 
