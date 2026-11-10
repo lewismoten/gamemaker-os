@@ -29,6 +29,9 @@ struct gs_card {
   uint8_t clear;    /* clear the screen first (the first level's intro, after the title) */
 };
 struct gs_session {
+  /* Optional monotonic profiler, zero-initialize when unused. Totals for last step. */
+  uint64_t (*clock_ns)(void);
+  uint64_t tick_ns, render_ns;
   gp_read_fn read; void *user;
   void (*say)(const char *line);
   int phase, stage, levels;
@@ -95,6 +98,11 @@ uint64_t gs_wake(const struct gs_session *s, uint64_t now_ns);
 void gs_show(const uint8_t *px, const uint8_t *pal, uint32_t *fb, uint32_t stride);
 /* The screen: a page or the play view at x2, black around it. */
 void gs_draw(const struct gs_session *s, uint32_t *fb, uint32_t stride);
+/* Compare against the mapped staging surface, update changed rows, return their
+ * bounding span for one present. Force after a mode set (HDMI was cleared).
+ * No retained cache: palette changes, cards, saves and other writers are safe. */
+void gs_draw_changed(const struct gs_session *s, uint32_t *fb, uint32_t stride,
+                     int force, uint32_t *y, uint32_t *h);
 /* The game's high score picture (File(0,8): a GIF or BKD) into px (320 x 200 indexes) and pal,
    as the Top Ten screen's backdrop; 0, or -1 if it has none. open is 1 when no game is open
    yet (the list's own Top Ten): it opens gam first. */

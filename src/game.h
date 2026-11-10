@@ -61,6 +61,8 @@ enum {GP_SONG_TITLE, GP_SONG_WON, GP_SONG_LOST, GP_SONG_LEVEL, GP_SONG_MENU, GP_
 const char *gp_song(int slot, int level);
 /* FNV-1a of the 312 x 196 view, row by row: the Pocket Player host test's frameHash. */
 uint32_t gp_frame_hash(void);
+/* Same hash from gp_render's existing pixels, without rendering a second time. */
+uint32_t gp_pixels_hash(const uint8_t *px);
 /* Save and load a game as PLAYGAME does (SaveGame and LoadGame, PLAYGAME.C 1836-1892, 1737-1834),
    through the DOS wire records of savefile.h. gp_state_save fills g from the play in progress (0, or -1
    with no game running). gp_state_load checks g first and changes nothing when it refuses (-1); when

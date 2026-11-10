@@ -553,6 +553,24 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
   }
   say("GMOS back from the Top Ten");
 }
+/* Five-second stage totals include syscall time; no serial traffic per sample. */
+enum {PF_TICK, PF_RENDER, PF_SCALE, PF_PRESENT, PF_AUDIO, PF_MAINT, PF_EINK, PF_DIAG, PF_COUNT};
+struct play_perf {uint64_t ns; uint32_t calls, max_us;};
+static void perf_add(struct play_perf *v, uint64_t ns) {
+  v->ns += ns; v->calls++;
+  uint32_t us = (uint32_t)(ns / 1000u); if (us > v->max_us) v->max_us = us;
+}
+static void perf_log(struct play_perf *v) {
+  static const char *const names[] = {"tick slice", "render", "scale/compare", "present", "audio service/pump", "heartbeat/audio", "eink", "diagnostics"};
+  for (unsigned i = 0; i < PF_COUNT; i++) {
+    char line[128], *p = put(line, "GMOS perf "); p = put(p, names[i]);
+    p = put(p, " calls "); p = num(p, v[i].calls);
+    p = put(p, " total us "); p = num(p, (uint32_t)(v[i].ns / 1000u));
+    p = put(p, " avg us "); p = num(p, v[i].calls ? (uint32_t)(v[i].ns / v[i].calls / 1000u) : 0);
+    p = put(p, " max us "); num(p, v[i].max_us); say(line);
+    v[i] = (struct play_perf){0, 0, 0};
+  }
+}
 /* Plays the chosen game until Esc or its end. Each tick logs its number and the
    view's hash (the Pocket Player host test's), each game key the tick it lands
    before, and every 5 s the timing: the host tests replay those lines. */
@@ -561,7 +579,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   void *user; gp_read_fn read = reader(g, &user);
 
   if (abi_minor < 1) {say("GMOS playing needs the kernel's clock (ABI 1.1)"); return;}
-  game.say = say;
+  game.say = say; game.clock_ns = clock_ns;
   snd_dir(&game.sound, g->dir);
   p = put(line, "GMOS play ");p=put(p,g->dir);p=put(p,"/");put(p,gamname);say(line);
   audio_take(); doing = "game";
@@ -571,22 +589,29 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   static sbx_input_event ev[16]; uint64_t got;
   uint32_t frames = 0, step_max = 0, draw_max = 0, late_max = 0, logged = 0, shown = 0;
   uint64_t since = clock_ns();
+  struct play_perf perf[PF_COUNT] = {{0, 0, 0}};
+  int force = 1;
   int r = GS_DRAW, started = 0, sp_on = 0, sp_draw = 0;
   static struct sp_menu sp; char sp_stem[9], sp_key[9]; int sp_ok = !hl_stem(gamname, sp_stem);
   if (sp_ok) hl_key(sp_stem, where[g - menu.games].path, gamname, sp_key);
   for (;;) {
-    heartbeat();
-    ge_poll();
+    uint64_t maintenance = clock_ns();
+    heartbeat(); perf_add(&perf[PF_MAINT], clock_ns() - maintenance);
+    maintenance = clock_ns(); ge_poll(); perf_add(&perf[PF_EINK], clock_ns() - maintenance);
     if (game.phase == GS_SCORES) {
-      top_ten(px, g, game.score_check ? gp_score() : -1, 0);
+      top_ten(px, g, game.score_check ? gp_score() : -1, 0); force = 1;
       r = gs_menu_return(&game, clock_ns());
       started = 0;
     }
     if (r & GS_DRAW) {
       uint64_t d0 = clock_ns();
-      gs_draw(&game, px, PLAY_W); sbx_fb_present(fb_fd, 0, 0, PLAY_W, PLAY_H);
+      uint32_t first, height;
+      gs_draw_changed(&game, px, PLAY_W, force, &first, &height); force = 0;
+      uint64_t scaled = clock_ns(); perf_add(&perf[PF_SCALE], scaled - d0);
+      if (height) {sbx_fb_present(fb_fd, 0, first, PLAY_W, height); perf_add(&perf[PF_PRESENT], clock_ns() - scaled);}
       uint32_t dt = (uint32_t)((clock_ns() - d0) / 1000u); if (dt > draw_max) draw_max = dt;
       frames++;
+      uint64_t diag = clock_ns();
       if (game.showing_card && game.shown != shown) { /* a page fully up: faded in, played or written */
         shown = game.shown;
         p = put(line, "GMOS page frame crc "); num(p, crc32(px, PLAY_W * PLAY_H * 4u)); say(line);
@@ -594,6 +619,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
       if (!game.showing_card && game.ran && (game.total_ticks == 1 || game.total_ticks == 18)) {
         p = put(line, "GMOS frame crc "); p = num(p, crc32(px, PLAY_W * PLAY_H * 4u)); p = put(p, " tick "); num(p, game.total_ticks); say(line);
       }
+      perf_add(&perf[PF_DIAG], clock_ns() - diag);
     }
     if (r & GS_EXIT) break;
     if (started) {game.t0 = clock_ns(); game.ticks = 0; started = 0;} /* a level's clock starts once its files are read and its first frame is up */
@@ -601,7 +627,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     if (aud_on) {
       uint64_t s0 = clock_ns(); au_service(&aud, game.read, game.user);
       if (aud.playing && clock_ns() - s0 > aud.svc_max_ns) aud.svc_max_ns = clock_ns() - s0;
-      audio_poll();
+      audio_poll(); perf_add(&perf[PF_AUDIO], clock_ns() - s0);
       uint64_t soon = clock_ns() + 10000000ull; /* wake every 10 ms to keep the ring fed */
       if (wake > soon) wake = soon;
     }
@@ -648,6 +674,8 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
       continue;
     }
     r = gs_step(&game, t);
+    if (game.ran) perf_add(&perf[PF_TICK], game.tick_ns);
+    if (game.render_ns) perf_add(&perf[PF_RENDER], game.render_ns);
     au_set_playing(&aud, aud_on && game.phase == GS_PLAY); if (!aud.playing) audio_poll();
     if (sp_draw) {r |= GS_DRAW; sp_draw = 0;}
     uint32_t dt = (uint32_t)((clock_ns() - t) / 1000u); if (game.ran && dt > step_max) step_max = dt;
@@ -655,14 +683,17 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     if (was == GS_PLAY && game.phase == GS_CARDS) { /* the level ended: the session lets go of every key */
       p = put(line, "GMOS keys released before tick "); num(p, game.total_ticks + 1); say(line);
     }
-    if (game.total_ticks != before && logged++ < 20000) { /* the view after the step's last tick (a late step runs up to 4) */
-      p = put(line, "GMOS t "); p = num(p, game.total_ticks); p = put(p, " lv "); p = num(p, (uint32_t)gp_level() + 1); p = put(p, " h "); num(p, gp_frame_hash()); say(line);
+    uint64_t diag = clock_ns();
+    if (game.total_ticks != before && (r & GS_DRAW) && logged++ < 20000) { /* the view after the step's last tick (a late step runs up to 4) */
+      p = put(line, "GMOS t "); p = num(p, game.total_ticks); p = put(p, " lv "); p = num(p, (uint32_t)gp_level() + 1); p = put(p, " h "); num(p, gp_pixels_hash(game.px)); say(line);
     }
+    perf_add(&perf[PF_DIAG], clock_ns() - diag);
     if (clock_ns() - since >= 5000000000ull) {
       p = put(line, "GMOS 5 s: "); p = num(p, frames); p = put(p, " frames, tick "); p = num(p, game.total_ticks);
       p = put(p, ", step max "); p = num(p, step_max); p = put(p, " us, draw max "); p = num(p, draw_max);
       p = put(p, " us, late max "); p = num(p, late_max); put(p, " us"); say(line);
       if (aud_on) audio_log("game 5 s");
+      perf_log(perf);
       frames = step_max = draw_max = late_max = 0; since = clock_ns();
     }
   }

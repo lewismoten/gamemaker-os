@@ -332,6 +332,12 @@ extern "C" uint32_t gp_frame_hash(void) {
   }
   return h;
 }
+extern "C" uint32_t gp_pixels_hash(const uint8_t *px) {
+  uint32_t h = 2166136261u;
+  for (uint32_t y = 0; y < GP_VIEW_H; y++)
+    for (uint32_t x = 0; x < GP_VIEW_W; x++) h = (h ^ px[y * GP_W + x]) * 16777619u;
+  return h;
+}
 // The world itself, for the host tests' state lines (game.h).
 gm::World &gp_world() { return *w; }
 

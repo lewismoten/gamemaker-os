@@ -53,7 +53,7 @@ HOSTDIR ?= build/host
 HOSTFLAGS ?= -O1
 VENDOR_HOSTFLAGS = $(HOSTFLAGS) -std=c11 $(VENDOR_WARNINGS)
 VENDOR_QJS_HOSTFLAGS = $(HOSTFLAGS) -D_GNU_SOURCE -DNDEBUG -w
-host: $(HOSTDIR)/libeink.so $(HOSTDIR)/libgmos.so $(HOSTDIR)/libsdpack.so $(HOSTDIR)/gmplay $(HOSTDIR)/jsrun
+host: $(HOSTDIR)/frame_bench $(HOSTDIR)/libeink.so $(HOSTDIR)/libgmos.so $(HOSTDIR)/libsdpack.so $(HOSTDIR)/gmplay $(HOSTDIR)/jsrun
 $(HOSTDIR):
 	mkdir -p $@
 $(HOSTDIR)/puff.o: third_party/puff/puff.c third_party/puff/puff.h Makefile | $(HOSTDIR)
@@ -131,3 +131,7 @@ $(HOSTDIR)/jsrun: tests/host/jsrun.c $(JSC) $(HOSTDIR)/js_prelude.c $(HOSTDIR)/j
 	$(HOSTCC) $(HOSTFLAGS) -std=gnu11 $(C_WARNINGS) -Isrc -isystem third_party/quickjs-ng tests/host/jsrun.c $(JSC) $(HOSTDIR)/js_prelude.c $(HOSTDIR)/js_picker.c $(QJS:%=$(HOSTDIR)/q_%.o) $(HOSTDIR)/js_game.o $(HOSTCXXLIB) -lm -o $@
 clean:
 	rm -rf build
+
+# Reproducible frame pipeline benchmark (first scene, scripted left/right input).
+$(HOSTDIR)/frame_bench: tests/host/frame_bench.cpp tests/host/hostio.h $(HOSTDIR)/libgmos.so Makefile
+	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) $(CXX_WARNINGS) -Isrc -isystem third_party/gmcore $< $(HOSTDIR)/libgmos.so -o $@

@@ -158,8 +158,11 @@ class Play(unittest.TestCase):
         self.assertEqual(s.step(t0 + tick_ns(1)), GS_DRAW); self.assertEqual(s.ticks(), 1)
         self.assertEqual(lib().gs_wake(s.s, t0 + tick_ns(1)), t0 + tick_ns(2))
         s.step(t0 + 1_000_000_000); self.assertEqual(s.ticks(), 5)                  # 17 ticks behind: at most 4 at once ...
-        s.step(t0 + 1_000_000_001); self.assertEqual(s.ticks(), 5)                  # ... and the lost time is dropped
-        s.step(t0 + 1_000_000_000 + tick_ns(1)); self.assertEqual(s.ticks(), 6)
+        s.step(t0 + 1_000_000_001); self.assertEqual(s.ticks(), 9)                  # debt survives: each slice catches up four
+        while s.ticks() < 18: s.step(t0 + 1_000_000_001)
+        self.assertEqual(s.ticks(), 18)
+        self.assertEqual(s.step(t0 + 1_000_000_002), 0)                         # caught up, no extra tick/draw
+        s.step(t0 + tick_ns(19)); self.assertEqual(s.ticks(), 19)
         s2 = Session(); t0 = s2.to_play()
         for k in range(1, 183): s2.step(t0 + tick_ns(k))
         self.assertEqual(s2.ticks(), 182)                                           # 182 ticks in 9.996 s
