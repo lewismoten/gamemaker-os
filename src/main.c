@@ -538,7 +538,8 @@ static int load_next_thumb(void) {
   if (menu.view != GM_GRID) return 0;
   unsigned t = menu.tab, first = menu.pos[t] / GM_PAGE * GM_PAGE;
   for (unsigned i = 0; i < GM_PAGE; i++) {
-    struct gm_game *g = (struct gm_game *)gm_tab_game(&menu, t, first + i);
+    const struct gm_game *selected = gm_tab_game(&menu, t, first + i);
+    struct gm_game *g = selected ? &menu.games[selected - menu.games] : 0;
     if (!g || g->pic < 0) continue;
     unsigned id = (unsigned)(g - menu.games);
     if (g->pic > 0 && gm_thumb_get(id)) continue;

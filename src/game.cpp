@@ -322,7 +322,7 @@ extern "C" uint32_t gp_frame_hash(void) {
   }
   return h;
 }
-// The world itself, for the host tests' state lines (game_host.h).
+// The world itself, for the host tests' state lines (game.h).
 gm::World &gp_world() { return *w; }
 
 // ---- save and load (PLAYGAME.C SaveGame and LoadGame; the wire layout is savefile.h's) ----------------
