@@ -91,6 +91,16 @@ void gs_draw(const struct gs_session *s, uint32_t *fb, uint32_t stride);
    as the Top Ten screen's backdrop; 0, or -1 if it has none. open is 1 when no game is open
    yet (the list's own Top Ten): it opens gam first. */
 int gs_scores_picture(struct gs_session *s, int open, gp_read_fn read, void *user, const char *gam, uint8_t *px, uint8_t *pal);
+/* The game's Load Game or Save Game picture (GP_LOADPIC, GP_SAVEPIC) into px and pal like gs_scores_picture; 0, or -1 if
+   it has none. The game is open already. */
+int gs_slot_picture(struct gs_session *s, int slot, uint8_t *px, uint8_t *pal);
+/* The session's two big scratch buffers, idle while a level plays: the file buffer (1 MiB) and the 64 KiB text buffer
+   (8-byte aligned), which the Save and Load screens use for the DOS records, so they cost no memory of their own. */
+uint8_t *gs_wire(uint32_t *cap);
+void *gs_state_buf(uint32_t *cap);
+/* Back to the play after a function key screen (PLAYGAME.C DoFunKy's end, 1612-1640): redraws the view and its
+   palette, lets go of the keys, and restarts the play clock at now so no time passes meanwhile. */
+void gs_resume(struct gs_session *s, uint64_t now);
 /* The DOS scan code for a Linux key code (0: none). */
 int gs_scan(uint16_t code);
 /* FadeTo's palette at a step (0..steps) between two palettes. */
