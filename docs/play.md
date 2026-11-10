@@ -138,9 +138,10 @@ up: a page that ends on time begins the next at that moment.
 
 Keys arrive as Linux key codes and reach the game as DOS scan codes: the arrows,
 Home, End, Page Up and Page Down (the diagonals) as the number pad's, and the
-rest of the keyboard as it is (Space, Enter, letters). Esc leaves play for
-the game’s menu (after the Top Ten). During a level, F5 opens Save Game
-and F6 opens Load Game; see [controls and limits](game-save.md). These native
+rest of the keyboard as it is (Space, Enter, letters). Back/Esc pauses native
+launcher play. Arrows and OK choose Resume, Save game, Load game or Leave game;
+Leave checks the Top Ten and returns to the DOS menu. F5 opens Save Game
+and F6 opens Load Game directly; see [controls and limits](game-save.md). These native
 save/load screens and real-card writes are **hardware-untested**.
 
 ## The screen

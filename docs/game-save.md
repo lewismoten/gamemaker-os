@@ -7,10 +7,12 @@ real-card writes and DOS↔Pi runtime interchange remain **hardware-untested**.
 
 ## During play
 
-During a level, F5 opens Save Game and F6 opens Load Game, pausing play.
-Up/Down selects one of ten slots; Enter selects it. On Save, type a name
-(up to 20 characters), use Backspace or Left to erase, and Enter to write.
-Esc cancels. A result message lasts two seconds or until a new key press.
+During a level, Back/Esc opens the pause menu: arrows and OK choose Save game
+or Load game. F5/F6 still open those screens directly. Up/Down selects one of
+ten slots; OK/Enter selects it. Save names use the shared [on-screen keyboard](library.md):
+arrows and OK edit up to 20 characters; Done writes. Physical typing hides it;
+Backspace or Left erases, Enter writes, and Up/Down restores the keyboard.
+Back/Esc cancels. A result message lasts two seconds or until a new key press.
 The game's own Save/Load picture is used when present.
 
 Slots are `GAME0.SAV` through `GAME9.SAV`; `SAVNAMES.DAT` holds ten 21-byte

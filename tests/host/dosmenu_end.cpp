@@ -59,7 +59,9 @@ int main() {
     // Play again resets the score, then menu's Scores choice asks for no name.
     gs_event(&session, 1, 28, 1); pages();
     assert(session.phase == GS_PLAY && gp_score() == 0);
-    gs_event(&session, 1, 1, 1); assert(session.phase == GS_SCORES);
+    gs_event(&session, 1, 1, 1); assert(session.phase == GS_PAUSED);
+    for(int i=0;i<3;i++)gs_event(&session,1,108,1);
+    gs_event(&session,1,28,1);assert(session.phase==GS_SCORES);
     gs_menu_return(&session, now); pages();
     for (int i = 0; i < 4; i++) gs_event(&session, 1, 108, 1);
     gs_event(&session, 1, 28, 1);

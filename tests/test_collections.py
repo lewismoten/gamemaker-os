@@ -104,6 +104,18 @@ class Collections(unittest.TestCase):
         p.key('esc'); p.key('right'); p.key('enter')
         self.assertEqual(p.tab, FAVORITES)
 
+    def test_remote_details_scores_music_back_and_paging(self):
+        p=fixture();p.key('enter')
+        p.keys('down','down','down');self.assertEqual(p.key('enter'),5)
+        p.key('down');self.assertEqual(p.key('enter'),6)
+        self.assertEqual(p.key('enter',2),0)
+        p.key('esc');self.assertEqual(p.key('esc'),0)
+        p=Page()
+        for i in range(19):p.add(f'G{i}',f'Game {i:02}')
+        p.finish();p.keys('down','down');self.assertEqual(p.pos,8)
+        p.key('left');self.assertEqual(p.pos,7)
+        p.key('right');p.key('up');p.key('enter');self.assertEqual(p.pos,8)
+
     def test_search_capacity_and_no_matches(self):
         p = Page()
         for i in range(256): p.add(f'G{i}', f'Title {i}')

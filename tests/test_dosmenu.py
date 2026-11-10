@@ -134,11 +134,26 @@ class DosMenuTests(unittest.TestCase):
         s.key(28, 1); s.key(1, 1)  # Esc on a page returns to menu.
         self.assertEqual(s.phase(), MENU)
 
+    def test_remote_pause_resume_save_load(self):
+        s=Launcher();s.menu();s.select(0);s.advance();s.advance()
+        s.advance(tick_ns(20));ticks=s.ticks();s.key(1,1);s.key(1,1)
+        s.advance(0);self.assertEqual(s.ticks(),ticks) # same-batch Back/Back does not replay play time
+        s.key(1,1);self.assertEqual(s.phase(),5)
+        ticks=s.ticks();s.advance(tick_ns(100));self.assertEqual(s.ticks(),ticks)
+        s.key(1,1);self.assertEqual(s.phase(),GS_PLAY)
+        s.key(1,1);s.key(108,1);self.assertEqual(s.key(28,1),4) # Save request
+        s.c.gs_resume.argtypes=[C.c_void_p,C.c_uint64]
+        s.c.gs_resume(s.s,s.t)
+        s.key(1,1);s.key(108,1);s.key(108,1);self.assertEqual(s.key(28,1),8) # Load request
+
     def test_play_scores_menu_and_restart(self):
         s = Launcher(); s.menu(); s.select(0)
         s.advance(); s.advance(); self.assertEqual(s.phase(), GS_PLAY)
         s.advance(tick_ns(1)); self.assertGreater(s.ticks(), 0)
-        self.assertEqual(s.key(1, 1), 0)
+        self.assertEqual(s.key(1, 1), 1)
+        self.assertEqual(s.phase(), 5)
+        for _ in range(3): s.key(108, 1)
+        s.key(28, 1)
         self.assertEqual(s.phase(), SCORES)
         self.assertEqual(s.c.gs_menu_return(s.s, s.t), 1)
         s.menu(); s.key(28, 1); s.advance(); s.advance()

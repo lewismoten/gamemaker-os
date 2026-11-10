@@ -5,6 +5,7 @@
 #include "hiscreen.h"
 #include "hisload.h"
 #include "text.h"
+#include "osk.h"
 #define K_ESC 1
 #define K_ENTER 28
 #define K_KPENTER 96
@@ -29,6 +30,7 @@ static int marker_y(int choice) {return 35 - 8 + choice * 14;}
 static void marker(struct sp_menu *m, uint8_t c) {int y = marker_y(m->sel); fill(m->s->px, 60, y, 65, y + 4, c);}
 static uint8_t pixel(const struct sp_menu *m, int x, int y) {return m->s->px[y * GP_W + x];}
 static void message(struct sp_menu *m, int x, const char *text, uint64_t now) {
+  fill(m->s->px,0,184,319,199,0);
   put(m->s->px, x, 185, m->msg_col, text); m->stage = SP_MSG; m->t0 = now;
 }
 static void cursor(struct sp_menu *m, int on) { /* GGet's box (or, with the line full, a bar) at the end of the answer */
@@ -42,6 +44,7 @@ static void cursor(struct sp_menu *m, int on) { /* GGet's box (or, with the line
 void sp_start(struct sp_menu *m, int mode, const struct save_ops *ops, const char *key, struct gs_session *s, uint64_t now) {
   uint8_t *px = s->px, *pal = s->pal; uint8_t raw[NAMES_BYTES]; uint32_t got = 0; int have;
   m->mode = mode; m->stage = SP_PICK; m->sel = 1; m->shift = m->ctrl = 0; m->cur_on = m->cur_drawn = 0; m->len = 0;
+  m->keyboard=0; m->keyboard_pos=0;
   m->ops = ops; m->s = s; m->t0 = m->blink = now;
   unsigned k = 0; for (; key[k] && k < 8; k++) m->key[k] = key[k]; m->key[k] = 0;
   s->showing_card = 1;
@@ -127,10 +130,24 @@ int sp_event(struct sp_menu *m, uint16_t type, uint16_t code, int32_t value, uin
     if (m->mode == SP_LOAD) return do_load(m, slot, now);
     m->sel = (int)slot; m->stage = SP_NAME; m->back = pixel(m, 79, 40 + (int)slot * 14);
     m->len = slen(m->names[slot]); m->blink = now; cursor(m, 1); m->cur_on = 1;
+    m->keyboard=1; m->keyboard_pos=0;
+    osk_draw(m->s->px,0,m->names[slot],m->name_col,0);
     return SP_DRAW;
   }
   /* SP_NAME: GGet over the slot's row */
   char *ans = m->names[m->sel]; int y = 40 + m->sel * 14, ch = m->ctrl ? 0 : hs_ascii(code, m->shift);
+  if(!m->keyboard && (code==103 || code==108)) {m->keyboard=1;osk_draw(m->s->px,m->keyboard_pos,ans,m->name_col,0);return SP_DRAW;}
+  if(m->keyboard && (code==103 || code==108 || code==105 || code==106 || code==28)) {
+    int c=osk_press(&m->keyboard_pos,code,value);
+    if(c==13)return do_save(m,(unsigned)m->sel,write_names(m),now);
+    if(c)osk_edit(ans,SP_NAME_MAX,c);
+    m->len=slen(ans);osk_draw(m->s->px,m->keyboard_pos,ans,m->name_col,0);return SP_DRAW;
+  }
+  if(m->keyboard && (ch || code==K_BACK)) {
+    m->keyboard=0;
+    for(unsigned j=0;j<GP_W*GP_H;j++)m->s->px[j]=0;
+    put(m->s->px,80,y,m->name_col,ans);
+  }
   if (code == K_ESC) {cursor(m, 0); return value == 1 ? SP_DONE : 0;} /* done = -1: nothing is saved, SavNames stays */
   cursor(m, 0); m->blink = now; m->cur_on = 1;
   if (code == K_ENTER || code == K_KPENTER) {
@@ -148,6 +165,7 @@ static int cursor_on(const struct sp_menu *m, uint64_t now) {return (now - m->bl
 int sp_step(struct sp_menu *m, uint64_t now) {
   if (m->stage == SP_MSG) return now - m->t0 >= SP_PAUSE_NS ? SP_DONE : 0;
   if (m->stage != SP_NAME) return 0;
+  if(m->keyboard)return 0;
   int on = cursor_on(m, now);
   if (on == m->cur_drawn) return 0;
   cursor(m, on); return SP_DRAW;

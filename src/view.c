@@ -240,19 +240,23 @@ static void footer(const struct gm_menu *m) {
   int32_t x = 16, y = FOOT_Y + 10;
   if (m->message[0]) text0(F8,x,y,m->message,C_GOLD);
   else if (m->search_active) {
-    if(m->search_keyboard) {keycap(&x,y,"Arrows","choose a letter");keycap(&x,y,"Enter","type / Done for results");}
-    else {keycap(&x,y,"Type","title or company");keycap(&x,y,"Arrows","choose");keycap(&x,y,"Enter","details");}
-    keycap(&x,y,"Esc","clear / leave");
+    if(m->search_keyboard) {keycap(&x,y,"Arrows","choose a letter");keycap(&x,y,"OK/Enter","type / Done for results");}
+    else {keycap(&x,y,"Type","title or company");keycap(&x,y,"Arrows","choose");keycap(&x,y,"OK/Enter","details");}
+    keycap(&x,y,"Back/Esc","clear / leave");
   } else if (m->tabs_focus) {
-    keycap(&x,y,"Left/Right","category");keycap(&x,y,"Enter / Down","open");keycap(&x,y,"Esc","back");
+    keycap(&x,y,"Left/Right","category");keycap(&x,y,"OK/Down","open");keycap(&x,y,"Back/Esc","back");
   } else if (m->view==GM_DETAILS) {
-    keycap(&x,y,"Arrows","choose button");keycap(&x,y,"Enter","press");keycap(&x,y,"F","Favorite");keycap(&x,y,"Esc","back");
+    keycap(&x,y,"Arrows","choose button");keycap(&x,y,"OK/Enter","press");keycap(&x,y,"F","Favorite");keycap(&x,y,"Back/Esc","back");
   } else {
-    keycap(&x,y,"Arrows","choose / Up to tabs");keycap(&x,y,"Enter","open");keycap(&x,y,"F","Favorite");keycap(&x,y,"Esc","quit");
+    keycap(&x,y,"Arrows","choose / Up to tabs");keycap(&x,y,"OK/Enter","open");keycap(&x,y,"F","Favorite");keycap(&x,y,"Back/Esc","stay here");
   }
   x=16;y=FOOT_Y+30;
-  keycap(&x,y,"Tab / [ ]","category");keycap(&x,y,"/","folder name");keycap(&x,y,"H","high scores");
-  keycap(&x,y,"M",m->background_music?"music on":"music off");keycap(&x,y,"PgUp/PgDn","page");
+  keycap(&x,y,"Tab / [ ]","category");keycap(&x,y,"/","folder name");
+  if(m->search_active) {keycap(&x,y,"Keyboard","type title / company");keycap(&x,y,"Backspace","edit");}
+  else {
+    keycap(&x,y,"H","high scores");keycap(&x,y,"M",m->background_music?"music on":"music off");
+    keycap(&x,y,"PgUp/PgDn","page");if(m->view==GM_GRID)keycap(&x,y,"Q","quit");
+  }
 }
 static void search_keyboard(const struct gm_menu *m) {
   box(16,304,928,180,8,1,C_LINE,C_PANEL,1);
@@ -261,7 +265,7 @@ static void search_keyboard(const struct gm_menu *m) {
     int32_t x,y,w;
     const char *label; char letter[2]={0,0};
     if(k<36) {x=28+(int32_t)(k%9)*101;y=330+(int32_t)(k/9)*29;w=94;letter[0]=GM_SEARCH_KEYS[k];label=letter;}
-    else {static const char *const actions[]={"Space","Delete","Clear","Done"};x=28+(int32_t)(k-36)*227;y=448;w=220;label=actions[k-36];}
+    else {x=28+(int32_t)(k-36)*227;y=448;w=220;label=osk_label(k,letter);}
     int on=k==m->keyboard_pos;
     box(x,y,w,24,4,1,on?C_GOLD:C_LINE,on?C_BLUE:C_PILL,1);
     text0(F8,x+(w-width(F8,label,len(label),1))/2,y+8,label,C_TEXT);
@@ -354,7 +358,9 @@ static void details(const struct gm_menu *m, const uint8_t *big, const uint8_t *
   const char *blurb = g->blurb[0] ? g->blurb : "This game has no entry in the library index, so there is no description to show.";
   button(x,y+40,212,gm_is_favorite(m,g)?"In Favorites":"Favorite",0,m->button==GM_BTN_FAVORITE);
   if(gm_is_favorite(m,g))star(x+12,y+49);
-  y += 90;
+  button(x,y+80,212,"High scores",0,m->button==GM_BTN_SCORES);
+  button(x,y+120,212,m->background_music?"Music: On":"Music: Off",0,m->button==GM_BTN_MUSIC);
+  y += 162;
   wrap(F5, x, y, w, blurb, (unsigned)((440 - y) / 13), 13, C_TEXT, 1);
   char where[40], *q = put(where, "/sd/GAMES/"); q = put(q, g->dir); q = put(q, "/"); put(q, g->gam);
   text0(F5, x, 464, where, 0xb0a8d0u);

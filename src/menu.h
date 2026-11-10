@@ -13,10 +13,11 @@
 #define GM_COLS 4u
 #define GM_PAGE 8u /* cards on a page: four across, two down */
 #define GM_MESSAGE_MAX 48u
-#define GM_SEARCH_KEYS "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+#include "osk.h"
+#define GM_SEARCH_KEYS OSK_KEYS
 enum {GM_CAT_STARTER, GM_CAT_SANDBOX, GM_CAT_BIZARRE, GM_CAT_CD, GM_CAT_OTHER, GM_CAT_SEARCH, GM_CAT_FAVORITES, GM_CAT_RECENT, GM_CATS};
 enum {GM_GRID, GM_DETAILS};       /* what shows */
-enum {GM_BTN_PLAY, GM_BTN_BACK, GM_BTN_FAVORITE, GM_BUTTONS}; /* the details view's buttons */
+enum {GM_BTN_PLAY, GM_BTN_BACK, GM_BTN_FAVORITE, GM_BTN_SCORES, GM_BTN_MUSIC, GM_BUTTONS}; /* the details view's buttons */
 struct gm_game {
   char dir[9], gam[13], key[9];     /* folder, .GAM file and saved-list identity */
   char title[GM_LIB_TITLE + 1];     /* the index's title, else the .GAM's, else the folder */
@@ -58,7 +59,7 @@ void gm_finish(struct gm_menu *m);
    top row focuses tabs (Left/Right, Enter/Down). Search accepts up to 24
    characters, filters title/company live; Esc clears then leaves. F toggles
    Favorite in grid/details. Enter opens the
-   details, Esc or Q quits, H shows the selected game's Top Ten. Details: Left/Right/Tab pick a button, Enter or
+   details, Q quits (Esc stays in the library), H shows the selected game's Top Ten. Details: Left/Right/Tab pick a button, Enter or
    Space presses it (Play chooses the game), H shows the Top Ten, Esc goes back. SYN_DROPPED asks
    the caller to resynchronize. Slash starts/resets a DOS folder request in
    either view: letters/digits/-/_ type, Backspace edits, Esc cancels, Enter

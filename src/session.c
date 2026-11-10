@@ -473,9 +473,34 @@ int gs_scan(uint16_t code) {
   }
   return code >= 2 && code <= 88 ? code : 0; /* the rest of the PC keyboard: Linux codes are its scan codes */
 }
+static void pause_draw(struct gs_session *s) {
+  static const char *const labels[]={"Resume","Save game","Load game","Leave game"};
+  zero(s->px,sizeof s->px);s->showing_card=1;
+  uint8_t fg=gp_match(s->pal,63,63,63);
+  gp_write(s->px,96,24,fg,"Game paused",11);
+  for(unsigned i=0;i<4;i++) {
+    gp_write(s->px,80,60+(int)i*24,fg,i==(unsigned)s->pause_choice?">":" ",1);
+    gp_write(s->px,96,60+(int)i*24,fg,labels[i],slen(labels[i]));
+  }
+  gp_write(s->px,8,184,fg,"Arrows choose  OK select  Back resume",36);
+}
 int gs_event(struct gs_session *s, uint16_t type, uint16_t code, int32_t value) {
   if (type != 1 || s->phase == GS_DONE) return 0;
   if (s->launcher && s->phase == GS_SCORES) return 0;
+  if(s->phase==GS_PAUSED) {
+    if(!value)return 0;
+    if(code==103 || code==108) {s->pause_choice=(s->pause_choice+(code==103?3:1))%4;pause_draw(s);return GS_DRAW;}
+    if(value!=1)return 0;
+    if(code==1 || (code==28 && s->pause_choice==0)) {s->phase=GS_PLAY;gs_resume(s,s->t);return GS_DRAW;}
+    if(code==28) {
+      if(s->pause_choice==3) {s->phase=GS_SCORES;s->score_check=1;return 0;}
+      s->phase=GS_PLAY;return s->pause_choice==1?GS_SAVE:GS_LOAD;
+    }
+    return 0;
+  }
+  if(s->launcher && s->phase==GS_PLAY && code==1 && value==1) {
+    gp_release_all();s->phase=GS_PAUSED;s->pause_choice=0;pause_draw(s);return GS_DRAW;
+  }
   if (s->launcher && code == 1 && value == 1 && s->phase != GS_MENU) {
     gp_release_all();s->keys=0;
     if(s->begun){s->phase=GS_SCORES;s->score_check=1;return 0;}
@@ -494,9 +519,10 @@ int gs_event(struct gs_session *s, uint16_t type, uint16_t code, int32_t value) 
 int gs_step(struct gs_session *s, uint64_t now) {
   s->ran = 0; s->tick_ns = s->render_ns = 0;
   if (s->phase == GS_DONE) return GS_EXIT;
-  if (s->launcher && (s->phase == GS_MENU || s->phase == GS_SCORES)) {s->t=now;return 0;}
+  if (s->launcher && (s->phase == GS_MENU || s->phase == GS_SCORES || s->phase == GS_PAUSED)) {s->t=now;return 0;}
   if (s->phase == GS_CARDS) return run_cards(s, now);
   if (s->demo) return demo_step(s, now);
+  s->t=now; /* latest play clock, including pause/resume in one input batch */
   uint64_t due = (now - s->t0) * 10u / GS_TICK_NS10;
   while (s->ticks < due && s->ran < 4) {
     char r = play_tick(s);
@@ -515,6 +541,7 @@ int gs_step(struct gs_session *s, uint64_t now) {
   return GS_DRAW;
 }
 uint64_t gs_wake(const struct gs_session *s, uint64_t now) {
+  if(s->phase==GS_PAUSED)return now+20000000ull;
   if (s->phase == GS_PLAY) return s->t0 + ((uint64_t)(s->ticks + 1) * GS_TICK_NS10 + 9u) / 10u;
   if (s->launcher && (s->phase==GS_MENU || s->phase==GS_SCORES)) return now+INPUT_POLL_NS;
   if (s->phase != GS_CARDS) return now;

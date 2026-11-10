@@ -151,7 +151,8 @@ class Keys(unittest.TestCase):
         self.assertEqual(p.key('left'), NONE)
         self.assertEqual(p.key('right'), MOVED); self.assertEqual(p.button, 1)                # Back
         self.assertEqual(p.key('right'), MOVED); self.assertEqual(p.button, 2)  # Favorite
-        self.assertEqual(p.key('right'), NONE)
+        self.assertEqual(p.key('right'), MOVED); self.assertEqual(p.button, 3)
+        p.key('right'); self.assertEqual(p.button, 4)
         self.assertEqual(p.key('tab'), MOVED); self.assertEqual(p.button, 0)                  # Tab goes around the buttons
         self.assertEqual(p.key('down'), MOVED); self.assertEqual(p.pos, 1); p.key('up')                     # the grid's keys do nothing here
         self.assertEqual(p.key('enter'), CHOSEN)                                              # Play
@@ -160,7 +161,7 @@ class Keys(unittest.TestCase):
         p.key('enter'); self.assertEqual(p.key('space'), CHOSEN)
     def test_quit_resync_and_empty(self):
         p = many(2)
-        self.assertEqual(p.key('esc'), QUIT); self.assertEqual(p.key('q'), QUIT); self.assertEqual(p.key('space'), NONE)
+        self.assertEqual(p.key('esc'), NONE); self.assertEqual(p.key('q'), QUIT); self.assertEqual(p.key('space'), NONE)
         self.assertEqual(c().gm_event(p.m, 0, 3, 0), RESYNC); self.assertEqual(c().gm_event(p.m, 0, 0, 0), NONE)
         self.assertEqual(c().gm_event(p.m, 3, 0, 100), NONE)                                  # axes do nothing yet
         e = page()

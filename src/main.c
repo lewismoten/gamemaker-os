@@ -661,6 +661,11 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
           p = put(p, " before tick "); num(p, game.total_ticks + 1); say(line);
         }
         int q = gs_event(&game, ev[i].type, ev[i].code, ev[i].value);
+        if(q & (GS_SAVE|GS_LOAD)) {
+          if(sp_ok) {sp_on=1;ge_saving((q&GS_SAVE)!=0);sp_start(&sp,(q&GS_SAVE)?SP_SAVE:SP_LOAD,&save_sbx_ops,sp_key,&game,clock_ns());}
+          else gs_resume(&game,clock_ns());
+          sp_draw=1;
+        }
         if (q & GS_DRAW) sp_draw = 1;
         if (q & GS_EXIT) {r = GS_EXIT; break;}
         if (game.phase == GS_SCORES) break;

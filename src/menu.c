@@ -210,27 +210,14 @@ static int search_event(struct gm_menu *m, uint16_t code, int32_t value) {
     return GM_MOVED;
   }
   if (m->search_keyboard && (code==103 || code==108 || code==105 || code==106 || code==28)) {
-    unsigned k=m->keyboard_pos;
-    if (code==103) {
-      if(k<9) {m->search_active=m->search_keyboard=0;m->tabs_focus=1;return GM_MOVED;}
-      k=k>=36?27+((k-36)*3>8?8:(k-36)*3):k-9;
-    } else if(code==108) {
-      if(k<27) k+=9;
-      else if(k<36) k=36+(k-27)/3;
-    } else if(code==105) {if(k && (k>=36?k>36:k%9!=0))k--;}
-    else if(code==106) {if(k<39 && (k>=36 || k%9!=8))k++;}
-    else if(value==1) {
-      unsigned n=0;while(m->query[n])n++;
-      if(k==39) {m->search_keyboard=0;return GM_MOVED;}
-      if(k==38) m->query[0]=0;
-      else if(k==37) {if(n)m->query[n-1]=0;}
-      else if(n<24) {m->query[n]=k==36?' ':GM_SEARCH_KEYS[k];m->query[n+1]=0;}
-      m->pos[GM_CAT_SEARCH]=0;gm_refresh(m);
-    }
-    m->keyboard_pos=k;return GM_MOVED;
+    if(code==103 && m->keyboard_pos<9) {m->search_active=m->search_keyboard=0;m->tabs_focus=1;return GM_MOVED;}
+    int c=osk_press(&m->keyboard_pos,code,value);
+    if(c==13) {m->search_keyboard=0;return GM_MOVED;}
+    if(c) {osk_edit(m->query,24,c);m->pos[GM_CAT_SEARCH]=0;gm_refresh(m);}
+    return GM_MOVED;
   }
   if (code==103 || code==108 || code==105 || code==106) {
-    if (code==103 && m->pos[m->tab]<GM_COLS) {m->search_active=0;m->tabs_focus=1;return GM_MOVED;}
+    if (code==103 && m->pos[m->tab]%GM_PAGE<GM_COLS) {m->search_active=0;m->tabs_focus=1;return GM_MOVED;}
     return grid_move(m,code);
   }
   if (code==28 && value==1 && gm_selected(m)) {
@@ -286,6 +273,8 @@ int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
     if (code == 28 || code == 57) {             /* Enter, Space */
       if (m->button == GM_BTN_PLAY) return GM_CHOSEN;
       if (m->button == GM_BTN_FAVORITE) return gm_favorite(m);
+      if (m->button == GM_BTN_SCORES) return GM_SCORES;
+      if (m->button == GM_BTN_MUSIC) {m->background_music=!m->background_music;return GM_MUSIC;}
       m->view = GM_GRID; m->search_active=m->tab==GM_CAT_SEARCH; return GM_MOVED;
     }
     if (code == 35) return GM_SCORES;           /* H */
@@ -295,12 +284,12 @@ int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
   if (code == 15) return next_tab(m, m->shift ? -1 : 1); /* KEY_TAB (repeats too) */
   if (code == 27) return next_tab(m, 1);          /* ] */
   if (code == 26) return next_tab(m, -1);         /* [ */
-  if (code==103 && m->pos[m->tab]<GM_COLS && m->count) {m->tabs_focus=1;return GM_MOVED;}
+  if (code==103 && m->pos[m->tab]%GM_PAGE<GM_COLS && m->count) {m->tabs_focus=1;return GM_MOVED;}
   if (code==28 && m->tab==GM_CAT_SEARCH) {m->search_active=1;return GM_MOVED;}
   int r = grid_move(m, code);
   if (r != GM_NONE || value != 1) return r;      /* no repeats past here */
   if (code == 28 && gm_selected(m)) {m->detail_id=(unsigned)(gm_selected(m)-m->games); m->view = GM_DETAILS; m->button = GM_BTN_PLAY; m->message[0] = 0; return GM_MOVED;} /* KEY_ENTER */
   if (code == 35 && gm_selected(m)) return GM_SCORES; /* KEY_H */
-  if (code == 1 || code == 16) return GM_QUIT;   /* KEY_ESC, KEY_Q */
+  if (code == 16) return GM_QUIT;   /* Q quits; Back/Esc stays in the library. */
   return GM_NONE;
 }

@@ -25,6 +25,8 @@ class SavePlayTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn('ALL PASS', r.stdout)
 
+    def test_remote_name_and_save(self): self.probe(7)
+
     def test_names_open_error_preserves_all_names(self): self.probe(0)
     def test_names_partial_read_error_preserves_all_names(self): self.probe(1)
     def test_missing_names_can_be_created(self): self.probe(2)

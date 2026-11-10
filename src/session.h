@@ -18,8 +18,8 @@
 #define GS_TICK_NS10 549254157ull
 #define GS_FADE_STEPS 65u /* FadeTo: 65 steps, one a vertical retrace (70 Hz) */
 #define GS_KEY_WAIT 65535u
-enum {GS_DRAW = 1, GS_EXIT = 2};
-enum {GS_CARDS, GS_PLAY, GS_DONE, GS_MENU, GS_SCORES};
+enum {GS_DRAW = 1, GS_EXIT = 2, GS_SAVE = 4, GS_LOAD = 8};
+enum {GS_CARDS, GS_PLAY, GS_DONE, GS_MENU, GS_SCORES, GS_PAUSED};
 /* What the pages phase is doing. */
 enum {GS_NEXT, GS_FADE, GS_FLI, GS_PAUSE, GS_LEVEL_IN, GS_LEVEL_OUT};
 struct gs_card {
@@ -36,6 +36,7 @@ struct gs_session {
   void (*say)(const char *line);
   int phase, stage, levels;
   int after;                    /* what follows the pages: GS_PLAY (begin or finish) or GS_DONE */
+  int pause_choice;
   int launcher, choice, score_check, menu_valid, menu_loading; /* DOS launcher, selected row, finished play */
   struct dm_look look;
   int begun;                    /* the first level has started */
@@ -85,7 +86,9 @@ void gs_demo_stop(struct gs_session *s);
 #define GS_DEMO_IDLE_NS 3000000000ull
 int gs_demo_idle_due(uint64_t last_input_ns, uint64_t now_ns);
 int gs_demo_stops(uint16_t type, int32_t value);
-/* One input event (Linux codes). Esc leaves the game (returns GS_EXIT). */
+/* One input event (Linux codes). Launcher play: Esc opens the pause menu;
+ * Save/Load choices return GS_SAVE/GS_LOAD for the board to open sp_menu.
+ * Direct sessions retain Esc to leave (GS_EXIT). */
 int gs_event(struct gs_session *s, uint16_t type, uint16_t code, int32_t value);
 /* Moves time on to now: fades, animation frames, pauses and pages, or the game
    ticks due (at most 4 at once). GS_DRAW when the picture changed, GS_EXIT
