@@ -16,6 +16,7 @@ enum {SP_PICK, SP_NAME, SP_MSG};
 enum {SP_DRAW = 1, SP_DONE = 2, SP_LOADED = 4, SP_FATAL = 8};
 struct sp_menu {
   int mode, stage, sel, shift, ctrl, cur_on, cur_drawn;
+  int names_error; /* unread names must never be replaced with blank records */
   const struct save_ops *ops; char key[9];
   struct gs_session *s;
   char names[SP_SLOTS][SP_NAME_MAX + 1];

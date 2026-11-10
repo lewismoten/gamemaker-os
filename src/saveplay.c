@@ -59,6 +59,7 @@ void sp_start(struct sp_menu *m, int mode, const struct save_ops *ops, const cha
   for (unsigned i = 0; i < NAMES_BYTES; i++) raw[i] = 0;
   int e = save_get(ops, m->key, "SAVNAMES.DAT", raw, sizeof raw, &got);
   if (e == SAVE_EFBIG) e = 0; /* DOS reads the first 210 bytes */
+  m->names_error = e == SAVE_ENOENT ? 0 : e;
   int drawn = mode == SP_SAVE || !e; /* SelectGameToLoad shows the names only if the file opens */
   for (unsigned i = 0; i < SP_SLOTS; i++) {
     unsigned c = 0; for (; c < SP_NAME_MAX; c++) {char ch = (char)raw[i * 21 + c]; if (!ch) break; m->names[i][c] = ch;}
@@ -67,18 +68,19 @@ void sp_start(struct sp_menu *m, int mode, const struct save_ops *ops, const cha
   }
   m->prev = pixel(m, 60, marker_y(1)); marker(m, m->mark_col);
 }
-static void write_names(struct sp_menu *m) { /* PLAYGAME writes SavNames.dat before the game; a failure is not reported */
+static int write_names(struct sp_menu *m) { /* PLAYGAME writes SavNames.dat before the game. */
+  if (m->names_error) return m->names_error; /* a failed/partial read cannot authorize replacing the other names */
   uint8_t raw[NAMES_BYTES]; for (unsigned i = 0; i < NAMES_BYTES; i++) raw[i] = 0;
   for (unsigned i = 0; i < SP_SLOTS; i++) for (unsigned c = 0; m->names[i][c]; c++) raw[i * 21 + c] = (uint8_t)m->names[i][c];
-  save_put(m->ops, m->key, "SAVNAMES.DAT", raw, sizeof raw);
+  return save_put(m->ops, m->key, "SAVNAMES.DAT", raw, sizeof raw);
 }
-static int do_save(struct sp_menu *m, unsigned slot, uint64_t now) {
+static int do_save(struct sp_menu *m, unsigned slot, int name_error, uint64_t now) {
   uint32_t cap, ncap, n = 0; uint8_t *wire = gs_wire(&cap); struct save_game *g = gs_state_buf(&ncap); char f[16]; slot_file(f, slot);
   int e = gp_state_save(g) ? -1 : save_game_encode(g, wire, cap, &n);
   if (!e) e = save_put(m->ops, m->key, f, wire, n);
   if (e) {message(m, 40, "I cannot save your game!", now); if (m->s->say) m->s->say("GMOS game not saved"); return SP_DRAW;}
-  message(m, 112, "Game Saved!", now);
-  if (m->s->say) m->s->say("GMOS game saved");
+  message(m, name_error ? 40 : 112, name_error ? "Game saved; name not saved!" : "Game Saved!", now);
+  if (m->s->say) m->s->say(name_error ? "GMOS game saved; name not saved" : "GMOS game saved");
   return SP_DRAW;
 }
 /* LoadGame: read and check the file first; the play is replaced only once it is whole. The play before is kept (as DOS
@@ -133,8 +135,8 @@ int sp_event(struct sp_menu *m, uint16_t type, uint16_t code, int32_t value, uin
   cursor(m, 0); m->blink = now; m->cur_on = 1;
   if (code == K_ENTER || code == K_KPENTER) {
     if (value != 1) {cursor(m, 1); return SP_DRAW;}
-    write_names(m);
-    return do_save(m, (unsigned)m->sel, now);
+    int name_error = write_names(m);
+    return do_save(m, (unsigned)m->sel, name_error, now);
   }
   if (code == K_BACK || code == K_LEFT) {
     if (m->len) {m->len--; fill(m->s->px, 80 + (int)m->len * 8, y, 80 + (int)(m->len + 1) * 8 - 1, y + 7, m->back); ans[m->len] = 0;}

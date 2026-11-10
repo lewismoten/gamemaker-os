@@ -22,6 +22,9 @@ This command belongs to native GMOS play, not the JS `<game>` element.
 
 Names are written before the slot, in separate staged transactions. A slot
 write can fail after its name changes; the pair is not one atomic save.
+If the names file cannot be read (other than being absent), it is left untouched
+for that menu session; a successful slot save with a failed name read or write
+shows "Game saved; name not saved!".
 Missing or refused saves show a message. The loader backs up current play
 before replacement and attempts rollback if loading a level fails; failure of
 both load and rollback ends the game. No checksum or game identifier exists
@@ -32,6 +35,8 @@ fields it uses on load. Invalid monster records keep the fresh level's record.
 Fields absent from the core, including DOS screen pointers and the recorder,
 are zero on save; the codec below preserves opaque bytes independently.
 This is not full DOS runtime equivalence or demo recording support.
+The DOS `.SAV` format has no camera pixel-offset field, so loading during a block
+scroll redraws from the saved map origin and may visibly shift the view.
 
 ## Reference and compatibility boundary
 

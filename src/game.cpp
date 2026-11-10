@@ -385,6 +385,9 @@ extern "C" int gp_state_load(const struct save_game *g) {
   int curtop = (int8_t)ci[15], curbottom = (int8_t)ci[16];
   if (lv < 0 || cx0 < 0 || cx0 >= gm::MLEN || cy0 < 0 || cy0 >= gm::MWID || g->map_x < 0 || g->map_x >= gm::MLEN || g->map_y < 0 || g->map_y >= gm::MWID) return -1;
   if (cseq < 0 || cseq >= gm::MAXSEQ || cframe < -1 || cframe > gm::MAXFRAME || curtop < 0 || curtop > gm::CHARBL || curbottom < 0 || curbottom > gm::CHARBL) return -1;
+  // CHAR.H: sequence.key's upper byte is a scan code. The core indexes keydn[128]
+  // with it, including inactive sequences when they later run. Refuse before changing play.
+  for (int i = 0; i < gm::MAXSEQ; i++) if (ch[i * gm::SEQ_BYTES + 171] >= sizeof w->keydn) return -1;
   for (int i = 0; i < gm::BACKBL; i++) if (g->block_map[i] > gm::BACKBL) return -1;
   for (int i = 0; i < g->block_count; i++) if (g->blocks[i].block >= gm::BACKBL) return -1;
   for (int l = 0; l < gm::LASTMM; l++) if (g->monster_map[l][0] > gm::LASTMON) return -1;
