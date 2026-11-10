@@ -17,6 +17,7 @@
 #include "hisload.h"
 #include "menu.h"
 #include "sdpack.h"
+#include "saveplay.h"
 #include "sdzip.h"
 #include "session.h"
 #include "thumb.h"
@@ -404,7 +405,9 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   static sbx_input_event ev[16]; uint64_t got;
   uint32_t frames = 0, step_max = 0, draw_max = 0, late_max = 0, logged = 0, shown = 0;
   uint64_t since = clock_ns();
-  int r = GS_DRAW, started = 0;
+  int r = GS_DRAW, started = 0, sp_on = 0, sp_draw = 0;
+  static struct sp_menu sp; char sp_stem[9], sp_key[9]; int sp_ok = !hl_stem(gamname, sp_stem);
+  if (sp_ok) hl_key(sp_stem, where[g - menu.games].path, gamname, sp_key);
   for (;;) {
     heartbeat();
     if (r & GS_DRAW) {
@@ -422,12 +425,24 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     }
     if (r & GS_EXIT) break;
     if (started) {game.t0 = clock_ns(); game.ticks = 0; started = 0;} /* a level's clock starts once its files are read and its first frame is up */
-    uint64_t wake = gs_wake(&game, clock_ns());
+    uint64_t wake = sp_on ? sp_wake(&sp, clock_ns()) : gs_wake(&game, clock_ns());
     sbx_sleep_until(wake);
     int32_t s = -SBX_EAGAIN;
     while (have_input && !(s = sbx_read(in_fd, ev, sizeof ev, &got))) {
       for (uint32_t i = 0; i < got / sizeof ev[0]; i++) {
         if (ev[i].type == 0 && ev[i].code == 3) {sbx_input_state st; sbx_input_state_get(in_fd, &st); gp_release_all(); say("GMOS input resync after SYN_DROPPED"); break;}
+        if (sp_on || (ev[i].type == 1 && ev[i].value == 1 && (ev[i].code == 63 || ev[i].code == 64) && sp_ok && game.phase == GS_PLAY && !game.demo)) {
+          /* PLAYGAME's F5 (SaveGame) and F6 (LoadGame): the play waits while the screen is up (PLAYGAME.C 1609-1613) */
+          int q;
+          if (!sp_on) {
+            gp_release_all(); sp_on = 1;
+            sp_start(&sp, ev[i].code == 63 ? SP_SAVE : SP_LOAD, &save_sbx_ops, sp_key, &game, clock_ns()); q = SP_DRAW;
+          } else q = sp_event(&sp, ev[i].type, ev[i].code, ev[i].value, clock_ns());
+          if (q & SP_DRAW) sp_draw = 1;
+          if (q & SP_FATAL) {game.phase = GS_DONE; r = GS_EXIT; break;} /* a failed load that could not be undone */
+          if (q & SP_DONE) {sp_on = 0; game.showing_card = 0; gs_resume(&game, clock_ns()); sp_draw = 1;}
+          continue;
+        }
         if (ev[i].type == 1 && ev[i].value != 2 && game.phase == GS_PLAY && gs_scan(ev[i].code) && ev[i].code != 1) {
           p = put(line, "GMOS key "); p = num(p, (uint32_t)gs_scan(ev[i].code)); p = put(p, ev[i].value ? " down" : " up");
           p = put(p, " before tick "); num(p, game.total_ticks + 1); say(line);
@@ -442,7 +457,15 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     uint64_t t = clock_ns();
     if (game.phase == GS_PLAY) {uint64_t due = gs_wake(&game, t); if (t > due) {uint32_t l = (uint32_t)((t - due) / 1000u); if (l > late_max) late_max = l;}}
     uint32_t before = game.total_ticks; int was = game.phase;
+    if (sp_on) { /* the screen's own clock: the cursor blink, the two seconds of a message */
+      int q = sp_step(&sp, t); r = 0;
+      if (q & SP_DRAW) r = GS_DRAW;
+      if (q & SP_DONE) {sp_on = 0; game.showing_card = 0; gs_resume(&game, clock_ns()); r = GS_DRAW;}
+      if (sp_draw) {r |= GS_DRAW; sp_draw = 0;}
+      continue;
+    }
     r = gs_step(&game, t);
+    if (sp_draw) {r |= GS_DRAW; sp_draw = 0;}
     uint32_t dt = (uint32_t)((clock_ns() - t) / 1000u); if (game.ran && dt > step_max) step_max = dt;
     if (was != GS_PLAY && game.phase == GS_PLAY) started = 1;
     if (was == GS_PLAY && game.phase == GS_CARDS) { /* the level ended: the session lets go of every key */
