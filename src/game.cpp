@@ -14,6 +14,9 @@
 // A freestanding C++ build declares no abs(); the board gets it from src/libc.c.
 extern "C" int abs(int);
 #include "gmcore.h"
+extern "C" {
+#include "savefile.h"
+}
 
 namespace {
 using gm::BLOCK_BYTES;
@@ -248,6 +251,8 @@ extern "C" const char *gp_graphic(int slot, int level) {
     case GP_EXIT: return level >= 0 && level < nplay ? fileOf(play[level], F_EXIT) : "";
     case GP_MENU: return fileOf(0, 2);
     case GP_SCORES: return fileOf(0, 8); // the high score screen's backdrop
+    case GP_LOADPIC: return fileOf(0, F_INTRO); // Game.File(0,9): the Load Game picture
+    case GP_SAVEPIC: return fileOf(0, F_EXIT);  // Game.File(0,10): the Save Game picture
   }
   return "";
 }
@@ -319,3 +324,110 @@ extern "C" uint32_t gp_frame_hash(void) {
 }
 // The world itself, for the host tests' state lines (game_host.h).
 gm::World &gp_world() { return *w; }
+
+// ---- save and load (PLAYGAME.C SaveGame and LoadGame; the wire layout is savefile.h's) ----------------
+// The core is a port, so its state is written into the DOS records field by field and read back the same
+// way: cinfo (135 bytes), chrstruct (3784), minfo (55) and monmapstruct (10) as PLAYGAME.C 113-172 and
+// CHAR.H 10-55 declare them. What the core has no field for (screen save pointers, the recorder) is zero.
+namespace {
+void p16(uint8_t *d, int v) { d[0] = (uint8_t)v; d[1] = (uint8_t)(v >> 8); }
+void p32(uint8_t *d, uint32_t v) { p16(d, (int)(v & 0xffff)); p16(d + 2, (int)(v >> 16)); }
+int g16(const uint8_t *d) { return (int16_t)(d[0] | d[1] << 8); }
+uint32_t g32(const uint8_t *d) { return (uint32_t)d[0] | (uint32_t)d[1] << 8 | (uint32_t)d[2] << 16 | (uint32_t)d[3] << 24; }
+constexpr int CHR_BYTES = 3784;
+bool miOk(const uint8_t *m) {  // a monster record the core can run (offsets: minfo, PLAYGAME.C 113-146)
+  int x = g16(m + 5), y = g16(m + 9), march = (int8_t)m[21], pic = g16(m + 22), dest = (int8_t)m[42];
+  return x >= 0 && x < gm::MLEN && y >= 0 && y < gm::MWID && march >= 0 && march <= 1 && pic >= -1 && pic <= gm::LASTSL && dest >= 0 && dest <= gm::MAXMARCH;
+}
+}  // namespace
+extern "C" int gp_state_save(struct save_game *g) {
+  if (!w || nplay <= 0 || w->level < 0 || w->level >= nplay) return -1;
+  memset(g, 0, sizeof *g);
+  const int cells = gm::MLEN * gm::MWID;
+  g->block_count = (uint8_t)w->nblkMon;
+  g->prevscene = (int16_t)play[w->level]; g->doscene = (int16_t)play[w->level]; g->linkin = 0;
+  g->sound_clock = w->clock << 3;  // SndClock runs eight times the slow clock the core keeps
+  for (int i = 0; i < gm::BACKBL; i++) { g->next_change[i] = w->nxtchg[i]; g->block_map[i] = w->blkmap[i]; }
+  uint8_t *ci = g->character_info;
+  p32(ci, (uint32_t)w->score); ci[12] = w->update; ci[13] = w->topthere; ci[14] = w->bottomthere; ci[15] = (uint8_t)w->curtop; ci[16] = (uint8_t)w->curbottom;
+  p16(ci + 17, w->nextx); p16(ci + 19, w->nexty); p16(ci + 21, w->scrx); p16(ci + 23, w->scry); p16(ci + 25, w->oldx); p16(ci + 27, w->oldy);
+  ci[31] = (uint8_t)w->netx; ci[32] = (uint8_t)w->nety; p16(ci + 33, w->gravx); p16(ci + 35, w->gravy);
+  p16(ci + 37, w->hitpts); p16(ci + 39, w->lives); p32(ci + 41, w->nextAni);
+  for (int i = 0; i < gm::MAXINV; i++) ci[45 + i] = (uint8_t)w->inv[i];
+  for (int i = 0; i < 30; i++) p16(ci + 55 + 2 * i, w->meter[i]);
+  for (int i = 0; i < gm::MAXSEQ; i++) ci[115 + i] = (uint8_t)w->seqon[i];
+  uint8_t *ch = g->character;
+  if (chrN >= CHR_BYTES) memcpy(ch, chr, CHR_BYTES);
+  p16(ch + 3700, w->cx[0]); p16(ch + 3702, w->cx[1]); p16(ch + 3706, w->cy[0]); p16(ch + 3708, w->cy[1]);
+  ch[3712] = (uint8_t)w->cframe; ch[3713] = (uint8_t)w->cseq;
+  g->map_x = (int16_t)w->mx; g->map_y = (int16_t)w->my;
+  for (int l = 0; l < gm::LASTMM; l++) {
+    const gm::MonInfo &m = w->mi[l]; uint8_t *d = g->monster_info[l];
+    d[0] = (uint8_t)m.fromchar; p16(d + 1, m.deltaX); p16(d + 3, m.deltaY);
+    p16(d + 5, m.curx[0]); p16(d + 7, m.curx[1]); p16(d + 9, m.cury[0]); p16(d + 11, m.cury[1]);
+    p16(d + 13, m.targetX); p16(d + 15, m.targetY); p16(d + 17, m.offl); p16(d + 19, m.offs);
+    d[21] = (uint8_t)m.curMarch; p16(d + 22, m.curPic); d[24] = (uint8_t)m.orient;
+    p16(d + 30, m.scrX); p16(d + 32, m.scrY); p16(d + 34, gm::OFFSCRN); p16(d + 36, gm::OFFSCRN);
+    d[42] = (uint8_t)m.dest; p32(d + 43, m.nextAni); p32(d + 47, m.nextMove); p32(d + 51, m.birthTime);
+    uint8_t *e = g->monster_map[l]; e[0] = w->mm[l].monnum; p16(e + 4, w->mm[l].curx); p16(e + 6, w->mm[l].cury);
+  }
+  for (int i = 0; i < cells; i++) { g->map[i / gm::MLEN][i % gm::MLEN][0] = w->map[i]; g->map[i / gm::MLEN][i % gm::MLEN][1] = w->mapMon[i]; }
+  g->monster_count = w->noMons;  // NoMons: TRUE when the level has no monsters
+  for (int i = 0; i < w->nblkMon; i++) { g->blocks[i].block = (uint8_t)w->blkMonBl[i]; g->blocks[i].next_time = w->blkMonNext[i]; }
+  return 0;
+}
+extern "C" int gp_state_load(const struct save_game *g) {
+  if (!w || nplay <= 0) return -1;
+  const int cells = gm::MLEN * gm::MWID;
+  int lv = levelOf(g->doscene);
+  const uint8_t *ci = g->character_info, *ch = g->character;
+  int cx0 = g16(ch + 3700), cy0 = g16(ch + 3706), cframe = (int8_t)ch[3712], cseq = (int8_t)ch[3713];
+  int curtop = (int8_t)ci[15], curbottom = (int8_t)ci[16];
+  if (lv < 0 || cx0 < 0 || cx0 >= gm::MLEN || cy0 < 0 || cy0 >= gm::MWID || g->map_x < 0 || g->map_x >= gm::MLEN || g->map_y < 0 || g->map_y >= gm::MWID) return -1;
+  if (cseq < 0 || cseq >= gm::MAXSEQ || cframe < -1 || cframe > gm::MAXFRAME || curtop < 0 || curtop > gm::CHARBL || curbottom < 0 || curbottom > gm::CHARBL) return -1;
+  for (int i = 0; i < gm::BACKBL; i++) if (g->block_map[i] > gm::BACKBL) return -1;
+  for (int i = 0; i < g->block_count; i++) if (g->blocks[i].block >= gm::BACKBL) return -1;
+  for (int l = 0; l < gm::LASTMM; l++) if (g->monster_map[l][0] > gm::LASTMON) return -1;
+  for (int i = 0; i < cells; i++) if (g->map[i / gm::MLEN][i % gm::MLEN][1] > gm::LASTMM) return -1;
+  // The checks passed: the level's own files, then the state over them (LoadGame's order).
+  w->score = (int32_t)g32(ci); w->hitpts = g16(ci + 37); w->lives = g16(ci + 39);
+  for (int i = 0; i < 30; i++) w->meter[i] = g16(ci + 55 + 2 * i);
+  for (int i = 0; i < gm::MAXINV; i++) w->inv[i] = ci[45 + i];
+  if (w->level != lv) { w->prevToX = cx0; w->prevToY = cy0; }
+  w->pendKind = 0; w->nsnd = 0; w->won = false;
+  if (!w->enterLevel(lv, cx0, cy0)) return -2;
+  memcpy(chr, ch, CHR_BYTES); if (chrN < CHR_BYTES) chrN = CHR_BYTES;  // LoadGame reads the character, sequences included, from the save
+  w->score = (int32_t)g32(ci); w->hitpts = g16(ci + 37); w->lives = g16(ci + 39);
+  for (int i = 0; i < 30; i++) w->meter[i] = g16(ci + 55 + 2 * i);
+  for (int i = 0; i < gm::MAXINV; i++) w->inv[i] = ci[45 + i];
+  for (int i = 0; i < gm::MAXSEQ; i++) w->seqon[i] = (int8_t)ci[115 + i];
+  w->update = ci[12] != 0; w->netx = (int8_t)ci[31]; w->nety = (int8_t)ci[32]; w->gravx = g16(ci + 33); w->gravy = g16(ci + 35);
+  w->cx[0] = cx0; w->cx[1] = g16(ch + 3702); w->cy[0] = cy0; w->cy[1] = g16(ch + 3708); w->cframe = cframe; w->cseq = cseq;
+  w->curtop = curtop; w->curbottom = curbottom;
+  w->topthere = w->bottomthere = false;  // LoadGame: the character is drawn again from the next frame
+  w->nextx = w->scrx = w->nexty = w->scry = w->oldx = w->oldy = gm::OFFSCRN;
+  w->clock = g->sound_clock >> 3; w->gclk = w->clock; w->nextAni = g32(ci + 41);
+  w->mx = g->map_x; w->my = g->map_y;
+  for (int i = 0; i < gm::BACKBL; i++) { w->nxtchg[i] = g->next_change[i]; w->blkmap[i] = g->block_map[i]; }
+  for (int i = 0; i < cells; i++) { w->map[i] = g->map[i / gm::MLEN][i % gm::MLEN][0]; w->mapMon[i] = g->map[i / gm::MLEN][i % gm::MLEN][1]; }
+  w->noMons = g->monster_count != 0;
+  for (int l = 0; l < gm::LASTMM; l++) {
+    const uint8_t *e = g->monster_map[l];
+    w->mm[l] = {e[0], (uint8_t)e[4], (uint8_t)e[6]};
+    const uint8_t *d = g->monster_info[l];
+    if (!miOk(d)) continue;  // a damaged record keeps the fresh one the level was entered with
+    gm::MonInfo &m = w->mi[l];
+    m.fromchar = (int8_t)d[0]; m.deltaX = g16(d + 1); m.deltaY = g16(d + 3);
+    m.curx[0] = g16(d + 5); m.curx[1] = g16(d + 7); m.cury[0] = g16(d + 9); m.cury[1] = g16(d + 11);
+    m.targetX = g16(d + 13); m.targetY = g16(d + 15); m.offl = g16(d + 17); m.offs = g16(d + 19);
+    m.curMarch = (int8_t)d[21]; m.curPic = g16(d + 22); m.orient = d[24];
+    m.scrX = m.scrY = gm::OFFSCRN;
+    m.dest = (int8_t)d[42]; m.nextAni = g32(d + 43); m.nextMove = g32(d + 47); m.birthTime = g32(d + 51);
+  }
+  w->nblkMon = g->block_count;
+  for (int i = 0; i < w->nblkMon; i++) { w->blkMonBl[i] = g->blocks[i].block; w->blkMonNext[i] = g->blocks[i].next_time; }
+  w->resetKeys(); w->releaseAll(); w->npending = 0;
+  w->doScroll = false; w->gen++;
+  w->buildDrawList();
+  return 0;
+}
