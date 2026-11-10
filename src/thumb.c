@@ -7,7 +7,9 @@
 #include "rgb565.h"
 #define W 320u
 #define H 200u
-static uint8_t file[1024 * 1024], list[4096], frame[W * H], frame_pal[768];
+extern uint8_t gp_file_buf[1024 * 1024]; /* session.c: one 1 MiB read buffer for both */
+#define file gp_file_buf
+static uint8_t list[4096], frame[W * H], frame_pal[768];
 static uint16_t cache[GM_THUMB_SLOTS][GM_THUMB_W * GM_THUMB_H];
 static uint32_t used[GM_THUMB_SLOTS], clock;
 static int16_t owner[GM_THUMB_SLOTS];

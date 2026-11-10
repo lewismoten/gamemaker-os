@@ -15,7 +15,9 @@
 #define INPUT_POLL_NS 20000000ull /* while a page shows, look at input every 20 ms */
 #define KEY_BUFFER 15u
 /* Pictures and animations are read whole (the largest FLI in the Sandbox games is 658 KB). */
-static uint8_t file[1024 * 1024], text[64 * 1024], saved[GP_W * GP_H], canvas[GP_FLI_PIXELS], canvas_pal[768];
+uint8_t gp_file_buf[1024 * 1024]; /* also thumb.c's read buffer: thumbs load in the menu, never while a session plays */
+#define file gp_file_buf
+static uint8_t text[64 * 1024], saved[GP_W * GP_H], canvas[GP_FLI_PIXELS], canvas_pal[768];
 static uint8_t listnext;
 static const uint8_t black[768];
 static char *put(char *p, const char *s) {while (*s) *p++ = *s++; *p = 0; return p;}
