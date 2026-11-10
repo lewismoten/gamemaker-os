@@ -39,6 +39,11 @@ void snd_game(struct gs_sound *s, const char *gam) {
   gp_take_sound(); /* nothing from before the game */
   say(s, line, p);
 }
+void snd_voc_file(char *out, const char *voc) {
+  unsigned k = 0;
+  for (; voc[k] && k < 8; k++) out[k] = voc[k] >= 'a' && voc[k] <= 'z' ? (char)(voc[k] - 32) : voc[k];
+  out[k++] = '.'; out[k++] = 'V'; out[k++] = 'O'; out[k++] = 'C'; out[k] = 0;
+}
 void snd_music(struct gs_sound *s, const char *cmf) {
   if (!s->active) return;
   char line[LINE_MAX], *end = line + LINE_MAX - 1, *p;
@@ -54,7 +59,10 @@ void snd_effect(struct gs_sound *s, uint32_t tick) {
   s->last_fx = n; s->last_tick = tick;
   char line[LINE_MAX], *end = line + LINE_MAX - 1, *p;
   const char *voc = gp_voc_name(n);
-  if (voc[0]) {p = path(word(line, end, "SND voc "), end, s, voc); p = word(p, end, ".VOC");}
+  if (voc[0]) {
+    p = path(word(line, end, "SND voc "), end, s, voc); p = word(p, end, ".VOC");
+    if (s->event) {char nm[SND_VOC_NAME_MAX]; snd_voc_file(nm, voc); s->event(s->event_user, SND_EV_VOC, nm, 0);}
+  }
   else {
     p = path(word(line, end, "SND beep "), end, s, gp_sound_file()); p = word(p, end, " "); p = num(p, end, (uint32_t)n);
     if (s->event) s->event(s->event_user, SND_EV_BEEP, gp_sound_file(), n);

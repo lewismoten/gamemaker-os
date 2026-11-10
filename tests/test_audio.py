@@ -5,7 +5,7 @@ import array, math, os, subprocess, sys, tempfile, unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ['src/opl.c', 'src/opl_tables.c', 'src/cmf.c', 'src/audio.c', 'src/pcspeaker.c']
+SRC = ['src/opl.c', 'src/opl_tables.c', 'src/cmf.c', 'src/audio.c', 'src/vocplay.c', 'src/pcspeaker.c']
 sys.path.insert(0, str(ROOT / 'tests'))
 from audio_cmf import make_cmf
 

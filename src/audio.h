@@ -3,10 +3,11 @@
  * speaker effects (pcspeaker.h), mixed to 16-bit stereo at 48 kHz and kept fed from the main loop.
  * Nothing here blocks: au_pump asks the ring's level and writes only when it is low, a little at a
  * time, so the 18.2 Hz tick and the heartbeat go on. The mix and gains are the web engine's (audio/engine.ts):
- * the music is 0.12 * 0.8, the speaker's square 0.12 * 0.8. VOC clips are not played (they stay SND log lines). */
+ * the music is 0.12 * 0.8, the speaker's square 0.12 * 0.8. A VOC clip (vocplay.h) is one more voice in the same sum: a new clip cuts the old one, the speaker and the song go on. */
 #pragma once
 #include "cmf.h"
 #include "pcspeaker.h"
+#include "vocplay.h"
 #define AU_LOW_FRAMES 12000u  /* write when fewer frames than this are queued (250 ms: longer than any read the OS does) */
 #define AU_FILL_FRAMES 15000u /* and top up to this many (312 ms; the kernel ring holds 16384, an older one 4096) */
 #define AU_VOL_ONE 32768u     /* master volume 1.0 (Q15); it ramps one step a sample: 0.68 s from silence to full */
@@ -23,7 +24,10 @@ struct au_sink {
   uint64_t (*now)(void *user); /* monotonic ns, for the CPU figures */
 };
 struct au {
-  struct opl opl; struct cmf cmf; struct pcspeaker pc;
+  struct opl opl; struct cmf cmf; struct pcspeaker pc; struct vp vp;
+  /* Opens a clip of the game that is playing: fills io (a pread over its file, or its bytes in memory) and returns 0, or -1. Set by the host. */
+  int (*voc_open)(const char *name, struct vp_io *io);
+  char want_voc[AU_NAME_MAX + 1]; uint8_t voc_pending;
   uint32_t vol, vol_target;    /* master volume, Q15, ramped per sample so nothing clicks */
   uint32_t until_q16;          /* samples to the next sequencer tick, 16 fractional bits */
   int16_t hold[AU_CHUNK * 2]; uint32_t hold_len, hold_off; /* a rendered chunk the ring has not taken yet */
@@ -36,13 +40,15 @@ struct au {
   uint8_t playing;             /* 1: the small queue (a game is being played); 0: the long one (library, preview, loads) */
   uint64_t last_pump_ns, gap_max_ns, svc_max_ns; /* longest time between pumps and longest au_service, while playing */
   /* Counters. */
-  uint64_t frames, total_ns; uint32_t writes, eagain, music_loads, beeps;
+  uint64_t frames, total_ns; uint32_t writes, eagain, music_loads, beeps, vocs, voc_refused;
 };
 /* music: scratch for the song file while it plays (it must stay untouched until the next song or au_stop). */
 void au_init(struct au *a, uint8_t *music, uint32_t music_cap);
 /* The session's events (sound.h): a song (name "" stops it), a beep (tune n of the .SND), everything stops. */
 void au_music(struct au *a, const char *cmf);
 void au_beep(struct au *a, const char *snd, int tune);
+/* A digitized clip (name "NAME.VOC"): the clip playing is cut at once, as PlaySbVocFile does; au_service opens the new one. */
+void au_voc(struct au *a, const char *voc);
 /* A song change or stop fades the playing song out first (au_service does the switch at silence), then fades the new one in. */
 void au_stop(struct au *a);
 /* At once, no fade: the song, the speaker and any request stop, the chip is reset and the volume is 0 (what the ring already holds still plays). */

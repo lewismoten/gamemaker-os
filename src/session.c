@@ -344,7 +344,11 @@ static int demo_step(struct gs_session *s, uint64_t now) {
     char r = gp_tick();
     s->ticks++; s->total_ticks++; s->ran++;
     {int n = gp_take_sound(); /* the preview plays the game's effects, as PLAYGAME's demo does (its play loop is the real one) */
-     if (n >= 0 && s->sound.event && !gp_voc_name(n)[0]) s->sound.event(s->sound.event_user, SND_EV_BEEP, gp_sound_file(), n);}
+     if (n >= 0 && s->sound.event) {
+       const char *voc = gp_voc_name(n);
+       if (!voc[0]) s->sound.event(s->sound.event_user, SND_EV_BEEP, gp_sound_file(), n);
+       else {char nm[SND_VOC_NAME_MAX]; snd_voc_file(nm, voc); s->sound.event(s->sound.event_user, SND_EV_VOC, nm, 0);}
+     }}
     if (r == 'W' || (r == 'D' && gp_lives() <= 0) || ((r == 'L' || r == 'D') && gp_finish())) {gs_demo_stop(s); return GS_EXIT;}
     if (r) gp_release_all(); /* a link or a lost life: the next level or try starts at once, keys let go */
   }

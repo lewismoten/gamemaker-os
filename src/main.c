@@ -346,9 +346,44 @@ static int32_t au_write(void *u, const void *pcm, uint32_t bytes) {
 static uint64_t au_now(void *u) {(void)u; uint64_t t = 0; sbx_clock_ns(&t); return t;}
 static const struct au_sink au_sink = {0, au_query, au_write, au_now};
 static void audio_poll(void) {if (aud_on && !aud_busy) {aud_busy = 1; au_pump(&aud, &au_sink); aud_busy = 0;}}
+/* A clip of the playing game for vocplay.h: a folder's file is streamed (an open fd, 384-byte reads); a pack's or zip's is read whole
+ * into index_text (the library's scan buffer, idle while a game plays; a clip that does not fit is refused). */
+static uint64_t voc_fd, voc_pos; static uint32_t voc_blob_n;
+static int32_t voc_pread(void *u, uint32_t off, void *buf, uint32_t n) {
+  (void)u; uint64_t got = 0;
+  if (voc_fd) {
+    if (voc_pos != off && (sbx_seek(voc_fd, (int64_t)off, &voc_pos) || voc_pos != off)) return -1;
+    if (sbx_read(voc_fd, buf, n, &got)) return -1;
+    voc_pos += got; return (int32_t)got;
+  }
+  if (off >= voc_blob_n) return 0;
+  if (n > voc_blob_n - off) n = voc_blob_n - off;
+  for (uint32_t k = 0; k < n; k++) ((uint8_t *)buf)[k] = index_text[off + k];
+  return (int32_t)n;
+}
+static void voc_close(void *u) {(void)u; if (voc_fd) sbx_close(voc_fd); voc_fd = 0; voc_pos = 0; voc_blob_n = 0;}
+static int voc_open(const char *name, struct vp_io *io) {
+  voc_close(0);
+  io->user = 0; io->pread = voc_pread; io->close = voc_close; io->size = 0;
+  if (game.read == sd_read) {
+    char path[256], clean[256];
+    if (gz_path(name, clean, 0) || gz_noise(clean) || !scan_join(path, (const char *)game.user, clean)) return -1;
+    if (sbx_open(path, length(path), SBX_O_RDONLY, &voc_fd)) {voc_fd = 0; return -1;}
+    uint64_t lo = 0, hi = 1u << 26, pos; /* the length: the largest offset a seek accepts */
+    while (lo < hi) {uint64_t mid = (lo + hi + 1) / 2; if (!sbx_seek(voc_fd, (int64_t)mid, &pos)) lo = mid; else hi = mid - 1;}
+    io->size = (uint32_t)lo; voc_pos = (uint64_t)-1;
+    if (!io->size) {voc_close(0); return -1;}
+    return 0;
+  }
+  if (!game.read) return -1;
+  int32_t n = game.read(game.user, name, index_text, sizeof index_text);
+  if (n <= 0 || (uint32_t)n >= sizeof index_text) return -1;
+  voc_blob_n = io->size = (uint32_t)n;
+  return 0;
+}
 static void au_event(void *u, int kind, const char *name, int n) {
   (void)u;
-  if (kind == SND_EV_MUSIC) au_music(&aud, name); else if (kind == SND_EV_BEEP) au_beep(&aud, name, n); else au_stop(&aud);
+  if (kind == SND_EV_MUSIC) au_music(&aud, name); else if (kind == SND_EV_BEEP) au_beep(&aud, name, n); else if (kind == SND_EV_VOC) au_voc(&aud, name); else au_stop(&aud);
 }
 static void audio_log(const char *what) { /* the kernel's counters, and what the synth cost since the last line */
   sbx_audio_info i; char line[320], *p = put(line, "GMOS audio "); p = put(p, what);
@@ -357,7 +392,7 @@ static void audio_log(const char *what) { /* the kernel's counters, and what the
   p = put(p, ": rendered "); p = num(p, (uint32_t)aud.frames); p = put(p, " frames, queued "); p = num(p, (uint32_t)i.queued_frames);
   p = put(p, ", underruns "); p = num(p, (uint32_t)i.underruns); p = put(p, ", overruns "); p = num(p, (uint32_t)i.overruns);
   p = put(p, ", eagain "); p = num(p, aud.eagain); p = put(p, ", songs "); p = num(p, aud.music_loads);
-  p = put(p, ", beeps "); p = num(p, aud.beeps); p = put(p, ", synth CPU "); p = num(p, t > au_prev_t ? (uint32_t)((aud.total_ns - au_prev_ns) * 1000u / (t - au_prev_t)) : 0);
+  p = put(p, ", beeps "); p = num(p, aud.beeps); p = put(p, ", vocs "); p = num(p, aud.vocs); p = put(p, "/"); p = num(p, aud.voc_refused); p = put(p, ", synth CPU "); p = num(p, t > au_prev_t ? (uint32_t)((aud.total_ns - au_prev_ns) * 1000u / (t - au_prev_t)) : 0);
   p = put(p, " per mille, longest pump gap "); p = num(p, (uint32_t)(aud.gap_max_ns / 1000u)); p = put(p, " us, longest sound read "); p = num(p, (uint32_t)(aud.svc_max_ns / 1000u));
   put(p, " us (while playing); since the last line"); say(line); aud.gap_max_ns = aud.svc_max_ns = 0;
   au_prev_ns = aud.total_ns; au_prev_t = t;
@@ -365,7 +400,7 @@ static void audio_log(const char *what) { /* the kernel's counters, and what the
 static void audio_open(void) {
   if (abi_minor < 8) {say("GMOS audio: kernel ABI below 1.8, SND lines only"); return;}
   if (sbx_open("/dev/audio", 10, SBX_O_WRONLY, &audio_fd)) {say("GMOS audio: /dev/audio not available"); return;}
-  au_init(&aud, bgm_buf, sizeof bgm_buf); game.sound.event = au_event; game.sound.event_user = 0; aud_on = 1; audio_hook = audio_poll;
+  au_init(&aud, bgm_buf, sizeof bgm_buf); aud.voc_open = voc_open; game.sound.event = au_event; game.sound.event_user = 0; aud_on = 1; audio_hook = audio_poll;
   audio_t_open = au_prev_t = clock_ns();
   sbx_audio_info i; char line[80], *p = put(line, "GMOS audio open, ring ");
   if (!sbx_audio_query(audio_fd, &i)) {p = num(p, (uint32_t)i.capacity_frames); p = put(p, " frames at "); p = num(p, (uint32_t)i.rate); put(p, " Hz");} else put(p, "(no query)");
