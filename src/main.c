@@ -783,7 +783,10 @@ static void show_list(uint16_t *px) {
     sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H); say("GMOS library diagnostics"); return;
   }
   const struct gm_game *g = gm_selected(&menu);
-  if (menu.view == GM_DETAILS && g && big_id != (int)(g - menu.games)) {big_id = (int)(g - menu.games); big_ok = !title_picture(g, big_px, big_pal);}
+  if (menu.view == GM_DETAILS && g && big_id != (int)(g - menu.games)) {
+    uint64_t t0 = clock_ns(); big_id = (int)(g - menu.games); big_ok = !title_picture(g, big_px, big_pal);
+    char bl[64], *q = put(bl, "GMOS details picture "); q = put(q, g->dir); q = put(q, " in "); q = num(q, (uint32_t)((clock_ns() - t0) / 1000000u)); put(q, " ms"); say(bl);
+  }
   gm_draw(px, GM_W, &menu, menu.view == GM_DETAILS && big_ok ? big_px : 0, big_pal);
   sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H);
   int pending = 0;
@@ -890,6 +893,10 @@ int main(const sbx_startup *start) {
       }
       if (a == GM_QUIT) {say("GMOS quit"); return 0;}
     }
-    if (redraw) show_list(px);
+    if (redraw) {
+      const struct gm_game *sel = gm_selected(&menu); /* which card, so a log tells where a crash happened */
+      if (sel) {char sl[64], *q = put(sl, menu.view == GM_DETAILS ? "GMOS details " : "GMOS select "); put(q, sel->dir); say(sl);}
+      show_list(px);
+    }
   }
 }
