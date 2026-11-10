@@ -23,6 +23,7 @@
 #include "thumb.h"
 #include "view.h"
 #include "bootart.h"
+#include "eink.h"
 #ifndef GMOS_SCAN_VERBOSE
 #define GMOS_SCAN_VERBOSE 0
 #endif
@@ -272,6 +273,7 @@ static uint16_t *splash_px; static uint64_t splash_t0, splash_last, splash_call;
 /* Called between files and games (the heartbeat): the clock picks the highlight's place, so uneven calls skip shades
    instead of slowing it. At most one redraw every 50 ms; force is the last step before the list. */
 static void splash_tick(int force) {
+  ge_poll();
   uint64_t now = 0; if (!splash_px) return;
   sbx_clock_ns(&now);
   uint32_t gap = (uint32_t)((now - splash_call) / 1000000u); if (gap > splash_gap_ms) splash_gap_ms = gap; /* checkpoint spacing */
@@ -366,6 +368,7 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
   int r = HS_DRAW;
   for (;;) {
     heartbeat();
+    ge_poll();
     if (r & HS_DRAW) {hs_draw(&hsc, hs_px, hs_pal, back ? back_px : 0, back_pal); gs_show(hs_px, hs_pal, px, PLAY_W); sbx_fb_present(fb_fd, 0, 0, PLAY_W, PLAY_H);}
     if (r & HS_DONE) break;
     r = 0;
@@ -402,6 +405,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   p = put(line, "GMOS play ");p=put(p,g->dir);p=put(p,"/");put(p,gamname);say(line);
   if (!gamname[0] || !read || gs_start(&game, read, user, gamname, clock_ns())) {say("GMOS cannot play it"); return;}
   if (screen_mode(PLAY_W, PLAY_H, SBX_FB_XRGB8888)) return;
+  ge_play(g->title);
   static sbx_input_event ev[16]; uint64_t got;
   uint32_t frames = 0, step_max = 0, draw_max = 0, late_max = 0, logged = 0, shown = 0;
   uint64_t since = clock_ns();
@@ -410,6 +414,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   if (sp_ok) hl_key(sp_stem, where[g - menu.games].path, gamname, sp_key);
   for (;;) {
     heartbeat();
+    ge_poll();
     if (r & GS_DRAW) {
       uint64_t d0 = clock_ns();
       gs_draw(&game, px, PLAY_W); sbx_fb_present(fb_fd, 0, 0, PLAY_W, PLAY_H);
@@ -436,11 +441,12 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
           int q;
           if (!sp_on) {
             gp_release_all(); sp_on = 1;
+            ge_saving(ev[i].code == 63);
             sp_start(&sp, ev[i].code == 63 ? SP_SAVE : SP_LOAD, &save_sbx_ops, sp_key, &game, clock_ns()); q = SP_DRAW;
           } else q = sp_event(&sp, ev[i].type, ev[i].code, ev[i].value, clock_ns());
           if (q & SP_DRAW) sp_draw = 1;
           if (q & SP_FATAL) {game.phase = GS_DONE; r = GS_EXIT; break;} /* a failed load that could not be undone */
-          if (q & SP_DONE) {sp_on = 0; game.showing_card = 0; gs_resume(&game, clock_ns()); sp_draw = 1;}
+          if (q & SP_DONE) {sp_on = 0; ge_saving(0); game.showing_card = 0; gs_resume(&game, clock_ns()); sp_draw = 1;}
           continue;
         }
         if (ev[i].type == 1 && ev[i].value != 2 && game.phase == GS_PLAY && gs_scan(ev[i].code) && ev[i].code != 1) {
@@ -460,7 +466,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     if (sp_on) { /* the screen's own clock: the cursor blink, the two seconds of a message */
       int q = sp_step(&sp, t); r = 0;
       if (q & SP_DRAW) r = GS_DRAW;
-      if (q & SP_DONE) {sp_on = 0; game.showing_card = 0; gs_resume(&game, clock_ns()); r = GS_DRAW;}
+      if (q & SP_DONE) {sp_on = 0; ge_saving(0); game.showing_card = 0; gs_resume(&game, clock_ns()); r = GS_DRAW;}
       if (sp_draw) {r |= GS_DRAW; sp_draw = 0;}
       continue;
     }
@@ -481,7 +487,9 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
       frames = step_max = draw_max = late_max = 0; since = clock_ns();
     }
   }
+  ge_saving(0);
   if (game.begun) top_ten(px, g, gp_score(), 0); /* PLAYGAME checks the Top Ten however the game ended */
+  ge_library(menu.count);
   say("GMOS back to the games list");
 }
 /* The demo preview (docs/demo.md): a game left selected on its details view for GS_DEMO_IDLE_NS plays its
@@ -581,6 +589,7 @@ int main(const sbx_startup *start) {
   }
   px = (uint16_t *)surface;
   ba_splash(px, GM_W); sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H); say("GMOS boot splash"); /* until the list is ready */
+  ge_init(start->major, start->minor);
   splash_px = px; sbx_clock_ns(&splash_t0); splash_last = splash_call = splash_t0; beat_hook = splash_tick;
   find_games();
   splash_tick(1); {char l[64], *q = put(l, "GMOS splash longest gap between checkpoints "); q = num(q, splash_gap_ms); put(q, " ms"); say(l);} splash_px = 0; beat_hook = 0; /* a last step, so a quick load still moves once */
@@ -590,6 +599,7 @@ int main(const sbx_startup *start) {
     static const char *const cat[GM_CATS] = {"starter", "sandbox", "bizarre", "cd", "other"};
     p = put(line, "GMOS game "); p = put(p, g->dir); p = put(p, " ["); p = put(p, cat[g->cat]); p = put(p, "]: "); put(p, g->title); say(line);
   }
+  ge_library(menu.count);
   show_list(px);
   cache_flush(); /* the scan cache, now that the list is up (the kernel queues key presses meanwhile) */
   open_input();
@@ -597,6 +607,7 @@ int main(const sbx_startup *start) {
   static sbx_input_event ev[16]; uint64_t got;
   for (;;) {
     heartbeat();
+    ge_poll();
     if (!have_input) {
       sbx_sleep_until(clock_ns() + 100000000ull);
       open_input();

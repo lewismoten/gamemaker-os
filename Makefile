@@ -32,19 +32,22 @@ build/game.o: $(PLAYCORE) src/game.h $(GMCORE) Makefile | build
 	$(CXX) $(PXXFLAGS) -c $(PLAYCORE) -o $@
 build/gmp.o: $(GMPCORE) src/gmp.h Makefile | build
 	$(CXX) $(PXXFLAGS) -Ithird_party/puff -c src/gmp.cpp -o $@
-build/GMOS.ELF: src/main.c src/savefile_sbx.c src/sdpack.c src/sdzip.c build/game.o build/gmp.o $(CORE) $(wildcard src/*.h) $(SDK) sdk/lib/sandbox.ld $(wildcard sdk/include/sandbox/*.h) Makefile | build
-	$(CC) $(PFLAGS) $(LFLAGS) $(SDK) src/main.c src/savefile_sbx.c src/sdpack.c src/sdzip.c $(CORE) build/game.o build/gmp.o -lgcc -o $@
+build/GMOS.ELF: src/main.c src/eink.c src/savefile_sbx.c src/sdpack.c src/sdzip.c build/game.o build/gmp.o $(CORE) $(wildcard src/*.h) $(SDK) sdk/lib/sandbox.ld $(wildcard sdk/include/sandbox/*.h) Makefile | build
+	$(CC) $(PFLAGS) $(LFLAGS) $(SDK) src/main.c src/eink.c src/savefile_sbx.c src/sdpack.c src/sdzip.c $(CORE) build/game.o build/gmp.o -lgcc -o $@
 # The pure parts (title reader, list, drawing, game, session) as a host library
 # for tests/, and gmplay, which prints the Pocket Player host test's state lines.
 HOSTDIR ?= build/host
 HOSTFLAGS ?= -O1
-host: $(HOSTDIR)/libgmos.so $(HOSTDIR)/libsdpack.so $(HOSTDIR)/gmplay $(HOSTDIR)/jsrun
+host: $(HOSTDIR)/libeink.so $(HOSTDIR)/libgmos.so $(HOSTDIR)/libsdpack.so $(HOSTDIR)/gmplay $(HOSTDIR)/jsrun
 $(HOSTDIR):
 	mkdir -p $@
 $(HOSTDIR)/libgmos.so: $(CORE) $(PLAYCORE) $(GMCORE) $(GMPCORE) $(wildcard src/*.h) tests/host/hostio.c tests/host/hostio.h Makefile | $(HOSTDIR)
 	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -fPIC -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore -c $(PLAYCORE) -o $(HOSTDIR)/game.o
 	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -fPIC -Wall -Wextra -Werror -Isrc -Ithird_party/gmcore -Ithird_party/puff -c src/gmp.cpp -o $(HOSTDIR)/gmp.o
 	$(HOSTCC) -shared -fPIC $(HOSTFLAGS) -std=c11 -Wall -Wextra -Werror -Isrc -Ithird_party/puff $(CORE) tests/host/hostio.c $(HOSTDIR)/game.o $(HOSTDIR)/gmp.o $(HOSTCXXLIB) -o $@
+# Exercise the production e-ink client with a fake device and monotonic clock.
+$(HOSTDIR)/libeink.so: src/eink.c src/eink.h src/bootart_data.c src/font_data.c tests/host/eink.c tests/host/eink/sandbox/syscall.h $(wildcard sdk/include/sandbox/*.h) Makefile | $(HOSTDIR)
+	$(HOSTCC) -shared -fPIC $(HOSTFLAGS) -std=c11 -Wall -Wextra -Werror -Itests/host/eink -Isdk/include -Isrc src/eink.c src/bootart_data.c src/font_data.c tests/host/eink.c -o $@
 # Board pack reader with a host transport shim; gmp.o is built by libgmos above.
 $(HOSTDIR)/libsdpack.so: $(HOSTDIR)/libgmos.so src/sdpack.c tests/host/sdpack.c tests/host/sdpack/sandbox/syscall.h $(wildcard sdk/include/sandbox/*.h) Makefile
 	$(HOSTCC) -shared -fPIC $(HOSTFLAGS) -std=c11 -Wall -Wextra -Werror -Itests/host/sdpack -Isdk/include -Isrc -Ithird_party/puff src/asset_scratch.c src/sdpack.c tests/host/sdpack.c third_party/puff/puff.c $(HOSTDIR)/gmp.o $(HOSTCXXLIB) -o $@
