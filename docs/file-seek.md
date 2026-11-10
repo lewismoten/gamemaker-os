@@ -7,9 +7,8 @@ The pack format, inflation code and logical mapping are unchanged.
 ## Kernel contract and compatibility
 
 The vendored SDK is pinned to sandbox-kernel commit
-`507088522d6db1d50b6cf23991d1f44f493eac65` (local-only file-seek delivery;
-use its supplied bundle/source until the owner integrates it). Its existing
-records/call numbers are unchanged; ABI 1.3 adds call 9, `sbx_seek(fd, offset,
+`a6044c2c28091035b922941b8f402841d49defc4` (ABI 1.10; see `sdk/PINNED`).
+Seek was introduced in ABI 1.3 as call 9, `sbx_seek(fd, offset,
 &position)`, a 48-byte record using absolute `SBX_SEEK_SET` only.
 
 GMOS passes the running startup major/minor to `sp_set_abi` before opening packs.
@@ -73,15 +72,8 @@ plus 50 * 256 requested entry bytes. A separately compiled immutable develop
 ms). Timings are warm host stdio measurements, not SD/Pi speed estimates.
 Counter differences, not timing alone, prove removal of reopen/replay work.
 
-This repository's existing host Makefile links libc++ and has macOS sanitizer
-defaults. On Linux with GCC, the delivery evidence includes a local linker
-adapter `libc++.so` containing `INPUT(-lstdc++)`; use
-`HOSTCC="cc -L/path/to/adapter"`. For sanitizers also set
-`ASANPY="env LD_PRELOAD=$(cc -print-file-name=libasan.so) python3"` on the make
-command line. These are local build overrides, not SDK or production changes.
-An unpacked ARM toolchain may need explicit newlib/C++ include and newlib link
-paths; exact successful build commands are in the private delivery handoff.
+The Makefile selects libc++ on macOS and libstdc++ on Linux; no Linux linker
+adapter is needed. Set TOOLCHAIN to the installed Arm GNU prefix when needed.
 
-No hardware run is required or claimed. The Mac owner reviews/integrates into
-develop and performs Pi validation. Delivery remains signed local commits and
-bundles, with no push, PR or merge by this worker.
+The measurements above are historical host evidence. Pi seek performance and
+physical SD behavior remain **hardware-untested** by these checks.

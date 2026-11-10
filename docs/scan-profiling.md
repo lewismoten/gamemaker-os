@@ -19,7 +19,7 @@ The scan probe compiles the exact scanner prefix of `src/main.c` (ending before
 the repository's actual GAM, menu, library, sdpack, GMP and puff implementations.
 The output includes its source digest, compiler argv, operation counts, ordered
 storage identities, raw timing samples and inclusive phase times. It enables
-ABI 1.3 seek by default; explicit cache mode enables ABI1.4. C/C++ compilers and
+ABI 1.3 seek by default; explicit cache mode selects ABI 1.5 by default (override with `GMOS_SCAN_ABI`). C/C++ compilers and
 Python are required. Exact metadata/native time fields in the POSIX shim aren't
 physical FAT timestamps; the actual-FAT cache probe covers that separate layer.
 

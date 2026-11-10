@@ -104,6 +104,8 @@ journal or a new physical power-loss guarantee**. See kernel cache-storage docs.
 
 ## Verification and outstanding qualification
 
+Status: host-qualified; physical-card/Pi workflow **hardware-untested**.
+
 Executed on Linux with GCC host sanitizers and ARM GCC 14.2.1:
 
 - Plain `make test` and `make test-asan` (TOOLCHAIN supplied): 149 discovered,

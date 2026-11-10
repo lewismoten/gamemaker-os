@@ -4,7 +4,8 @@
 open an audio device, consume a game event, read a game file, schedule a producer,
 or enable HDMI/DMA/IRQ. `sound.c`, the one destructive `gp_take_sound()` call,
 remote SND grammar, SDK/ABI and all boot paths are unchanged. This is a bounded
-host qualification component, not an available Pi audio feature.
+host qualification component, not an available Pi audio feature. The sound
+branch is not merged; local playback remains **hardware-untested**.
 
 ## Ownership and calls
 

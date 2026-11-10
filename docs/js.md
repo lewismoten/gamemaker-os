@@ -23,13 +23,14 @@ buttons, and a grid of six cards with each game's title screen. Enter on a card
 plays the game, and Esc comes back. To try it:
 
 ```
-make js                                                     # build/JS.ELF
-scripts/usb_kernel.py <port> put build/JS.ELF               # stripped: about 790 KB
-scripts/usb_kernel.py <port> putapp apps/HELLO HELLO        # /OS/APPS/HELLO/
-scripts/usb_kernel.py <port> run JS.ELF                     # or JS.ELF on line 1 of AUTORUN.TXT
+make js                                          # build/JS.ELF
+usb_kernel.py <port> put build/JS.ELF               # stripped: about 790 KB
+usb_kernel.py <port> putapp apps/HELLO HELLO        # /OS/APPS/HELLO/
+usb_kernel.py <port> run JS.ELF                     # or JS.ELF on line 1 of AUTORUN.TXT
 ```
 
-(`usb_kernel.py` is sandbox-kernel's. `putapp` and 1 MiB files need its
+(`usb_kernel.py` is in a sandbox-kernel checkout's `scripts/` folder.
+`putapp` and 1 MiB files need its
 2026-11-07 kernel or later.) On the host, `make host` builds `build/host/jsrun`,
 which runs an app from a folder that stands in for the card. `--vclock` makes the
 clock virtual, `--keys ms:code:value,...` presses keys, and `--shot` saves the

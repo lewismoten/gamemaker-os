@@ -7,27 +7,39 @@ kernel's published SDK.
 ## The SDK
 
 `sdk/` is a copy of the kernel repository's `sdk/` folder. `sdk/PINNED` names the
-kernel commit it came from. To move to a newer SDK, run
+kernel commit it came from: `a6044c2c28091035b922941b8f402841d49defc4`, ABI 1.10
+(`/dev/serial0`; this does not enable local sound). To move to a newer SDK, run
 `scripts/vendor_sdk.sh <kernel checkout> [commit]`, then build and test. Nothing
 else from the kernel is used, and the kernel knows nothing about Game-Maker
 files: to it, `/sd/GAMES` is an ordinary folder.
 
-The program needs the kernel's M1 slice 3 or later: `/dev/input/event0`,
-`getdents` and the `health` heartbeat. Playing a game needs ABI 1.1 (M1 slice 4):
-`clock_gettime` and `sleep_until`. On an older kernel the list works and Enter
-logs `GMOS playing needs the kernel's clock (ABI 1.1)`.
+GMOS requires major ABI 1 and minor 2 or newer for screen modes, input,
+`getdents`, the heartbeat, clock and sleep. Older minors exit with
+`GMOS needs screen modes (ABI 1.2)`. Later features are optional: ABI 1.3 seek,
+1.4 scan-cache metadata/writes, 1.5 long names, 1.7 save storage and 1.9 e-ink.
+The ABI 1.10 SDK also declares audio and serial interfaces; GMOS does not use
+them to provide local sound.
 
-`third_party/gmcore/` is the Game-Maker play core from Game-Maker: Sandbox
-Edition, copied unchanged with that repository's license;
-`scripts/vendor_gmcore.sh <checkout> [commit]` refreshes it and its `PINNED`.
+`third_party/gmcore/` is the Game-Maker play core from `gamemaker-pocket`,
+pinned at `1476df1e159c798633910e76f898d8347e12c3ee`.
+`scripts/vendor_gmcore.sh <gamemaker-pocket checkout> [commit]` refreshes
+`gmcore.h`, `gmmon.h`, `gmsmall.h` and `PINNED`, keeping the local license notices.
 
 ## Build
 
 ```
 make            # build/GMOS.ELF (Arm GNU toolchain; set TOOLCHAIN to its prefix)
-make test       # host tests; renders build/host/games-*.png and play-*.png
+make host       # host libraries, gmplay and jsrun
+make js         # build/JS.ELF (separate from the default build)
+make quota      # build GMOS.ELF and check image size (also JS.full.elf if present)
+make test       # host + quota + unittest; renders build/host/*.png
 make test-asan  # the host tests and a fuzz pass under AddressSanitizer and UBSan
 ```
+
+`make test` needs the Arm toolchain too: its quota prerequisite builds
+`GMOS.ELF` and requires 64 KiB of headroom within the kernel's 8 MiB loaded-image quota. It checks `build/js/JS.full.elf` too when present,
+but does not build JS.ELF. Host linking selects libc++ on macOS and libstdc++
+on Linux.
 
 The host tests build the title reader, library index, games page and drawing code
 (`src/gam.c`, `src/library.c`, `src/menu.c`, `src/thumb.c`, `src/view.c`,
@@ -84,9 +96,10 @@ See [drag-drop.md](drag-drop.md) for layouts, bounds and qualification status.
    pass of its loop.
 2. Lists `/sd/GAMES`: each folder holding a `.GAM` file is a game, titled from
    the start scene's description in that file (an empty one shows the folder
-   name). Then the packed games, `.GMP` files in `/sd/GAMES` and
-   `/sd/POCKET` (one file a game, shared with the Pocket Player; see
-   [gmp.md](gmp.md)), titled the same way from the `.GAM` inside.
+   name). Packed games (`.GMP`) in `/sd/POCKET` then `/sd/GAMES` are discovered first,
+   then loose folders, then deferred nested folders and ZIP/SFX archives.
+   Duplicate main-`.GAM` CRCs keep GMP before loose before ZIP/SFX.
+   See [gmp.md](gmp.md) and [drag-drop.md](drag-drop.md) for layouts and bounds.
 3. Reads the library index, `/sd/GAMES/LIBRARY.JSL` (or `/sd/OS/LIBRARY.JSL`,
    where `put` can install it), if there is one: the Pocket Player's
    `library.jsonl` format from Game-Maker: Sandbox Edition, one JSON object a
@@ -119,10 +132,18 @@ See [drag-drop.md](drag-drop.md) for layouts, bounds and qualification status.
    `SYN_DROPPED` it reads the current state and goes on. If the device goes away
    it logs `GMOS input removed` and opens it again once it is back.
 
+During a level, F5 and F6 open the native save/load screens; see
+[game-save.md](game-save.md). H on the grid or details opens
+[Top Ten](saves.md). Both write through the kernel's ABI 1.7 save scope;
+real-card acceptance remains **hardware-untested**.
+
 Between input reads the list sleeps 10 ms (`sleep_until`); it will block on
 input once the kernel has `poll`.
 
 ## Optional e-ink status (ABI 1.9)
+
+Status: linked and host-tested; **hardware-untested**. This status display
+is optional and does not change HDMI play.
 
 GMOS uses `/dev/eink` only when the startup record reports major 1, minor 9
 or newer. It opens write-only and first submits a 250x122 boot page with
