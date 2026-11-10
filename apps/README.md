@@ -72,7 +72,7 @@ not claimed as tested.
 - No guarantee for arbitrarily large directories: `readdir` creates the entire
   list in the fixed JS heap. Physical board/keyboard/video validation remains open.
 
-## Provenance and publication boundary
+## Provenance
 
 CLOCK retains its upstream signed commit `b73ed161859d0797a1c2e8a409874b10c8009025`.
 Contributions in this suite were made with **OpenAI Codex (GPT-6.1 Sol)**.
