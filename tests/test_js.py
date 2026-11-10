@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT; host tests of the JS runtime (src/js/) through
 # build/host/jsrun on a virtual clock: the DOM-like API (tests/js/PROBE), the
-# HELLO app's 960x540 page, a game played from JS, and repeatability.
+# HELLO app's 960x540 page, game playback, repeatability, and HELLOPI canvas/input/exit.
 import os, pathlib, struct, subprocess, tempfile, unittest
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -185,6 +185,59 @@ class ExamplePage(unittest.TestCase):
             for marker in ('Uncaught', '(it threw)', 'FAIL', 'unsupported'):
                 self.assertNotIn(marker, out)
             return out
+
+
+class HelloPi(ExamplePage):
+    def test_frames_input_modes_and_escape(self):
+        out = self.probe('HELLOPI', """
+let observedFrames = 0;
+function observeHelloPi() {
+  if (++observedFrames === 6) console.log('HELLOPI TEST frames=6');
+  else requestAnimationFrame(observeHelloPi);
+}
+requestAnimationFrame(observeHelloPi);
+setTimeout(() => {
+  console.log('HELLOPI TEST position=' + x + ',' + y);
+  console.log('HELLOPI TEST mode=' + status.textContent);
+}, 180);
+// A successful process status alone cannot distinguish exit from --ms expiry.
+setTimeout(() => console.log('FAIL HelloPi kept running after Esc'), 400);
+""", '20:106:1,25:106:0,40:108:1,45:108:0,'
+     '60:105:1,65:105:0,80:103:1,85:103:0,100:106:1,105:106:0,'
+     '120:28:1,125:28:2,130:28:0,200:1:1,210:1:0', ms=600)
+        for expected in ['HELLOPI TEST frames=6', 'HELLOPI TEST position=150,65',
+                         'HELLOPI TEST mode=Mode: 960x540, 16 bits', 'Hello, Pi exit']:
+            self.assertIn('JS ' + expected, out)
+        self.assertEqual(out.count('JS screen 960x540x16'), 1, out)
+        # Enter a second time restores the initial mode.
+        out = self.probe('HELLOPI', """
+setTimeout(() => console.log('HELLOPI TEST mode=' + status.textContent), 180);
+""", '20:28:1,25:28:0,100:28:1,105:28:0,200:1:1', ms=600)
+        self.assertIn('JS HELLOPI TEST mode=Mode: 640x480, 32 bits', out)
+
+    def test_renders_text_and_animated_canvas(self):
+        # Capture the unmodified app, without game assets or optional HTML.
+        with tempfile.TemporaryDirectory() as t:
+            sd = pathlib.Path(t)
+            (sd / 'OS/APPS').mkdir(parents=True)
+            (sd / 'OS/APPS/HELLOPI').symlink_to(ROOT / 'apps/HELLOPI')
+            shots = []
+            for ms in (50, 150):
+                shot = sd / ('%d.shot' % ms)
+                code, out = run(sd, 'HELLOPI', ms, shot=shot)
+                self.assertEqual(code, 0, out)
+                self.assertIn('JS Hello, Pi ready', out)
+                for marker in ('Uncaught', '(it threw)', 'FAIL', 'unsupported'):
+                    self.assertNotIn(marker, out)
+                w, h, depth, px = read_shot(shot)
+                self.assertEqual((w, h, depth), (640, 480, 32))
+                self.assertEqual(len(px), w * h * 4)
+                pixels = struct.unpack('<%dI' % (w * h), px)
+                self.assertIn(0xffffff, pixels)  # White title text.
+                self.assertEqual(pixels.count(0x29adff), 100)  # Blue 10x10 square.
+                self.assertGreaterEqual(pixels.count(0xffcc33), 400)  # Yellow square.
+                shots.append(px)
+            self.assertNotEqual(*shots)  # The blue square moved between frames.
 
 
 class Files(ExamplePage):

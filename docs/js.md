@@ -9,24 +9,27 @@ and the recommendation are in sandbox-kernel's `docs/js-spike.md`.
 
 For the whole picture (boot, what a program may do, limits, USB development) see sandbox-kernel's [OS author's guide](https://github.com/lewismoten/sandbox-kernel/blob/develop/docs/os-authors.md).
 
-## Make your own shell in two files
+## Your first app
 
 ```
 /OS/AUTORUN.TXT          line 1: the program the kernel starts (GMOS.ELF or JS.ELF)
                          line 2: the app JS.ELF runs (default APPS/HELLO)
-/OS/APPS/HELLO/MAIN.JS   the script
-/OS/APPS/HELLO/INDEX.HTM the layout (optional; MAIN.JS reads it into innerHTML)
+/OS/APPS/HELLOPI/MAIN.JS the new example script
 ```
 
-`apps/HELLO` is the example. It has a header with a clock, Games and About
-buttons, and a grid of six cards with each game's title screen. Enter on a card
-plays the game, and Esc comes back. To try it:
+Start with [Hello, Pi](../apps/HELLOPI/MAIN.JS), a small, commented example for
+outside OS authors. It creates text and a 300x150 canvas entirely in MAIN.JS;
+no INDEX.HTM, game assets or filesystem access is needed. Arrows move the yellow
+square, the blue square animates on its own, Enter switches between 640x480x32
+and 960x540x16, and Esc calls `sys.exit(0)` to return to the app picker. State
+lives in memory; the filesystem is read-only. See the [app guide](../apps/README.md).
+To try it:
 
 ```
 make js                                                     # build/JS.ELF
 scripts/usb_kernel.py <port> put build/JS.ELF               # stripped: about 790 KB
-scripts/usb_kernel.py <port> putapp apps/HELLO HELLO        # /OS/APPS/HELLO/
-scripts/usb_kernel.py <port> run JS.ELF                     # or JS.ELF on line 1 of AUTORUN.TXT
+scripts/usb_kernel.py <port> putapp apps/HELLOPI HELLOPI    # /OS/APPS/HELLOPI/
+scripts/usb_kernel.py <port> run JS.ELF                     # F10 opens the picker; select HELLOPI
 ```
 
 (`usb_kernel.py` is sandbox-kernel's. `putapp` and 1 MiB files need its
@@ -36,9 +39,14 @@ clock virtual, `--keys ms:code:value,...` presses keys, and `--shot` saves the
 screen; `tools/jsshot.py` turns that into a PNG.
 
 ```
-build/host/jsrun <card folder> /sd/OS/APPS/HELLO --vclock --ms 2000 --keys 500:28:1,520:28:0 --shot a.shot
+build/host/jsrun <card folder> /sd/OS/APPS/HELLOPI --vclock --ms 2000 --keys 500:28:1,520:28:0 --shot a.shot
 python3 tools/jsshot.py a.shot a.png 2      # 2x, nearest neighbor, as a 1080p screen shows 960x540
 ```
+
+The default [HELLO example](../apps/HELLO/) has a header clock, Games and About
+buttons, and a grid of game title screens. Enter on a game card plays it; Esc
+returns to the page. It remains at `APPS/HELLO`. To autorun the new example,
+put `JS.ELF` on AUTORUN.TXT line 1 and `APPS/HELLOPI` on line 2.
 
 ## Exit and app switching
 
@@ -63,6 +71,7 @@ limitations and Pi smoke procedure, see [app-exit.md](app-exit.md).
 | `element.focus() / blur()`, `document.activeElement` | the arrow keys move focus to the nearest button that way; Enter or Space clicks |
 | `element.getBoundingClientRect()` | the laid-out box |
 | `img.src` | a `.GIF` on the card, or a game folder (its title screen) |
+| `canvas.width`, `canvas.height` | backing pixels, default 300x150; keep small to fit the fixed heap |
 | `canvas.getContext('2d')` | `fillStyle`, `font` (`9px` steps), `fillRect`, `clearRect`, `fillText`, `drawImage(img or canvas, x, y[, w, h])` |
 | `game.src = '/sd/GAMES/DICE'; game.play()` | plays the folder's game with the native play core at 18.2 Hz; keys go to it while it has focus; Esc or the game's end fires `ended`; `game.stop()`, `game.ticks`, `game.playing`, `game.press(code, down)` |
 | `requestAnimationFrame`, `cancelAnimationFrame` | 60 a second on the kernel clock, never bunched up after a slow frame |
@@ -107,6 +116,6 @@ added later if a real app needs it.
 - `apps/BENCH`: the benchmarks.
 
 `make test` includes `tests/test_js.py`. It checks the DOM-like API with
-`tests/js/PROBE`, the HELLO page at 960x540, playing a game from JS and coming
-back to the page's mode, and that two runs on the virtual clock give the same
-picture.
+`tests/js/PROBE`, HELLOPI rendering, animation, input and Esc exit, the HELLO
+page at 960x540, playing a game from JS and coming back to the page's mode,
+and that two runs on the virtual clock give the same picture.

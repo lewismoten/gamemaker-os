@@ -148,14 +148,13 @@ usb_kernel.py &lt;port&gt; key esc</code></pre><p>Arrows move through games. Ent
       <p class="eyebrow">JS.ELF / QuickJS-ng</p>
       <h2 id="javascript-title">Make your own shell</h2>
       <div class="columns">
-        <div><p><code>JS.ELF</code> is a separate JavaScript app runtime, documented as a spike. Write a small page-like app using <code>document.createElement</code>, CSS-like styles, events, timers, and <code>requestAnimationFrame</code>. Layout and drawing stay native.</p><p>A <code>&lt;game&gt;</code> element runs the same Game-Maker play core. The HELLO example shows a game grid: Enter plays a game, and Esc returns to the page.</p><p>Start with <code>apps/HELLO</code>. Its script lives at <code>/OS/APPS/HELLO/MAIN.JS</code>; an optional <code>INDEX.HTM</code> supplies layout. Build with <code>make js</code> to produce <code>build/JS.ELF</code>.</p></div>
+        <div><p><code>JS.ELF</code> is a separate JavaScript app runtime, documented as a spike. Write a small page-like app using <code>document.createElement</code>, CSS-like styles, events, timers, and <code>requestAnimationFrame</code>. Layout and drawing stay native.</p><p>A <code>&lt;game&gt;</code> element runs the same Game-Maker play core. The HELLOPI example shows text and canvas animation: arrows move a square, Enter switches screen mode, and Esc exits. The default HELLO example shows a game grid.</p><p>Start with <code>apps/HELLOPI</code>. Its script lives at <code>/OS/APPS/HELLOPI/MAIN.JS</code> and creates its layout directly. Build with <code>make js</code> to produce <code>build/JS.ELF</code>.</p></div>
         <div class="panel"><h3>The app path</h3><pre><code>/OS/
   JS.ELF
   AUTORUN.TXT
   APPS/
-    HELLO/
-      MAIN.JS
-      INDEX.HTM</code></pre><p><code>AUTORUN.TXT</code> can select <code>JS.ELF</code> on line 1 and <code>APPS/HELLO</code> on line 2. <kbd>F10</kbd> or cooperative <code>sys.exit()</code> returns an app to the built-in picker.</p><p><a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/js.md">Read the JavaScript app guide →</a></p></div>
+    HELLOPI/
+      MAIN.JS</code></pre><p><code>AUTORUN.TXT</code> can select <code>JS.ELF</code> on line 1 and <code>APPS/HELLOPI</code> on line 2; the default app remains <code>APPS/HELLO</code>. <kbd>F10</kbd> or cooperative <code>sys.exit()</code> returns an app to the built-in picker.</p><p><a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/js.md">Read the JavaScript app guide →</a></p></div>
       </div>
       <p class="small">This is a limited browser-like API: no fetch, modules, mouse, or touch. GMOS.ELF does not launch JS.ELF. App switching has host checks; the documented Pi smoke procedure is not a hardware result. See <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/app-exit.md">app lifecycle and recovery limits</a>.</p>
     </section>
