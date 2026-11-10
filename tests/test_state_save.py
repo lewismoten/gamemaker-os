@@ -50,6 +50,39 @@ class StateSaveTests(unittest.TestCase):
         self.c.gs_resume(C.c_void_p(self.s.s), C.c_uint64(0))
         self.assertNotEqual(self.c.gp_frame_hash(), 0)
 
+    def test_unsafe_sequence_keys_are_refused_before_state_changes(self):
+        before = self.snap()
+        wire = C.create_string_buffer(BUF); n = C.c_uint32()
+        self.assertEqual(self.c.save_game_encode(before, wire, BUF, C.byref(n)), 0)
+        good = wire.raw[:n.value]
+        for seq in range(20):
+            for scan in (128, 255):
+                with self.subTest(sequence=seq, scan=scan):
+                    bad = bytearray(good)
+                    # Review probe: Drop active at frame -1, animation due now.
+                    bad[896 + 3713] = 4
+                    bad[896 + 3712] = 255
+                    bad[761 + 41:761 + 45] = bytes(4)
+                    bad[896 + seq * 185 + 171] = scan
+                    decoded = C.create_string_buffer(BUF)
+                    self.assertEqual(self.c.save_game_decode(decoded, bytes(bad), len(bad)), 0)
+                    self.assertEqual(self.c.gp_state_load(decoded), -1)
+                    self.assertEqual(self.snap().raw, before.raw)
+
+    def test_sequence_key_boundary_loads_unchanged(self):
+        g = self.snap()
+        wire = C.create_string_buffer(BUF); n = C.c_uint32()
+        self.assertEqual(self.c.save_game_encode(g, wire, BUF, C.byref(n)), 0)
+        valid = bytearray(wire.raw[:n.value])
+        for seq in range(20):
+            valid[896 + seq * 185 + 171] = 127
+        self.assertEqual(self.c.save_game_decode(g, bytes(valid), len(valid)), 0)
+        self.assertEqual(self.c.gp_state_load(g), 0)
+        again = C.create_string_buffer(BUF)
+        self.assertEqual(self.c.save_game_encode(self.snap(), again, BUF, C.byref(n)), 0)
+        # All sequence definitions, including scan 127, survive the load exactly.
+        self.assertEqual(again.raw[896:896 + 3700], valid[896:896 + 3700])
+
     def test_damaged_and_truncated_are_refused(self):
         g = self.snap()
         wire = C.create_string_buffer(BUF); n = C.c_uint32()
