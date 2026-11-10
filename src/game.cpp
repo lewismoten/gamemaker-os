@@ -242,6 +242,11 @@ extern "C" int gp_open(gp_read_fn read, void *user, const char *gam_name) {
   w->hold = true;
   return nplay ? nplay : -1;
 }
+extern "C" const char *gp_title(void) {
+  static char title[21];
+  for (unsigned i = 0; i < 20; i++) title[i] = (char)gam[sceneAt(0) + 23 + i];
+  title[20] = 0; return title;
+}
 extern "C" const char *gp_graphic(int slot, int level) {
   switch (slot) {
     case GP_TITLE: return fileOf(0, 0);
@@ -249,6 +254,9 @@ extern "C" const char *gp_graphic(int slot, int level) {
     case GP_LOST: return fileOf(1, 2);
     case GP_INTRO: return level >= 0 && level < nplay ? fileOf(play[level], F_INTRO) : "";
     case GP_EXIT: return level >= 0 && level < nplay ? fileOf(play[level], F_EXIT) : "";
+    case GP_INSTRUCTIONS: return fileOf(0, 6);
+    case GP_STORY: return fileOf(0, 4);
+    case GP_CREDITS: return fileOf(0, 7);
     case GP_MENU: return fileOf(0, 2);
     case GP_SCORES: return fileOf(0, 8); // the high score screen's backdrop
     case GP_LOADPIC: return fileOf(0, F_INTRO); // Game.File(0,9): the Load Game picture
@@ -277,6 +285,8 @@ extern "C" const char *gp_voc_name(int n) {
 }
 extern "C" const char *gp_song(int slot, int level) {
   switch (slot) {
+    case GP_SONG_MENU: return fileOf(0, 3);
+    case GP_SONG_STORY: return fileOf(0, 5);
     case GP_SONG_TITLE: return fileOf(0, 1);
     case GP_SONG_WON: return fileOf(1, 1);
     case GP_SONG_LOST: return fileOf(1, 3);

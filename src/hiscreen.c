@@ -56,7 +56,7 @@ int hs_event(struct hs_screen *h, uint16_t type, uint16_t code, int32_t value, u
   if (h->stage == HS_TABLE) return value == 1 ? HS_DONE : 0; /* "Hit any key" */
   h->blink = now; h->cur_on = 1;
   int c = h->ctrl ? ctrl_byte(code) : hs_ascii(code, h->shift);
-  if (code == K_ESC || code == K_ENTER || c == 27 || c == 13) return value == 1 ? accept(h, now) : 0; /* 27, 13 */
+  if (code == K_ESC || code == K_ENTER || code == 96 || c == 27 || c == 13) return value == 1 ? accept(h, now) : 0; /* 27, 13 */
   if (code == K_BACK || code == K_LEFT || c == 8) {if (h->len) h->name[--h->len] = 0; return HS_DRAW;} /* 8; Left: DOS erases too */
   /* Right (RIGHTKEY) is "if (ans[ctr] != 0) ctr++", and ans[ctr] is always 0 here because Left and
      Backspace truncate the answer and a new entry's starts empty: it never moves, so it is ignored.
@@ -91,10 +91,13 @@ static void box(uint8_t *px, int x0, int y0, int x1, int y1, uint8_t c) { /* Box
   for (int y = y0; y <= y1; y++) if (x1 < (int)HS_W) {px[y * HS_W + x0] = c; px[y * HS_W + x1] = c;}
 }
 void hs_draw(const struct hs_screen *h, uint8_t *px, uint8_t *pal, const uint8_t *back, const uint8_t *back_pal) {
+  hs_draw_colors(h, px, pal, back, back_pal, 0);
+}
+void hs_draw_colors(const struct hs_screen *h, uint8_t *px, uint8_t *pal, const uint8_t *back, const uint8_t *back_pal, const uint8_t *colors) {
   int pic = back && h->stage == HS_TABLE;
-  for (unsigned i = 0; i < 768; i++) pal[i] = pic ? back_pal[i] : 0;
+  for (unsigned i = 0; i < 768; i++) pal[i] = pic ? back_pal[i] : colors ? colors[i] : 0;
   for (unsigned i = 0; i < HS_W * HS_H; i++) px[i] = pic ? back[i] : 0;
-  if (!pic) { /* the DOS palette is the game's colors; here black with the two colors it matches */
+  if (!pic && !colors) { /* the DOS palette is the game's colors; here black with the two colors it matches */
     pal[3] = 63; pal[4] = 10; pal[5] = 10; pal[6] = 10; pal[7] = 10; pal[8] = 63;
   }
   uint8_t red = gp_match(pal, 63, 10, 10), blue = gp_match(pal, 10, 10, 63);

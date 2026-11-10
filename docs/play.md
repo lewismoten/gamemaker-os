@@ -1,8 +1,52 @@
 # Playing a game
 
-Enter opens details; Play starts the game from its DOS files in a loose folder,
+Enter opens details; Play opens the game from its DOS files in a loose folder,
 GMP or supported ZIP/SFX archive. See [copying games](drag-drop.md) for limits.
 A loose game needs no conversion or packing first.
+
+## The DOS menu
+
+Opening a game shows its title graphic or slide list, then PLAYGAME's main menu.
+Up/Down wraps through Play, Read Instructions, Read Storyline, See Credits,
+See Highest Scores and Quit; Enter selects. Esc at the menu or Quit returns to
+the GMOS library. Pages use the existing GIF/BKD, FLI, text and `.LST` reader;
+keys advance pauses and text pages, and Esc returns from a page to the menu.
+Missing instructions/story/credits show PLAYGAME's message for ten seconds or
+a key. Play starts a fresh game, with its first level's intro. F5/F6 during play
+keep their existing save/load behavior.
+
+A win, the last life lost, or Esc during play checks the Top Ten. A qualifying
+score opens keyboard name entry (22 characters, Backspace erases, Enter accepts),
+then the score table, then the game's menu. Scores stay in the existing
+`/OS/SAVES` location; see [high scores](saves.md). The e-ink display continues to
+show the active game's title until returning to the library.
+
+`src/session.c` implements this as `gs_launch`; the direct-play `gs_start` API
+and demo preview remain available to existing callers, including JS apps.
+`src/dosmenu.c` reads the menu words, RGB targets/color selectors, title/row
+positions and marker geometry from a recognized XFERPLAY 3.00 build, looking
+for `<GAM stem>.EXE`, `XFERPLAY.EXE`, then `PLAYGAME.EXE`. Other executable builds
+use stock values. Executables are read as data, never executed.
+
+A game can also supply `PLAYER.JSON` (or `player.json`) with the web player's
+record format, for example:
+
+```json
+{"base":"xferplay-3.00","patches":{"str.menu.play":"GO","layout.menu.play.x":72,"color.rgb.blue":[10,20,63]}}
+```
+
+This overrides the executable's menu values. Put it beside the `.GAM`, in the
+same ZIP game folder, or in a GMP's compressed `dos/PLAYER.JSON` entry. GMOS can
+only read customization data included in the game; existing packs without it
+use the stock menu. Gameplay tuning and non-menu player patches are outside
+this reader's scope.
+
+Host coverage is in `tests/test_dosmenu.py` and `tests/host/dosmenu_end.cpp`:
+keys/screens, multi-page text and slides, missing pages, patched words/positions/
+colors, malformed records, win/loss through name entry and Top Ten, and restart.
+The complete launcher still needs a TV/USB-keyboard check: intro/menu pictures
+and colors, arrow repeat, all six choices, qualifying score/name persistence,
+F5/F6 after restarting, and e-ink transitions back to the library.
 
 ## One play core, shared
 
@@ -40,17 +84,16 @@ built without exceptions, RTTI or static constructors; `src/libc.c` supplies
 
 ## A game, start to end
 
-`src/session.c` runs a game as the Pocket Player does:
+`src/session.c` runs the DOS launcher around the shared play core:
 
-1. The title (scene 0's title graphic), then the first level's intro on a
-   cleared screen. PLAYGAME's menu between the two is left out, as the Pocket
-   Player leaves it out.
+1. The title (scene 0's title graphic), then the game's main menu. Choosing
+   Play shows the first level's intro on a cleared screen.
 2. The level, a tick every 1/18.2065 s (the PC timer's 1193182 / 65536 Hz). A
    slow step runs up to 4 ticks to catch up and drops time beyond that.
 3. On a link: the level's exit pages, the next level's intro, the next level.
    After a death: the level's intro again, unless no lives are left.
 4. Winning shows the level's exit and the won pages; losing the last life
-   shows the lost pages. Then the Top Ten flow, if the score places, and the details view.
+   shows the lost pages. Then the Top Ten flow (name entry if the score places), and the game’s menu.
 
 ## Pages between scenes
 
@@ -96,7 +139,7 @@ up: a page that ends on time begins the next at that moment.
 Keys arrive as Linux key codes and reach the game as DOS scan codes: the arrows,
 Home, End, Page Up and Page Down (the diagonals) as the number pad's, and the
 rest of the keyboard as it is (Space, Enter, letters). Esc leaves play for
-the details view (after any Top Ten entry). During a level, F5 opens Save Game
+the game’s menu (after the Top Ten). During a level, F5 opens Save Game
 and F6 opens Load Game; see [controls and limits](game-save.md). These native
 save/load screens and real-card writes are **hardware-untested**.
 

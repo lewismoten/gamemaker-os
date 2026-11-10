@@ -50,7 +50,8 @@ rewrites the file when nothing placed; the Pi doesn't, to spare the card.
   beats a row gets `hiscreen.c`'s name entry ("Congratulations!", "You scored number N on the Top
   Ten!", "Enter Your Name:", 22 characters, Enter or Esc accepts, Backspace or Left erases, a blinking
   box cursor), then the Top Ten with "Your Latest Score" and "Hit any key" (30 s or any key). A score
-  that doesn't place returns to the details view.
+  that doesn't place still shows the Top Ten. Both paths return to the game's DOS menu.
+- **From the game menu**: See Highest Scores shows the table without name entry, then returns to the menu.
 - **From the list**: `H` (high scores) on the grid or the details view shows the selected game's Top Ten
   alone; the key-help line says so.
 - **Where it lives**: `hisload.c` reads `/OS/SAVES/<KEY>/<STEM>.HIS`; with none yet it seeds from the

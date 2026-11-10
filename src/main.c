@@ -514,8 +514,8 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
   score = hs_entry_score(score, can_write);
   /* PLAYGAME shows File(1,2) (lost) or (1,0) (won) and plays File(1,3)/(1,1), then clears the screen with
      BoxFill before the name entry (PLAYGAME.C 1149-1176): the entry's backdrop is black, as here, and the
-     song runs on through it until StopSong after the list. TODO(audio): the Top Ten screen
-     still needs that song started here (snd_music) and stopped after the list. */
+     song runs on through it until the menu resumes. The active session now keeps its
+     music alive while this screen services audio. */
   big_id = -1;
   int back = !gs_scores_picture(&game, open, read, user, gam, back_px, back_pal);
   if (screen_mode(PLAY_W, PLAY_H, SBX_FB_XRGB8888)) return;
@@ -529,10 +529,11 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
   for (;;) {
     heartbeat();
     ge_poll();
-    if (r & HS_DRAW) {hs_draw(&hsc, hs_px, hs_pal, back ? back_px : 0, back_pal); gs_show(hs_px, hs_pal, px, PLAY_W); sbx_fb_present(fb_fd, 0, 0, PLAY_W, PLAY_H);}
+    if (aud_on) {au_service(&aud, game.read, game.user); audio_poll();}
+    if (r & HS_DRAW) {hs_draw_colors(&hsc, hs_px, hs_pal, back ? back_px : 0, back_pal, open ? 0 : game.colors); gs_show(hs_px, hs_pal, px, PLAY_W); sbx_fb_present(fb_fd, 0, 0, PLAY_W, PLAY_H);}
     if (r & HS_DONE) break;
     r = 0;
-    uint64_t now = clock_ns(), wake = hs_wake(&hsc, now); if (wake > now + 500000000ull) wake = now + 500000000ull;
+    uint64_t now = clock_ns(), wake = hs_wake(&hsc, now); if (wake > now + (aud_on ? 10000000ull : 500000000ull)) wake = now + (aud_on ? 10000000ull : 500000000ull);
     sbx_sleep_until(wake);
     int32_t s = -SBX_EAGAIN;
     while (have_input && !(s = sbx_read(in_fd, ev, sizeof ev, &got))) {
@@ -564,7 +565,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   snd_dir(&game.sound, g->dir);
   p = put(line, "GMOS play ");p=put(p,g->dir);p=put(p,"/");put(p,gamname);say(line);
   audio_take(); doing = "game";
-  if (!gamname[0] || !read || gs_start(&game, read, user, gamname, clock_ns())) {bg_return("cannot play"); say("GMOS cannot play it"); return;}
+  if (!gamname[0] || !read || gs_launch(&game, read, user, gamname, clock_ns())) {bg_return("cannot play"); say("GMOS cannot play it"); return;}
   if (screen_mode(PLAY_W, PLAY_H, SBX_FB_XRGB8888)) {bg_return("no screen"); return;}
   ge_play(g->title);
   static sbx_input_event ev[16]; uint64_t got;
@@ -576,6 +577,11 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   for (;;) {
     heartbeat();
     ge_poll();
+    if (game.phase == GS_SCORES) {
+      top_ten(px, g, game.score_check ? gp_score() : -1, 0);
+      r = gs_menu_return(&game, clock_ns());
+      started = 0;
+    }
     if (r & GS_DRAW) {
       uint64_t d0 = clock_ns();
       gs_draw(&game, px, PLAY_W); sbx_fb_present(fb_fd, 0, 0, PLAY_W, PLAY_H);
@@ -621,7 +627,10 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
           p = put(line, "GMOS key "); p = num(p, (uint32_t)gs_scan(ev[i].code)); p = put(p, ev[i].value ? " down" : " up");
           p = put(p, " before tick "); num(p, game.total_ticks + 1); say(line);
         }
-        if (gs_event(&game, ev[i].type, ev[i].code, ev[i].value) & GS_EXIT) {r = GS_EXIT; break;}
+        int q = gs_event(&game, ev[i].type, ev[i].code, ev[i].value);
+        if (q & GS_DRAW) sp_draw = 1;
+        if (q & GS_EXIT) {r = GS_EXIT; break;}
+        if (game.phase == GS_SCORES) break;
       }
       if (r & GS_EXIT) break;
     }
@@ -659,7 +668,6 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   }
   bg_return("game over");
   ge_saving(0);
-  if (game.begun) top_ten(px, g, gp_score(), 0); /* PLAYGAME checks the Top Ten however the game ended */
   ge_library(menu.count);
   say("GMOS back to the games list");
 }

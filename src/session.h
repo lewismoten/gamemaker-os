@@ -9,6 +9,7 @@
 #include "fli.h"
 #include "game.h"
 #include "sound.h"
+#include "dosmenu.h"
 #define GS_MAX_CARDS 32u
 #define GS_CARD_Y 40u   /* a 320 x 200 page at x2 fills 640 x 400 from here */
 #define GS_VIEW_X 8u    /* the 312 x 196 play view at x2 is 624 x 392, centered */
@@ -18,7 +19,7 @@
 #define GS_FADE_STEPS 65u /* FadeTo: 65 steps, one a vertical retrace (70 Hz) */
 #define GS_KEY_WAIT 65535u
 enum {GS_DRAW = 1, GS_EXIT = 2};
-enum {GS_CARDS, GS_PLAY, GS_DONE};
+enum {GS_CARDS, GS_PLAY, GS_DONE, GS_MENU, GS_SCORES};
 /* What the pages phase is doing. */
 enum {GS_NEXT, GS_FADE, GS_FLI, GS_PAUSE, GS_LEVEL_IN, GS_LEVEL_OUT};
 struct gs_card {
@@ -32,6 +33,8 @@ struct gs_session {
   void (*say)(const char *line);
   int phase, stage, levels;
   int after;                    /* what follows the pages: GS_PLAY (begin or finish) or GS_DONE */
+  int launcher, choice, score_check, menu_valid, menu_loading; /* DOS launcher, selected row, finished play */
+  struct dm_look look;
   int begun;                    /* the first level has started */
   char change;                  /* the 'D', 'L' or 'W' the level ended with, while it fades out */
   struct gs_card cards[GS_MAX_CARDS];
@@ -62,6 +65,11 @@ struct gs_session {
 /* Opens the game (its .GAM in the folder the reader reads) and queues the
    title pages; 0, or -1 if it cannot be played. */
 int gs_start(struct gs_session *s, gp_read_fn read, void *user, const char *gam_name, uint64_t now_ns);
+/* DOS launcher: title -> main menu -> pages/play -> scores -> menu. The board
+ * handles GS_SCORES with its existing persistent Top Ten screen, then calls
+ * gs_menu_return. gs_start remains the direct-play session API. */
+int gs_launch(struct gs_session *s, gp_read_fn read, void *user, const char *gam, uint64_t now);
+int gs_menu_return(struct gs_session *s, uint64_t now);
 /* The demo preview (docs/demo.md): plays the game's demo .REC (the .GAM's scene 0 file slot 11, as
    PLAYGAME's Rec->InitPlayback(Game.File(0,11)) does) from the start of level one, with no pages and
    optional local sound (no SND log lines), drawn into px and pal like a play. The .REC is read into session.c's text buffer (3000

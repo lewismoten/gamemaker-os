@@ -6,6 +6,7 @@ AI models used on this repository:
 
 | Model | Tool | What it did |
 | --- | --- | --- |
+| OpenAI Codex (GPT-6.1 Sol) | Codex | DOS launcher menu flow, menu patch reader, Top Ten routing, host tests and documentation (2026-11-10) |
 | GPT-6.1 Sol (OpenAI) | Hermes Agent (openai-codex) | Isolated unlinked PC-speaker PCM producer, bounded PCM8 VOC decoder/resampler and stereo mixer, source/corpus oracles, host/ARM qualification, tests and documentation (2026-11-08); no live dispatch or HDMI output. Pure DOS GAME0.SAV wire codec, synthetic host oracles/tests and documentation (2026-11-09); no gameplay save/load bridge |
 | GPT-6.1 Sol (OpenAI) | ChatGPT | The boot art in `art/` (castle badge, HDMI boot and diagnostics layouts, e-ink screens, favicon, social preview), made from the maintainer's directions; MIT (`art/LICENSE.txt`) (2026-11-09) |
 | Claude Opus 5.5 (Anthropic) | Claude Code | Wrote the README (2026-11-06) |
@@ -19,6 +20,8 @@ AI models used on this repository:
 | Claude Sonnet 5.5 (Anthropic) | Claude Code | Sound on the board: the integer OPL2 synth and CMF player (`src/opl.c`, `src/cmf.c`, tables), the `/dev/audio` mixer and feeder (`src/audio.c`), the background music cycle with fades, preview sound, host tests, and Game-Maker OS's own tune composed in code (`tools/make_ostune.ts`, `src/ostune_data.c`, MIT) (2026-11-09) |
 
 ## Third-party code
+
+- `src/dosmenu.c/.h` and the DOS menu in `src/session.c` follow RSD's `PLAYGAME.C` (`DoGame`, `GameMenu`, `GVertMenu`, `DrawDefaultScrn`) and `PALC.C` (`RandCols`), with the menu patch IDs, offsets, limits and stock values from Game-Maker: Sandbox Edition's `web/packages/engine/src/player/patchTable.ts` and `engine/menus.ts` (MIT, copyright (c) 2014 gandrewstone; (c) 2026 Lewis Moten modifications). No DOS executable is included; only the patch map is used to read a game's supplied player data.
 
 - `src/savefile.c/.h` GAME0 codec and `tests/game_save_fixture.py`: wire order and record definitions follow RSD's `code/GM/PLAYGAME.C`, `CHAR.H`, `MAP.H`, `GMGEN.H`, `BLOC.H`, `COORD2D.HPP` and `code/DRV/GEN.H` in GameMaker-SandboxEdition at `7f614cfbfa5c8c15c83d586a46edf57af79d1afc` (MIT source, copyright (c) 2014 gandrewstone; (c) 2026 Lewis Moten modifications). The public shipped DOS executable independently corroborates packed record widths. The codec and synthetic structural fixtures are new; no original executable, game save, or private-reference bytes are imported. See `docs/game-save.md` for provenance and the distinction between wire preservation and live gameplay restoration.
 
