@@ -1,4 +1,2 @@
-sandbox-kernel 5732b42472208b6a39bbb6ce4a6eb0f7f21db6f4
-https://github.com/lewismoten/sandbox-kernel
-Vendored from kernel develop 5732b42 (ABI 1.7: /OS/SAVES/<GAME>/ writes, fsync, rename).
-ABI 1.5 opt-in call20; calls 11/18 unchanged.
+sandbox-kernel a6044c2c28091035b922941b8f402841d49defc4
+https://github.com/lewismoten/sandbox-kernel/tree/a6044c2c28091035b922941b8f402841d49defc4/sdk

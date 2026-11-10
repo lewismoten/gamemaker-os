@@ -121,3 +121,31 @@ See [drag-drop.md](drag-drop.md) for layouts, bounds and qualification status.
 
 Between input reads the list sleeps 10 ms (`sleep_until`); it will block on
 input once the kernel has `poll`.
+
+## Optional e-ink status (ABI 1.9)
+
+GMOS uses `/dev/eink` only when the startup record reports major 1, minor 9
+or newer. It opens write-only and first submits a 250x122 boot page with
+`GAME-MAKER OS`, the same castle as the HDMI splash, and `LOADING LIBRARY`.
+The top-right error indicator area remains white.
+
+Once scanning finishes it clears the page, then installs the title
+`GAME-MAKER OS` and a 40x40 castle mark. The API's free-text build line shows
+`N GAMES` in the library, the current game's title while playing (capitalized,
+clipped to 16 bytes), or `SAVING` while the F5 save screen is open. Leaving
+F5 restores the game title; returning to the library restores the count.
+The kernel's uptime, USB and error lines remain visible in title mode.
+
+Page, clear, title and retry attempts share a minimum gap of 2.1 seconds,
+which stays below both the one-second and 30-updates-per-minute limits.
+The clear is required because a full page covers a title; the kernel's status
+screen can appear briefly between clear and title. Changes are coalesced to
+the latest state, so a screen dismissed within the cadence gap may never
+appear on paper. No e-ink operation sleeps or waits for a refresh. `EAGAIN`
+defers a retry to a later heartbeat; other device errors (including `ENODEV`)
+close the optional handle and disable updates silently for this run. Older
+kernels and failed opens leave play available without e-ink.
+
+`tests/test_eink.py` runs the production client with a host fake for the
+write-only device and monotonic clock. The SDK remains an unmodified copy
+from the commit in `sdk/PINNED`; the host transport lives under `tests/host/`.
