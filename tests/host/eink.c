@@ -3,6 +3,17 @@
 #include <string.h>
 #include <sandbox/syscall.h>
 #include "eink.h"
+/* Exports called by the Python ctypes tests. */
+void fake_reset(void);
+void fake_time(uint64_t ns);
+void fake_error(int e);
+void fake_open_error(int e);
+void fake_clock_error(int e);
+int fake_count(int which);
+uint64_t fake_at(int i);
+const char *fake_line(void);
+const uint8_t *fake_page(void);
+const uint8_t *fake_mark(void);
 static uint64_t now, times[1024];
 static int opens, closes, updates, pages, titles, clears, page_shown, error, open_error, clock_error;
 static uint8_t page[SBX_EINK_PAGE_BYTES], mark[SBX_EINK_MARK_BYTES];

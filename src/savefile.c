@@ -18,7 +18,7 @@ static int make_path(char out[40], const char *game, const char *name, int tmp) 
   if (l >= 4 && !strcmp(name + l - 4, ".TMP")) return SAVE_EINVAL;
   memcpy(out, "/sd/OS/SAVES/", 13); n = 13;
   memcpy(out + n, game, g); n += g; out[n++] = '/';
-  if (tmp) {const char *d = strchr(name, '.'); l = d ? (size_t)(d - name) : l; memcpy(out + n, name, l); n += l; memcpy(out + n, ".TMP", 4); n += 4;}
+  if (tmp) {l = 0; while (name[l] && name[l] != '.') l++; memcpy(out + n, name, l); n += l; memcpy(out + n, ".TMP", 4); n += 4;}
   else {memcpy(out + n, name, l); n += l;}
   out[n] = 0; return 0;
 }

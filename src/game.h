@@ -70,4 +70,7 @@ int gp_state_save(struct save_game *g);
 int gp_state_load(const struct save_game *g);
 #ifdef __cplusplus
 }
+namespace gm {struct World;}
+/* The host state-line renderer inspects the shared world. */
+gm::World &gp_world();
 #endif

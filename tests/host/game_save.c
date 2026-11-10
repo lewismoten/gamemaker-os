@@ -2,6 +2,7 @@
  * Hermes OpenAI Codex GPT-6.1 Sol. Synthetic public-layout fixtures only. */
 #include "savefile.h"
 #include <assert.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -146,7 +147,7 @@ int main(int argc, char **argv) {
     arguments(g, wire, n);
     if (n < 41505) rejected(wire, n + 1); /* in-range trailer, not global cap */
     if (m == 150 && r == 1000) { malformed(wire, n); capacities(g, n); }
-    printf("fixture M=%u R=%u bytes=%u state=%zu PASS\n", m, r, n, sizeof *g);
+    printf("fixture M=%u R=%u bytes=%" PRIu32 " state=%zu PASS\n", m, r, n, sizeof *g);
     free(g); free(outstore); free(storage);
   } else assert(argc == 1);
   puts("GAME0 ALL PASS"); return 0;

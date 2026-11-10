@@ -5,6 +5,17 @@
 #include <sys/stat.h>
 #include <sandbox/syscall.h>
 #include "sdpack.h"
+/* Exports called by the Python ctypes tests. */
+void test_sp_setup(const char *path, unsigned major, unsigned minor);
+unsigned test_sp_list(uint8_t folder, struct sp_pack *p, unsigned max);
+int test_sp_open(const struct sp_pack *p);
+int test_sp_read(uint32_t off, void *out, uint32_t n);
+int test_sp_volume(unsigned v, uint32_t off, void *out, uint32_t n);
+int32_t test_sp_dos(const char *name, void *out, uint32_t cap);
+int32_t test_sp_entry(const char *name, void *out, uint32_t cap);
+uint64_t test_sp_count(unsigned i);
+void test_sp_error(int e);
+void test_sp_short(unsigned n);
 static char root[1024];
 static struct {FILE *file; DIR *dir; char path[1200];} handles[32];
 static uint64_t counts[6]; /* file opens, closes, seeks, bytes read, beats, reads */

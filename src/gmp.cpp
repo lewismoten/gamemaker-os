@@ -10,9 +10,12 @@ extern "C" {
 }
 namespace {
 
-bool pak_read(void *user, uint32_t off, void *buf, uint32_t n) {return gmp_read_at((const struct gmp *)user, off, buf, n) == 0;}
-gm::SmallPak pak_of(const struct gmp *g) {
-  gm::SmallPak p; p.user = (void *)g; p.readAt = pak_read; p.size = g->total; p.count = g->entries; return p;
+bool pak_read(void *user, uint32_t off, void *buf, uint32_t n) {return gmp_read_at(*(const struct gmp *const *)user, off, buf, n) == 0;}
+/* SmallPak takes a mutable context; the pointed-to pack stays read-only.
+ * Callers keep source alive for every synchronous read through the returned pak. */
+gm::SmallPak pak_of(const struct gmp **source) {
+  const struct gmp *g = *source;
+  gm::SmallPak p; p.user = source; p.readAt = pak_read; p.size = g->total; p.count = g->entries; return p;
 }
 uint32_t le32(const uint8_t *b) {return b[0] | b[1] << 8 | b[2] << 16 | (uint32_t)b[3] << 24;}
 bool is_gam(const char *n) { /* "dos/" then 1 to 8 characters and ".GAM" */
@@ -42,7 +45,8 @@ extern "C" int gmp_open(struct gmp *g) {
     if (g->size[v] > 0xffffffffu - g->total) return -1;
     g->total += g->size[v];
   }
-  gm::SmallPak p = pak_of(g);
+  const struct gmp *source = g;
+  gm::SmallPak p = pak_of(&source);
   if (!p.begin() || p.count > GMP_ENTRIES_MAX) return -1;
   g->entries = p.count;
   uint32_t off, len;
@@ -64,7 +68,8 @@ extern "C" int32_t gmp_read(void *user, const char *name, uint8_t *buf, uint32_t
     char c = name[k - 4]; key[k] = c >= 'a' && c <= 'z' ? (char)(c - 32) : c;
   }
   key[k] = 0;
-  gm::SmallPak p = pak_of(g);
+  const struct gmp *source = g;
+  gm::SmallPak p = pak_of(&source);
   uint32_t off, len;
   if (!p.find(key, &off, &len) || len < 4 || len > sizeof packed) return -1;
   if (gmp_read_at(g, off, packed, len)) return -1;
@@ -78,7 +83,8 @@ extern "C" int32_t gmp_read(void *user, const char *name, uint8_t *buf, uint32_t
   return (int32_t)n;
 }
 extern "C" int32_t gmp_entry(const struct gmp *g, const char *name, uint8_t *buf, uint32_t cap) {
-  gm::SmallPak p = pak_of(g);
+  const struct gmp *source = g;
+  gm::SmallPak p = pak_of(&source);
   uint32_t off, len;
   if (!p.find(name, &off, &len)) return -1;
   uint32_t n = len < cap ? len : cap;
