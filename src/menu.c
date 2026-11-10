@@ -72,6 +72,7 @@ void gm_finish(struct gm_menu *m) {
   m->tab = GM_CAT_SANDBOX;
   if (!m->tab_count[m->tab]) for (unsigned t = 0; t < GM_CATS; t++) if (m->tab_count[t]) {m->tab = t; break;}
   m->view = GM_GRID; m->button = GM_BTN_PLAY; m->shift = 0; m->message[0] = 0; m->background_music = 0;
+  m->open_active = 0; m->open_dir[0] = 0;
 }
 unsigned gm_tab_size(const struct gm_menu *m, unsigned tab) {return tab < GM_CATS ? m->tab_count[tab] : 0;}
 const struct gm_game *gm_tab_game(const struct gm_menu *m, unsigned tab, unsigned i) {
@@ -108,11 +109,52 @@ static int next_tab(struct gm_menu *m, int by) {
   if (t == m->tab) return GM_NONE;
   m->tab = t; m->message[0] = 0; return GM_MOVED;
 }
+int gm_open_dir(struct gm_menu *m, const char *dir) {
+  for (unsigned t = 0; t < GM_CATS; t++) for (unsigned i = 0; i < m->tab_count[t]; i++) {
+    const struct gm_game *g = gm_tab_game(m, t, i);
+    if (compare(g->dir, dir, true)) continue;
+    m->tab = t; m->pos[t] = i; m->view = GM_DETAILS;
+    m->button = GM_BTN_PLAY; m->message[0] = 0; m->shift = 0;
+    return GM_OPEN_FOUND;
+  }
+  copy(m->message, "Open game: not found", GM_MESSAGE_MAX);
+  return GM_OPEN_MISSING;
+}
+/* Linux key codes, independent of keyboard layout; requests use DOS aliases.
+ * Consume command letters before shortcuts such as Q, H and M. */
+static int open_event(struct gm_menu *m, uint16_t code) {
+  static const char letters[] = "QWERTYUIOPASDFGHJKLZXCVBNM";
+  static const uint8_t codes[] = {16,17,18,19,20,21,22,23,24,25,30,31,32,33,34,35,36,37,38,44,45,46,47,48,49,50};
+  unsigned n = 0; while (m->open_dir[n]) n++;
+  if (code == 1) {m->open_active = 0; m->message[0] = 0; return GM_MOVED;}
+  if (code == 28) {
+    int play = m->shift; m->open_active = 0;
+    int result = gm_open_dir(m, m->open_dir);
+    return play && result == GM_OPEN_FOUND ? GM_OPEN_PLAY : result;
+  }
+  if (code == 14) {if (n) m->open_dir[--n] = 0;}
+  else {
+    char c = 0;
+    for (unsigned i = 0; i < sizeof codes; i++) if (code == codes[i]) c = letters[i];
+    if (code >= 2 && code <= 11) c = "1234567890"[code - 2];
+    if (code == 12) c = m->shift ? '_' : '-';
+    if (!c || n == sizeof m->open_dir - 1) return GM_NONE;
+    m->open_dir[n++] = c; m->open_dir[n] = 0;
+  }
+  copy(m->message, "Open game: ", GM_MESSAGE_MAX);
+  copy(m->message + 11, m->open_dir, 9);
+  return GM_MOVED;
+}
 int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
-  if (type == 0 && code == 3) return GM_RESYNC;  /* EV_SYN, SYN_DROPPED */
+  if (type == 0 && code == 3) {m->open_active = 0; m->message[0] = 0; return GM_RESYNC;}  /* EV_SYN, SYN_DROPPED */
   if (type != 1) return GM_NONE;
   if (code == 42 || code == 54) {m->shift = value != 0; return GM_NONE;} /* KEY_LEFTSHIFT, KEY_RIGHTSHIFT */
   if (!value) return GM_NONE;                    /* key presses and repeats only */
+  if (code == 53 && value == 1) {
+    m->open_active = 1; m->open_dir[0] = 0;
+    copy(m->message, "Open game: ", GM_MESSAGE_MAX); return GM_MOVED;
+  }
+  if (m->open_active) return value == 1 ? open_event(m, code) : GM_NONE;
   if (code == 50 && value == 1) {m->background_music = !m->background_music; return GM_MUSIC;} /* M: owner music setting */
   if (m->view == GM_DETAILS) {
     unsigned b = m->button;

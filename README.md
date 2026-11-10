@@ -24,6 +24,10 @@ Press H on the grid or details view for [Top Ten](docs/saves.md). During a level
 
 ![Roll the Dice, eighteen ticks into its level, as the host tests draw it; the board's checksum of the same frame matched](docs/play-dice.png)
 
+To jump straight to a game's card over USB, use
+`python3 tools/open_game.py /dev/cu.usbmodemXXXX DICE` (`--play` also presses
+Play). See [open by folder name](docs/build.md#open-a-game-by-folder-name-over-usb).
+
 ## A JavaScript layer (spike)
 
 `JS.ELF` runs a small web-page-like app from the card: JavaScript (QuickJS-ng) with `document.createElement`, CSS-like styles, events, `requestAnimationFrame` and a `<game>` element that plays a game with the same play core, while the layout and drawing stay native. See [docs/js.md](docs/js.md) for how to make your own shell with it. The numbers are in sandbox-kernel's `docs/js-spike.md`.

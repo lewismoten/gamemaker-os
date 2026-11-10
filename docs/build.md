@@ -206,3 +206,40 @@ kernels and failed opens leave play available without e-ink.
 `tests/test_eink.py` runs the production client with a host fake for the
 write-only device and monotonic clock. The SDK remains an unmodified copy
 from the commit in `sdk/PINNED`; the host transport lives under `tests/host/`.
+
+## Open a game by folder name over USB
+
+With GMOS on the games grid or details view (also after returning from a game),
+run this from the GMOS checkout on the Mac, replacing the port and `DICE`:
+
+```sh
+python3 tools/open_game.py /dev/cu.usbmodemXXXX DICE
+python3 tools/open_game.py /dev/cu.usbmodemXXXX DICE --play
+```
+
+The helper calls the sibling kernel checkout's `scripts/usb_kernel.py key`.
+Use `--usb-kernel /path/to/sandbox-kernel/scripts/usb_kernel.py` for another
+checkout. The exact equivalent for opening DICE's details is:
+
+```sh
+python3 /Users/lewismoten/dev/sandbox-kernel/scripts/usb_kernel.py /dev/cu.usbmodemXXXX key 53 32 23 46 18 enter --gap 0.1 --seconds 2
+```
+
+Slash (Linux code 53) starts or resets the request; type the folder alias and
+press Enter. Matching ignores case and switches to the correct category and
+page, opens details, and focuses Play. Shift+Enter (`--play`) also presses Play,
+entering the game's usual title/menu flow. A miss preserves the current card
+and never presses Play. The log reports `GMOS open DICE: found` or
+`GMOS open DICE: not found`. Backspace edits; Esc cancels. While entering a name,
+letters such as Q, H and M are text rather than menu shortcuts. Folder aliases
+are 1–8 letters, digits, `_` or `-`; this shortcut uses the list's DOS alias
+(the `GMOS game <alias>` startup log), not a long folder path or display title.
+For duplicate aliases the first match in category/list order wins.
+
+Requests are handled only in the library, not queued during gameplay or Top
+Ten. Wait until the library returns before sending one. This uses the existing
+synthetic `/dev/input/event0` and requires no kernel or SDK changes. An
+`OPEN.TXT` mailbox was not used: USB `put --name OPEN.TXT` does target
+`/OS/OPEN.TXT`, but this kernel's `file_command` rejects PUTF while an OS is
+running, and the vendored SDK has no unlink call. Hardware USB behavior still
+needs a Pi check; host tests cover the real menu event path and helper encoding.

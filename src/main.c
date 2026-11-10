@@ -842,7 +842,7 @@ int main(const sbx_startup *start) {
       else {
         doing = "list";
         const struct gm_game *g = gm_selected(&menu);
-        if (menu.view == GM_DETAILS && g && demo_none != (int)(g - menu.games) && gs_demo_idle_due(demo_idle, clock_ns()) && abi_minor >= 1) demo_start(px, g);
+        if (!menu.open_active && menu.view == GM_DETAILS && g && demo_none != (int)(g - menu.games) && gs_demo_idle_due(demo_idle, clock_ns()) && abi_minor >= 1) demo_start(px, g);
         else sbx_sleep_until(clock_ns() + 10000000ull);
       }
       continue;
@@ -853,6 +853,12 @@ int main(const sbx_startup *start) {
     int redraw = 0;
     for (uint32_t i = 0; i < got / sizeof ev[0]; i++) {
       int a = gm_event(&menu, ev[i].type, ev[i].code, ev[i].value);
+      if (a == GM_OPEN_FOUND || a == GM_OPEN_MISSING || a == GM_OPEN_PLAY) {
+        p = put(line, "GMOS open "); p = put(p, menu.open_dir);
+        put(p, a == GM_OPEN_MISSING ? ": not found" : ": found"); say(line);
+        redraw = 1;
+        if (a == GM_OPEN_PLAY) a = GM_CHOSEN;
+      }
       if (a == GM_MUSIC) {
         if (aud_on && !menu.background_music) bg_leave();
         if (aud_on && menu.background_music) bg_next = clock_ns();

@@ -31,9 +31,11 @@ struct gm_menu {
   int background_music;             /* owner setting: off on boot, M toggles in the library */
   unsigned pos[GM_CATS];            /* the selected card in each tab (remembered) */
   int shift;                        /* a Shift key is held (Shift+Tab) */
+  int open_active;                  /* slash starts a folder-name request */
+  char open_dir[10];                /* ninth character makes an overlong name fail */
   char message[GM_MESSAGE_MAX + 1]; /* footer line; empty shows the key help */
 };
-enum {GM_NONE, GM_MOVED, GM_CHOSEN, GM_QUIT, GM_RESYNC, GM_SCORES, GM_MUSIC}; /* GM_SCORES: H, the selected game's Top Ten */
+enum {GM_NONE, GM_MOVED, GM_CHOSEN, GM_QUIT, GM_RESYNC, GM_SCORES, GM_MUSIC, GM_OPEN_FOUND, GM_OPEN_MISSING, GM_OPEN_PLAY}; /* GM_SCORES: H, the selected game's Top Ten */
 /* Add a game (dir is its folder's name, gam its .GAM file, title from that
    file, crc the .GAM's CRC-32); false when the list is full. */
 bool gm_add(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc);
@@ -47,8 +49,13 @@ void gm_finish(struct gm_menu *m);
    Home/End, Tab and Shift+Tab (or [ and ]) change the tab, Enter opens the
    details, Esc or Q quits, H shows the selected game's Top Ten. Details: Left/Right/Tab pick a button, Enter or
    Space presses it (Play chooses the game), H shows the Top Ten, Esc goes back. SYN_DROPPED asks
-   the caller to resynchronize. */
+   the caller to resynchronize. Slash starts/resets a DOS folder request in
+   either view: letters/digits/-/_ type, Backspace edits, Esc cancels, Enter
+   opens details (Shift+Enter also presses Play). GM_OPEN_* lets the caller log. */
 int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value);
+/* Exact folder alias, ignoring case; selects its tab/page and opens details.
+   Returns GM_OPEN_FOUND or GM_OPEN_MISSING; a miss preserves selection. */
+int gm_open_dir(struct gm_menu *m, const char *dir);
 /* The selected game (0 when the list is empty), and the cards of a tab. */
 const struct gm_game *gm_selected(const struct gm_menu *m);
 unsigned gm_tab_size(const struct gm_menu *m, unsigned tab);
