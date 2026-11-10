@@ -65,7 +65,9 @@ static void fades(void) {
   while (a.vol && frames < 48000) {
     unsigned n = AU_CHUNK; au_render(&a, out, n); frames += n;
     for (unsigned i = 0; i < n; i++) {int d = abs(out[i * 2] - (i ? out[(i - 1) * 2] : out[0])); if (d > 4000) bad++;} /* no click: no jump to or from a level */
-    if (a.vol > last) bad++; last = a.vol; if (!a.vol) break;
+    if (a.vol > last) bad++;
+    last = a.vol;
+    if (!a.vol) break;
   }
   CHECK(a.vol == 0 && frames >= 32000 && frames <= 36000, "fade out took %u frames (0.68 s is 32768)", frames);
   CHECK(bad == 0, "%u clicks or rises while fading out", bad);
@@ -155,7 +157,9 @@ static void latency(void) {
         if (a.pc.active) first = before; /* a rendered chunk that holds speaker output starts here */
       }
       if (waiting && first && r.gotn > before) {double lat = ((double)first - ev_idx) / 48.0 + 0; if (lat < 0) lat = 0; sum += lat; cnt++; if (lat > worst) worst = lat; waiting = 0; (void)ev;}
-      if (r.queued < 480) dry++; r.queued = r.queued > 480 ? r.queued - 480 : 0; played += 480;
+      if (r.queued < 480) dry++;
+      r.queued = r.queued > 480 ? r.queued - 480 : 0;
+      played += 480;
     }
     printf("%s queue: SFX start %.0f ms after the event on average, %.0f ms worst (%d beeps), dry pumps %u\n", mode ? "small" : "long", cnt ? sum / cnt : 0, worst, cnt, dry);
     if (mode) CHECK(worst <= 80, "game-play SFX latency %.0f ms", worst);

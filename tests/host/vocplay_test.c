@@ -9,7 +9,8 @@ static int fails;
 struct mem {uint8_t *b; uint32_t n, preads, maxread;};
 static int32_t mread(void *u, uint32_t off, void *buf, uint32_t n) {
   struct mem *m = u; m->preads++; if (n > m->maxread) m->maxread = n;
-  if (off >= m->n) return 0; if (n > m->n - off) n = m->n - off;
+  if (off >= m->n) return 0;
+  if (n > m->n - off) n = m->n - off;
   memcpy(buf, m->b + off, n); return (int32_t)n;
 }
 static unsigned closed;
@@ -89,7 +90,8 @@ int main(void) {
     CHECK(mx > 0 && mx <= 32767 && mx == 26010 + 3146 /* clip 0.8 * 127/128 + speaker peak */);
     /* the clip ends by itself: 4000 samples at 22 kHz is about 8,700 frames, then silence */
     au_silence(&a); a.vol = a.vol_target = AU_VOL_ONE; au_voc(&a, "A.VOC"); au_service(&a, 0, 0);
-    for (int k = 0; k < 30; k++) au_render(&a, out, AU_CHUNK); CHECK(a.vp.state == 0 && out[100] == 0);
+    for (int k = 0; k < 30; k++) au_render(&a, out, AU_CHUNK);
+    CHECK(a.vp.state == 0 && out[100] == 0);
     free(fa); free(fb); free(fc); }
   puts(fails ? "vocplay_test FAILED" : "vocplay_test ok");
   return fails ? 1 : 0;
