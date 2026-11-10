@@ -1,215 +1,213 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Game-Maker OS</title>
-    <meta name="description" content="A game-library operating system for the Raspberry Pi Zero W that plays DOS Game-Maker games straight from the SD card." />
-    <meta property="og:title" content="Game-Maker OS: Sandbox Edition" />
-    <meta property="og:description" content="A game-library operating system for the Raspberry Pi Zero W that plays DOS Game-Maker games straight from the SD card." />
-    <meta property="og:type" content="website" />
-    <meta property="og:image" content="images/social-preview-1280x640.png" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <link rel="icon" href="favicon.ico" />
-    <link rel="preload" href="fonts/silkscreen-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin />
-    <!-- Everything is bundled: Silkscreen in fonts/ (SIL OFL 1.1). Nothing loads from outside. -->
-    <style>
-      @font-face { font-family: Silkscreen; font-weight: 400; font-display: swap; src: url(fonts/silkscreen-latin-400-normal.woff2) format('woff2'); }
-      @font-face { font-family: Silkscreen; font-weight: 700; font-display: swap; src: url(fonts/silkscreen-latin-700-normal.woff2) format('woff2'); }
-      :root {
-        color-scheme: light dark;
-        --bg: #eef3fb; --panel: #fff; --fg: #101428; --muted: #3d4766; --rule: #b9c4dc;
-        --accent: #7a5a00; --yellow-fill: #f8d450; --blue: #0a5a99; --code: #f3f6fc;
-        --ok: #0b6b2e; --mid: #7a5a00;
-        --pixel: Silkscreen, 'Courier New', monospace;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #0b0f20; --panel: #161c36; --fg: #f2f5ff; --muted: #b4bfdc; --rule: #26305a;
-          --accent: #f8d450; --blue: #78b8f8; --code: #101428; --ok: #7be39a; --mid: #f8d450;
-        }
-      }
-      * { box-sizing: border-box; }
-      html { background: var(--bg); }
-      body { margin: 0; font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif; background: var(--bg); color: var(--fg); }
-      a { color: var(--blue); }
-      a:focus-visible, [role='tab']:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
-      .wrap { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
-      main { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 28px; padding: 24px 0 14px; align-items: start; }
-      /* the hero stays navy in both themes, like the social preview */
-      .hero { background: #101428; color: #f2f5ff; border-radius: 4px; padding: 24px 22px 26px; border: 1px solid #26305a; }
-      .edition { display: flex; align-items: center; gap: 14px; margin: 0 0 14px; }
-      .edition img { width: 64px; height: 64px; image-rendering: pixelated; flex: none; }
-      .edition span { font: 400 1.05rem/1.2 var(--pixel); color: #f8d450; letter-spacing: 0.08em; text-transform: uppercase; }
-      h1 { margin: 0; font: 700 min(2.2rem, 2.8vw)/1.1 var(--pixel); text-transform: uppercase; white-space: nowrap; }
-      .sentence { margin: 18px 0 0; font-size: 1.05rem; color: #dbe3fa; }
-      .chips { font: 400 0.78rem/1.4 var(--pixel); color: #b4bfdc; letter-spacing: 0.08em; margin: 16px 0 0; text-transform: uppercase; }
-      .chips b { color: #f8d450; font-weight: 400; }
-      .panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; min-width: 0; }
-      [role='tablist'] { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--rule); }
-      [role='tab'] { font: 400 0.82rem/1.2 var(--pixel); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: none; border: 0; border-bottom: 3px solid transparent; padding: 12px 14px; min-height: 44px; cursor: pointer; }
-      [role='tab']:hover { color: var(--fg); }
-      [role='tab'][aria-selected='true'] { color: var(--fg); border-bottom-color: var(--yellow-fill); }
-      [role='tabpanel'] { padding: 16px 18px 18px; }
-      [role='tabpanel'][hidden] { display: none; }
-      h2 { font: 700 0.95rem/1.3 var(--pixel); letter-spacing: 0.04em; margin: 0 0 8px; text-transform: uppercase; color: var(--blue); }
-      h3 { font: 700 0.8rem/1.3 var(--pixel); letter-spacing: 0.04em; margin: 12px 0 4px; text-transform: uppercase; color: var(--fg); }
-      p { margin: 0 0 8px; }
-      .shots { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; margin: 0; }
-      figure { margin: 0; min-width: 0; }
-      figure img { display: block; width: 100%; height: auto; image-rendering: pixelated; border: 1px solid var(--rule); background: #101428; }
-      figcaption { font: 400 0.7rem/1.4 var(--pixel); color: var(--muted); letter-spacing: 0.06em; margin-top: 4px; text-transform: uppercase; }
-      .cols { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 4px 22px; }
-      .cols > div { min-width: 0; }
-      ol, ul { margin: 0 0 8px; padding-left: 1.3rem; }
-      li { margin: 3px 0; }
-      code { font: 0.88em ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
-      pre { background: var(--code); border: 1px solid var(--rule); padding: 8px 10px; overflow-x: auto; font: 0.8rem/1.45 ui-monospace, Menlo, Consolas, monospace; margin: 4px 0 8px; }
-      .note { background: var(--code); border-left: 4px solid var(--yellow-fill); padding: 8px 12px; margin: 8px 0; font-size: 0.93rem; }
-      .small { font-size: 0.9rem; color: var(--muted); }
-      table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
-      th, td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--rule); }
-      thead th { font: 400 0.7rem/1.3 var(--pixel); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-      tbody th { font-weight: 600; }
-      .tablewrap { overflow-x: auto; }
-      .st { font-weight: 700; white-space: nowrap; }
-      .st.ok { color: var(--ok); } .st.mid { color: var(--mid); }
-      .links { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; }
-      .links li { margin: 0; }
-      .links a { display: inline-block; min-height: 24px; font-weight: 600; }
-      .links span { display: block; font-size: 0.88rem; color: var(--muted); }
-      footer { border-top: 1px solid var(--rule); padding: 10px 0 18px; font-size: 0.82rem; color: var(--muted); }
-      footer p { margin: 0 0 4px; }
-      @media (max-width: 900px) { h1 { font-size: min(2.2rem, 6.4vw); } main { grid-template-columns: 1fr; gap: 18px; } .cols { grid-template-columns: 1fr; } }
-      @media (max-width: 520px) {
-        .shots, .links { grid-template-columns: 1fr; }
-        [role='tabpanel'] { padding: 14px 12px; }
-        [role='tab'] { padding: 10px 9px; font-size: 0.74rem; }
-        .hero { padding: 18px 16px; }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <main>
-        <section class="hero" aria-label="About">
-          <p class="edition"><img src="img/badge.png" width="64" height="64" alt="The Game-Maker castle badge: a sand castle with a bucket and shovel in a yellow ring" /><span>Sandbox Edition</span></p>
-          <h1>Game-Maker OS</h1>
-          <p class="sentence">A game-library operating system for the Raspberry Pi Zero W that plays DOS Game-Maker games straight from the SD card.</p>
-          <p class="chips">Pi Zero W / HDMI / <b>SD card</b></p>
-        </section>
-
-        <section class="panel" aria-label="Details">
-          <div role="tablist" aria-label="Sections">
-            <button role="tab" id="tab-screens" aria-controls="p-screens" aria-selected="true">Screens</button>
-            <button role="tab" id="tab-card" aria-controls="p-card" aria-selected="false" tabindex="-1">Make your SD card</button>
-            <button role="tab" id="tab-hw" aria-controls="p-hw" aria-selected="false" tabindex="-1">Hardware</button>
-            <button role="tab" id="tab-links" aria-controls="p-links" aria-selected="false" tabindex="-1">Links</button>
-          </div>
-
-          <div role="tabpanel" id="p-screens" aria-labelledby="tab-screens">
-            <h2>What it shows on the TV</h2>
-            <div class="shots">
-              <figure><img src="img/splash.png" width="960" height="540" alt="The boot splash: the castle badge, GAME-MAKER OS, SANDBOX EDITION and Loading game library, with a row of eight bars along the bottom" /><figcaption>Boot splash</figcaption></figure>
-              <figure><img src="img/games.png" width="960" height="540" alt="The games list: a navy header with the castle badge, a Starters tab, and eight game cards with title screens" /><figcaption>Games list</figcaption></figure>
-              <figure><img src="img/details.png" width="960" height="540" alt="A details view: the game's title screen at twice the size, its category, company, year, description and Play and Back buttons" /><figcaption>Details</figcaption></figure>
-              <figure><img src="img/topten.png" width="640" height="400" alt="A Top Ten Scores screen with five names and scores on a dark blue background" /><figcaption>Top Ten</figcaption></figure>
-            </div>
-            <p class="small" style="margin-top: 8px">Captured from the host renderer, which draws the same frames as the board.</p>
-          </div>
-
-          <div role="tabpanel" id="p-card" aria-labelledby="tab-card" hidden>
-            <div class="note"><strong>Ready-made SD-card zip: coming soon.</strong> It waits for the kernel's review. Until then you build the two pieces yourself.</div>
-            <div class="cols">
-              <div>
-                <h2>Steps</h2>
-                <ol>
-                  <li>Format a card as <strong>FAT32</strong>.</li>
-                  <li>Copy sandbox-kernel's boot files to the root: everything <code>make boot</code> puts in <code>build/boot</code> (<code>bootcode.bin</code>, <code>start.elf</code>, <code>fixup.dat</code>, <code>config.txt</code>, <code>kernel.img</code>, <code>KERNA.BIN</code>, <code>KERNB.BIN</code>, <code>BOOTCT0.BIN</code>, <code>BOOTCT1.BIN</code> and the license texts).</li>
-                  <li>Make an <code>OS</code> folder and put <code>GMOS.ELF</code> in it (<code>make</code> here builds <code>build/GMOS.ELF</code>).</li>
-                  <li>Put your games in <code>GAMES</code>, one folder each, with the library index beside them.</li>
-                  <li>Put the card in the Pi, plug in HDMI, then power. The kernel starts <code>/OS/GMOS.ELF</code> after a 10 second countdown.</li>
-                </ol>
-              </div>
-              <div>
-                <h2>Where games come from</h2>
-                <p>Game-Maker: Sandbox Edition's games. Its <code>web/scripts/gmosCard.ts</code> writes the layout below. To copy by hand, follow it, with one folder for each game and the game's files inside, named in upper-case 8.3 as the build wrote them:</p>
-<pre tabindex="0" aria-label="Card layout">/
-  bootcode.bin  start.elf  fixup.dat
-  config.txt  kernel.img
-  KERNA.BIN  KERNB.BIN
-  BOOTCT0.BIN  BOOTCT1.BIN
-  OS/
-    GMOS.ELF
-  GAMES/
-    LIBRARY.JSL
-    DICE/
-      DICE.GAM
-      ...</pre>
-                <p class="small">A game's folder is named for its <code>.GAM</code> file (8 letters at most). <code>LIBRARY.JSL</code> gives titles, categories and blurbs; a game it does not list goes under Other. Get games and the script from <a href="https://lewismoten.github.io/GameMaker-SandboxEdition/">Game-Maker: Sandbox Edition</a>. Details: <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/build.md">build notes</a>.</p>
-              </div>
-            </div>
-          </div>
-
-          <div role="tabpanel" id="p-hw" aria-labelledby="tab-hw" hidden>
-            <h2>Hardware</h2>
-            <p>A <strong>Raspberry Pi Zero W</strong> with an SD card and an HDMI screen. The picture is 960x540, doubled to fill a 1080p screen with square pixels.</p>
-            <ul>
-              <li><strong>Optional:</strong> a Waveshare 2.13 inch e-ink HAT shows the kernel's status.</li>
-              <li>The USB link to a computer is for development, and for now it is also the keyboard: the computer sends key presses.</li>
-            </ul>
-            <div class="tablewrap">
-              <table>
-                <thead><tr><th>Coming</th><th>State</th></tr></thead>
-                <tbody>
-                  <tr><th>Sound over HDMI</th><td class="st mid">In progress</td></tr>
-                  <tr><th>A USB keyboard</th><td class="st mid">In progress</td></tr>
-                  <tr><th>The TV remote over HDMI-CEC</th><td class="st mid">In progress</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <p class="small" style="margin-top: 8px">There is no sound on the board yet. Each sound a game plays is logged for a page on the computer to play.</p>
-          </div>
-
-          <div role="tabpanel" id="p-links" aria-labelledby="tab-links" hidden>
-            <h2>Links</h2>
-            <ul class="links">
-              <li><a href="https://github.com/lewismoten/sandbox-kernel">sandbox-kernel</a><span>The kernel Game-Maker OS runs on.</span></li>
-              <li><a href="https://github.com/lewismoten/sandbox-kernel/blob/develop/docs/os-authors.md">OS author's guide</a><span>How to write your own OS for the kernel.</span></li>
-              <li><strong>Hello World example</strong><span>Coming.</span></li>
-              <li><a href="https://lewismoten.github.io/gamemaker-pocket/">Game-Maker Pocket</a><span>The browser flasher for the pocket player.</span></li>
-              <li><a href="https://lewismoten.github.io/GameMaker-SandboxEdition/">Game-Maker: Sandbox Edition</a><span>The games and the web editor.</span></li>
-              <li><a href="https://github.com/lewismoten/gamemaker-os">Source</a><span>This repository, with its <a href="https://github.com/lewismoten/gamemaker-os/tree/develop/docs">docs</a>.</span></li>
-            </ul>
-          </div>
-        </section>
-      </main>
-      <footer>
-        <p>Art by ChatGPT (GPT-6.1 Sol), made from Lewis Moten's directions. Font: Silkscreen by The Silkscreen Project Authors, SIL Open Font License 1.1 (<a href="fonts/OFL-Silkscreen.txt">license</a>). MIT license. See <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/NOTICE.md">NOTICE</a>.</p>
-      </footer>
+<html lang="en-US">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Game-Maker OS — Sandbox Edition</title>
+  <meta name="description" content="Game-Maker games on a Raspberry Pi Zero W, with a native games library and a JavaScript app runtime on sandbox-kernel.">
+  <meta property="og:title" content="Game-Maker OS">
+  <meta property="og:description" content="A Raspberry Pi, an SD card, and a library of Game-Maker games on your TV.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="images/social-preview-1280x640.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="favicon.ico">
+  <link rel="preload" href="fonts/silkscreen-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <style>
+    @font-face { font-family: Silkscreen; font-weight: 400; font-display: swap; src: url('fonts/silkscreen-latin-400-normal.woff2') format('woff2'); }
+    @font-face { font-family: Silkscreen; font-weight: 700; font-display: swap; src: url('fonts/silkscreen-latin-700-normal.woff2') format('woff2'); }
+    :root { color-scheme: light; --bg: #eef3fb; --panel: #fff; --ink: #101428; --muted: #46516e; --line: #bbc6dc; --link: #075b98; --code: #e4eaf5; --accent: #785600; --pixel: Silkscreen, 'Courier New', monospace; }
+    @media (prefers-color-scheme: dark) { :root { color-scheme: dark; --bg: #0b0f20; --panel: #161c36; --ink: #f2f5ff; --muted: #b4bfdc; --line: #39466e; --link: #8ac5ff; --code: #101428; --accent: #f8d450; } }
+    :root[data-theme="light"] { color-scheme: light; --bg: #eef3fb; --panel: #fff; --ink: #101428; --muted: #46516e; --line: #bbc6dc; --link: #075b98; --code: #e4eaf5; --accent: #785600; }
+    :root[data-theme="dark"] { color-scheme: dark; --bg: #0b0f20; --panel: #161c36; --ink: #f2f5ff; --muted: #b4bfdc; --line: #39466e; --link: #8ac5ff; --code: #101428; --accent: #f8d450; }
+    * { box-sizing: border-box; }
+    html { scroll-padding-top: 1rem; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.65 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+    a { color: var(--link); text-underline-offset: .2em; }
+    a:hover { text-decoration-thickness: 2px; }
+    :focus-visible { outline: 3px solid var(--link); outline-offset: 4px; }
+    .skip { position: absolute; left: 1rem; top: -8rem; padding: .7rem 1rem; background: var(--panel); z-index: 2; }
+    .skip:focus { top: 1rem; }
+    .wrap { width: min(1120px, calc(100% - 40px)); margin-inline: auto; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .6rem 1.5rem; padding-block: 1rem; }
+    .brand, h1, h2, h3, .eyebrow, .number { font-family: var(--pixel); }
+    .brand { font-size: .85rem; }
+    .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; font-size: .85rem; }
+    select { background: var(--panel); color: var(--ink); border: 1px solid var(--line); padding: .5rem; font: inherit; min-height: 44px; }
+    .hero { background: #101428; color: #f2f5ff; border: 1px solid #39466e; padding: clamp(24px, 5vw, 56px); display: grid; grid-template-columns: minmax(0, 1fr) 96px; gap: 1.5rem; box-shadow: 6px 6px 0 var(--line); }
+    .hero img { width: 96px; height: 96px; image-rendering: pixelated; }
+    .eyebrow { font-size: .8rem; letter-spacing: .07em; color: var(--accent); margin: 0 0 .8rem; }
+    .hero .eyebrow { color: #f8d450; }
+    h1 { font-size: clamp(1.7rem, 4.5vw, 3.4rem); line-height: 1.2; margin: 0 0 1.2rem; }
+    .lead { font-size: clamp(1.1rem, 2vw, 1.35rem); max-width: 43rem; margin: 0; color: #dbe3fa; }
+    .hero-links { display: flex; flex-wrap: wrap; gap: .7rem 1.5rem; margin-top: 1.7rem; }
+    .hero a { color: #8ac5ff; padding-block: .3rem; }
+    nav { display: flex; flex-wrap: wrap; gap: .3rem 1.4rem; padding: 1.3rem 0; border-bottom: 1px solid var(--line); }
+    nav a { padding-block: .4rem; font-size: .9rem; }
+    section { padding-block: 2.5rem; border-bottom: 1px solid var(--line); }
+    h2 { font-size: clamp(1.2rem, 3vw, 1.65rem); line-height: 1.4; margin: 0 0 1.2rem; }
+    h3 { font-size: .95rem; line-height: 1.5; margin: 0 0 .8rem; }
+    p { margin: 0 0 1rem; }
+    .intro, .columns, .shots, .related { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
+    .intro { gap: 3rem; }
+    .panel { background: var(--panel); border: 1px solid var(--line); padding: 1.5rem; min-width: 0; }
+    .panel p:last-child { margin-bottom: 0; }
+    figure { margin: 0; min-width: 0; }
+    figure img { width: 100%; height: auto; display: block; image-rendering: pixelated; background: #101428; border: 1px solid var(--line); }
+    figcaption { font-size: .88rem; color: var(--muted); padding-top: .6rem; }
+    .small { font-size: .88rem; color: var(--muted); }
+    ul, ol { padding-left: 1.4rem; margin-block: 0 1rem; }
+    li { margin-bottom: .5rem; }
+    code, kbd { font: .9em/1.5 ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+    kbd { background: var(--code); border: 1px solid var(--line); padding: .08rem .3rem; border-radius: 3px; }
+    pre { background: var(--code); border: 1px solid var(--line); padding: 1rem; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .88rem; }
+    .note { border-left: 4px solid var(--accent); padding: .8rem 1rem; background: var(--panel); }
+    .steps { list-style: none; padding: 0; counter-reset: step; }
+    .steps > li { counter-increment: step; margin-bottom: 1.8rem; }
+    .steps h3::before { content: counter(step, decimal-leading-zero) ' / '; color: var(--accent); }
+    .status { margin: 0; }
+    .status > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 1rem; padding: 1rem 0; border-top: 1px solid var(--line); }
+    dt { font-weight: 650; }
+    dd { margin: 0; }
+    .state { display: block; color: var(--accent); font: .75rem/1.6 var(--pixel); margin-top: .3rem; }
+    .related { list-style: none; padding: 0; }
+    .related a { font-weight: 650; }
+    .related span { display: block; color: var(--muted); font-size: .9rem; }
+    footer { padding-block: 1.5rem 2.5rem; font-size: .85rem; color: var(--muted); }
+    body { overflow-wrap: break-word; }
+    @media (max-width: 700px) { .intro, .columns, .shots, .related { grid-template-columns: minmax(0, 1fr); } .hero { grid-template-columns: minmax(0, 1fr); } .hero img { grid-row: 1; width: 64px; height: 64px; } .intro { gap: 1rem; } .status > div { grid-template-columns: minmax(0, 1fr); gap: .5rem; } section { padding-block: 2rem; } .panel { padding: 1.1rem; } }
+    @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="wrap topbar">
+    <a class="brand" href="#">Game-Maker OS</a>
+    <div class="tools">
+      <a href="https://github.com/lewismoten/gamemaker-os">Source on GitHub</a>
+      <div id="theme-control" hidden><label for="theme">Theme </label><select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
     </div>
-    <script>
-      (function () {
-        var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
-        function show(tab, focus) {
-          tabs.forEach(function (t) {
-            var on = t === tab;
-            t.setAttribute('aria-selected', on ? 'true' : 'false');
-            t.tabIndex = on ? 0 : -1;
-            document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
-          });
-          if (focus) tab.focus();
-        }
-        tabs.forEach(function (t, i) {
-          t.addEventListener('click', function () { show(t, false); });
-          t.addEventListener('keydown', function (e) {
-            var n = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
-            if (n === undefined) return;
-            e.preventDefault();
-            show(tabs[(n + tabs.length) % tabs.length], true);
-          });
-        });
-      })();
-    </script>
-  </body>
+  </header>
+  <main class="wrap" id="main" tabindex="-1">
+    <div class="hero">
+      <div>
+        <p class="eyebrow">Sandbox Edition / Raspberry Pi Zero W</p>
+        <h1>Game-Maker OS</h1>
+        <p class="lead">A Raspberry Pi, an SD card, and a library of Game-Maker games on your TV.</p>
+        <div class="hero-links"><a href="#install">Build and install →</a><a href="#javascript">Make a JavaScript app →</a></div>
+      </div>
+      <img src="img/badge.png" alt="Game-Maker sandcastle badge" width="96" height="96">
+    </div>
+    <nav aria-label="On this page"><a href="#about">What it is</a><a href="#screens">Screens</a><a href="#hardware">What you need</a><a href="#install">Install</a><a href="#javascript">JavaScript</a><a href="#status">Status</a><a href="#credits">Credits</a></nav>
+
+    <section id="about" aria-labelledby="about-title">
+      <p class="eyebrow">Original games / shared play core</p>
+      <h2 id="about-title">A Game-Maker machine</h2>
+      <div class="intro">
+        <div><p>Game-Maker OS plays games made with RSD Game-Maker. Browse category tabs and title screens, open a game's details, and play from its original DOS files or a packed <code>.GMP</code> game.</p><p><code>GMOS.ELF</code> is a native C/C++ program loaded from the SD card by <a href="https://github.com/lewismoten/sandbox-kernel">sandbox-kernel</a>, a bare-metal Raspberry Pi kernel. The kernel handles the hardware; Game-Maker OS handles the library and games.</p></div>
+        <div><p>The games list renders at 960 × 540, doubled on a 1080p HDMI screen. Games use the same <code>gmcore</code> play core as Game-Maker Pocket, with pages between scenes, fades, and levels at 18.2 ticks per second.</p><p>For now, a development computer sends key presses over USB. A keyboard, gamepad, and TV remote connected directly to the Pi are planned. See <a href="#status">what works and what is still pending</a>.</p></div>
+      </div>
+    </section>
+
+    <section id="screens" aria-labelledby="screens-title">
+      <h2 id="screens-title">From the library to the game</h2>
+      <div class="shots">
+        <figure><img src="games-list.png" width="640" height="480" alt="Games library with category tabs and cards showing each game's title screen"><figcaption>The games list. This host-rendered frame matched the board's screen checksum.</figcaption></figure>
+        <figure><img src="play-dice.png" width="640" height="480" alt="Roll the Dice gameplay with colorful platforms and a score display"><figcaption>Roll the Dice, 18 ticks into a level. The host frame matched the board's checksum.</figcaption></figure>
+        <figure><img src="img/details.png" width="960" height="540" loading="lazy" alt="Game details with a title picture, description, and Play and Back buttons"><figcaption>Details view, rendered on the host. Where available, a silent demo replaces the title picture after 3 seconds.</figcaption></figure>
+        <figure><img src="img/topten.png" width="640" height="400" loading="lazy" alt="Top Ten Scores with player names and scores on a blue background"><figcaption>Top Ten, rendered on the host. The high-score flow is linked; real-card save validation is still pending.</figcaption></figure>
+      </div>
+      <p class="small">These are existing repository images from host renders, not photographs of a TV. See <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/play.md">gameplay checks</a> and <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/saves.md">high-score notes</a>.</p>
+    </section>
+
+    <section id="hardware" aria-labelledby="hardware-title">
+      <h2 id="hardware-title">What you need</h2>
+      <div class="columns">
+        <div class="panel"><h3>The Pi and screen</h3><ul><li>A Raspberry Pi Zero W v1.1, the first target board.</li><li>An SD card with a FAT32 partition and sandbox-kernel's boot files.</li><li>An HDMI screen or TV, an HDMI connection for the Pi, and power.</li><li>A computer with a USB connection to the Pi for installation, logs, and current input.</li></ul><p class="small">The target setup includes a Waveshare 2.13 inch e-Paper HAT (V4). Game-Maker OS's e-ink status art is prepared but is not wired into the runtime.</p></div>
+        <div class="panel"><h3>The software and games</h3><ul><li>A compatible <a href="https://github.com/lewismoten/sandbox-kernel">sandbox-kernel</a> build and its <code>scripts/usb_kernel.py</code> tool.</li><li>The Arm GNU toolchain to build the program; C/C++ tools and Python for host tests.</li><li>Game-Maker game files. <a href="https://lewismoten.github.io/GameMaker-SandboxEdition/">Game-Maker: Sandbox Edition</a> provides games and card preparation scripts.</li></ul><p class="small">The SDK and play core are vendored in this repository and pinned by commit. Use the kernel requirements in the <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/build.md">build notes</a>; newer features require newer kernel ABIs.</p></div>
+      </div>
+    </section>
+
+    <section id="install" aria-labelledby="install-title">
+      <p class="eyebrow">Build / transfer / play</p>
+      <h2 id="install-title">Install on a Pi</h2>
+      <p>Start with a Pi that boots sandbox-kernel from its FAT32 card and is connected to your computer over USB. Follow the <a href="https://github.com/lewismoten/sandbox-kernel">kernel's setup instructions</a> for that base system. The steps below follow this repository's <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/build.md">documented USB install path</a>.</p>
+      <ol class="steps">
+        <li><h3>Build the native program</h3><p>In a checkout of Game-Maker OS, with the Arm GNU toolchain available:</p><pre><code>make
+make test</code></pre><p class="small"><code>make</code> produces <code>build/GMOS.ELF</code>. Set <code>TOOLCHAIN</code> to your compiler prefix when needed. Host tests verify behavior and render sample frames; they do not replace Pi testing.</p></li>
+        <li><h3>Transfer the program and a game</h3><p>Run the kernel's <code>usb_kernel.py</code> from your computer. Replace <code>&lt;port&gt;</code> with the Pi's serial port and <code>&lt;game-folder&gt;</code> with the game folder containing <code>DICE.GAM</code> and its assets.</p><pre><code>usb_kernel.py &lt;port&gt; put build/GMOS.ELF
+usb_kernel.py &lt;port&gt; putgame &lt;game-folder&gt; DICE</code></pre><p>This installs <code>/OS/GMOS.ELF</code> and <code>/GAMES/DICE/</code>. USB installation uses uppercase 8.3 names.</p><p>Optionally install <code>LIBRARY.JSL</code>, produced by Sandbox Edition's <code>web/scripts/gmosCard.ts</code>, for titles, categories, and blurbs:</p><pre><code>usb_kernel.py &lt;port&gt; put LIBRARY.JSL</code></pre><p class="small">Packed games can go in <code>GAMES</code> or <code>POCKET</code>; see <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/gmp.md">GMP instructions and limits</a>.</p></li>
+        <li><h3>Run and send keys</h3><pre><code>usb_kernel.py &lt;port&gt; run GMOS.ELF
+usb_kernel.py &lt;port&gt; key down down enter
+usb_kernel.py &lt;port&gt; key esc</code></pre><p>Arrows move through games. Enter opens details; select Play and press Enter to start. Arrows, Space, and Enter play; Esc leaves the game. Press <kbd>H</kbd> on the grid or details view for Top Ten.</p></li>
+      </ol>
+      <p class="note">Desktop copying of long-named folders, ZIP games, and supported ZIP-based EXEs is a host-qualified candidate requiring the paired ABI 1.5 kernel. Its FAT-card/Pi workflow still needs hardware acceptance. See <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/drag-drop.md">copying games and verification limits</a>.</p>
+    </section>
+
+    <section id="javascript" aria-labelledby="javascript-title">
+      <p class="eyebrow">JS.ELF / QuickJS-ng</p>
+      <h2 id="javascript-title">Make your own shell</h2>
+      <div class="columns">
+        <div><p><code>JS.ELF</code> is a separate JavaScript app runtime, documented as a spike. Write a small page-like app using <code>document.createElement</code>, CSS-like styles, events, timers, and <code>requestAnimationFrame</code>. Layout and drawing stay native.</p><p>A <code>&lt;game&gt;</code> element runs the same Game-Maker play core. The HELLO example shows a game grid: Enter plays a game, and Esc returns to the page.</p><p>Start with <code>apps/HELLO</code>. Its script lives at <code>/OS/APPS/HELLO/MAIN.JS</code>; an optional <code>INDEX.HTM</code> supplies layout. Build with <code>make js</code> to produce <code>build/JS.ELF</code>.</p></div>
+        <div class="panel"><h3>The app path</h3><pre><code>/OS/
+  JS.ELF
+  AUTORUN.TXT
+  APPS/
+    HELLO/
+      MAIN.JS
+      INDEX.HTM</code></pre><p><code>AUTORUN.TXT</code> can select <code>JS.ELF</code> on line 1 and <code>APPS/HELLO</code> on line 2. <kbd>F10</kbd> or cooperative <code>sys.exit()</code> returns an app to the built-in picker.</p><p><a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/js.md">Read the JavaScript app guide →</a></p></div>
+      </div>
+      <p class="small">This is a limited browser-like API: no fetch, modules, mouse, or touch. GMOS.ELF does not launch JS.ELF. App switching has host checks; the documented Pi smoke procedure is not a hardware result. See <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/app-exit.md">app lifecycle and recovery limits</a>.</p>
+    </section>
+
+    <section id="status" aria-labelledby="status-title">
+      <h2 id="status-title">What works, what is pending</h2>
+      <p>The README confirms the games list and gameplay on a Pi Zero W. Other components have different levels of validation; implemented code and host tests do not by themselves establish a shipped hardware feature.</p>
+      <dl class="status">
+        <div><dt>Games list and gameplay<span class="state">Running on the board</span></dt><dd>Category tabs, title pictures, details, and native gameplay. Roll the Dice and five other Starters matched host frames tick for tick. <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/play.md">Gameplay evidence</a>.</dd></div>
+        <div><dt>Demo previews<span class="state">Documented implementation</span></dt><dd>After 3 seconds on details, an available <code>.REC</code> demo plays silently in the picture. Any key stops it. The README and <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/demo.md">demo guide</a> describe this behavior; host checks verify playback. New demo recording is not claimed.</dd></div>
+        <div><dt>Top Ten<span class="state">Linked / card checks pending</span></dt><dd>The high-score screen and file layer are linked into GMOS.ELF. Name entry requires kernel ABI 1.7; real-card save acceptance is still pending. <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/saves.md">High-score status</a>.</dd></div>
+        <div><dt>F5/F6 save and load<span class="state">Not implemented</span></dt><dd>A DOS save-file byte codec exists, but there is no live gameplay snapshot bridge or save/load command. <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/game-save.md">Save codec and limits</a>.</dd></div>
+        <div><dt>Sound on the TV<span class="state">Pending integration and review</span></dt><dd>No sound on the board yet. Games log <code>SND</code> events for a computer to play. The <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/pcspeaker-host.md">PC-speaker producer</a> and <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/voc-host.md">VOC decoder/mixer</a> are unlinked host qualification components; they do not enable HDMI audio.</dd></div>
+        <div><dt>Keyboard, gamepad, remote<span class="state">Planned direct input</span></dt><dd>Current input comes from the development computer over USB through the kernel's synthetic input device. Direct USB keyboard/gamepad, HDMI-CEC, and IR remote support are not claimed as shipped.</dd></div>
+        <div><dt>E-ink status display<span class="state">Art prepared / not wired</span></dt><dd>The target includes the Waveshare HAT, but <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/docs/boot-art.md">boot-art notes</a> say the e-ink art is not wired. The desk-buddy display remains a plan.</dd></div>
+      </dl>
+    </section>
+
+    <section id="credits" aria-labelledby="credits-title">
+      <h2 id="credits-title">Built on shared work</h2>
+      <p><code>gmcore</code> is shared with Game-Maker Pocket, the Pocket Player in Game-Maker: Sandbox Edition. It is vendored unchanged and pinned by commit, keeping both players on the same play core.</p>
+      <p>Game-Maker: Sandbox Edition carries forward RSD Game-Maker 3.0, originally by Recreational Software Designs (1991–1995). Its source was released under the MIT License in 2014. Game-Maker OS and sandbox-kernel are MIT licensed; see the <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/LICENSE">license</a> and <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/NOTICE.md">full credits and third-party notices</a>.</p>
+      <ul class="related">
+        <li><a href="https://github.com/lewismoten/sandbox-kernel">sandbox-kernel</a><span>The bare-metal kernel and SDK.</span></li>
+        <li><a href="https://lewismoten.github.io/gamemaker-pocket/">Game-Maker Pocket</a><span>The Pocket Player and browser flasher.</span></li>
+        <li><a href="https://lewismoten.github.io/GameMaker-SandboxEdition/">Game-Maker: Sandbox Edition</a><span>The games, web editor, and shared player.</span></li>
+        <li><a href="https://github.com/lewismoten/gamemaker-os">Game-Maker OS source</a><span>Native runtime, JavaScript apps, tests, and documentation.</span></li>
+      </ul>
+    </section>
+  </main>
+  <footer class="wrap">
+    <p>Pixel headings: Silkscreen by The Silkscreen Project Authors, bundled locally under the <a href="fonts/OFL-Silkscreen.txt">SIL Open Font License 1.1</a>. System fonts for body text. All page assets are local; no external CDNs.</p>
+    <p>Castle badge and boot art: ChatGPT GPT-6.1 Sol, made from the maintainer's directions, MIT. Screenshots show existing repository host renders. See <a href="https://github.com/lewismoten/gamemaker-os/blob/develop/NOTICE.md">NOTICE</a> for artwork and game credits.</p>
+  </footer>
+  <script>
+    (() => {
+      const select = document.getElementById('theme');
+      function apply(value) {
+        if (value === 'system') delete document.documentElement.dataset.theme;
+        else document.documentElement.dataset.theme = value;
+      }
+      try {
+        const saved = localStorage.getItem('gmos-theme');
+        if (['system', 'light', 'dark'].includes(saved)) select.value = saved;
+      } catch (_) { /* The theme control also works without storage. */ }
+      apply(select.value);
+      document.getElementById('theme-control').hidden = false;
+      select.addEventListener('change', () => {
+        apply(select.value);
+        try { localStorage.setItem('gmos-theme', select.value); } catch (_) {}
+      });
+    })();
+  </script>
+</body>
 </html>
