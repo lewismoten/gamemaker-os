@@ -14,8 +14,10 @@ engine, which follows RSD's `PLAYGAME.C`. It is header-only and holds no board
 code, so the same files build the ESP32 firmware there and `GMOS.ELF` here.
 
 `third_party/gmcore` is a copy pinned by commit (`PINNED`), never edited here.
-`scripts/vendor_gmcore.sh <checkout> [commit]` copies the two headers and that
-repository's `LICENSE` and records the commit. A fix to the core goes into the
+`scripts/vendor_gmcore.sh <checkout> [commit]` copies `gmcore.h`, `gmmon.h` and
+`gmsmall.h` unchanged and records the commit, keeping this fork's `LICENSE`.
+When pinning a feature-branch commit, note its branch and pending merge in
+`PINNED`. A fix to the core goes into the
 Sandbox Edition, then comes here with the script.
 
 What differs is how each side feeds the core. The Pocket Player reads files that
@@ -160,6 +162,9 @@ at most 24.4 ms and a wake-up at most 4.5 ms late.
 
 ## How it is checked
 
+- `tests/test_core_edges.py` runs synthetic host cases ported from the pinned
+  core's `host/coreedgetest.cpp`: damaged start/link coordinates wrap before
+  scrolling, touches or map writes, and block/monster scores clamp at int32 limits.
 - `tests/test_play.py` plays `tests/games/DICE` (the Starter "Roll the Dice"):
   1200 ticks of walking and jumping give the same state after every tick
   (position, sequence, scroll, score, hit points, lives, counters and a hash of

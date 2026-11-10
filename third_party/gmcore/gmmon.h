@@ -310,7 +310,7 @@ inline int World::doCollision(int m1, int m2, int where) {
   if (mon::power(a1) < mon::power(a2)) {
     killMon(m1);
     if (b.fromchar > 0) {
-      score += mon::upscore(a1);
+      addScore(mon::upscore(a1));
       doSound(KILLSOUND);
       killMon(m2);
       return LASTMM;
@@ -319,7 +319,7 @@ inline int World::doCollision(int m1, int m2, int where) {
   }
   killMon(m2);
   if (a.fromchar > 0) {
-    score += mon::upscore(a2);
+    addScore(mon::upscore(a2));
     doSound(KILLSOUND);
     killMon(m1);
     return LASTMM;

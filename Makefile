@@ -38,7 +38,9 @@ build/GMOS.ELF: src/main.c src/savefile_sbx.c src/sdpack.c src/sdzip.c build/gam
 # for tests/, and gmplay, which prints the Pocket Player host test's state lines.
 HOSTDIR ?= build/host
 HOSTFLAGS ?= -O1
-host: $(HOSTDIR)/libgmos.so $(HOSTDIR)/libsdpack.so $(HOSTDIR)/gmplay $(HOSTDIR)/jsrun
+host: $(HOSTDIR)/libgmos.so $(HOSTDIR)/libsdpack.so $(HOSTDIR)/gmplay $(HOSTDIR)/jsrun $(HOSTDIR)/coreedgetest
+$(HOSTDIR)/coreedgetest: tests/host/coreedgetest.cpp $(GMCORE) Makefile | $(HOSTDIR)
+	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) -Wall -Wextra -Werror -Ithird_party/gmcore $< -o $@
 $(HOSTDIR):
 	mkdir -p $@
 $(HOSTDIR)/libgmos.so: $(CORE) $(PLAYCORE) $(GMCORE) $(GMPCORE) $(wildcard src/*.h) tests/host/hostio.c tests/host/hostio.h Makefile | $(HOSTDIR)

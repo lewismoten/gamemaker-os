@@ -1,2 +1,3 @@
-gamemaker-pocket 1476df1e159c798633910e76f898d8347e12c3ee
-src/gmcore.h and src/gmmon.h of the gamemaker-pocket repository at that commit
+gamemaker-pocket 33c2d7724126ab9ca2307e8fbd63c4cb7e5f9fcb
+src/gmcore.h, src/gmmon.h and src/gmsmall.h of the gamemaker-pocket repository at that commit
+feature/core-edge-tests feature-branch commit, pending merge

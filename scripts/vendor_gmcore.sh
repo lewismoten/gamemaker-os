@@ -13,5 +13,5 @@ rev=$(git -C "$gm" rev-parse "$commit")
 out="$here/third_party/gmcore"
 mkdir -p "$out"
 for f in gmcore.h gmmon.h gmsmall.h; do git -C "$gm" show "$rev:src/$f" > "$out/$f"; done
-printf 'gamemaker-pocket %s\nsrc/gmcore.h and src/gmmon.h of the gamemaker-pocket repository at that commit\n' "$rev" > "$out/PINNED"
+printf 'gamemaker-pocket %s\nsrc/gmcore.h, src/gmmon.h and src/gmsmall.h of the gamemaker-pocket repository at that commit\n' "$rev" > "$out/PINNED"
 echo "third_party/gmcore is gamemaker-pocket $rev"

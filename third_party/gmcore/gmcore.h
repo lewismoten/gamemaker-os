@@ -378,7 +378,7 @@ struct World {
         else meter[b.effect] = wrap16(m + b.eamt);
       } else meter[b.effect] = INF_REPEAT - 1;
     }
-    score += b.scorePts;
+    addScore(b.scorePts);
     if (!snded) {
       if (b.scorePts > 0) snded = doSound(ADDSCORESOUND);
       else if (b.scorePts < 0) snded = doSound(SUBSCORESOUND);
@@ -528,10 +528,17 @@ struct World {
     while (cy[1] >= BLEN) { cy[1] -= BLEN; cy[0]++; }
   }
   void chkMapBounds() {
-    if (cx[0] >= MLEN) cx[0] -= MLEN;
+    // PLAYGAME.C wraps one crossed edge; modulo also handles damaged .GAM positions.
+    cx[0] %= MLEN;
     if (cx[0] < 0) cx[0] += MLEN;
-    if (cy[0] >= MWID) cy[0] -= MWID;
+    cy[0] %= MWID;
     if (cy[0] < 0) cy[0] += MWID;
+  }
+  void addScore(int delta) {
+    // PLAYGAME.C adds to a signed 32-bit long (blocks and monster kills).
+    // Preserve representable sums; clamp where signed overflow had no defined result.
+    int64_t sum = int64_t(score) + delta;
+    score = sum > INT32_MAX ? INT32_MAX : sum < INT32_MIN ? INT32_MIN : int32_t(sum);
   }
   static int nearest(int from, int to, int size) {
     int t0 = from - to;
@@ -950,6 +957,7 @@ struct World {
       for (int i = MAXSEQ; i < MAXSEQ + 10; i++) meter[i] = i16(chr + 3724 + i * 2);
     }
     cx[0] = sx; cy[0] = sy; cx[1] = 0; cy[1] = 0;
+    chkMapBounds();  // Normalize before scrolling, touches, or direct map writes.
     cseq = 0; cframe = -1;
     if (hitpts == -1) hitpts = meter[0];
     if (lives == -1) lives = meter[1];
@@ -959,8 +967,8 @@ struct World {
     topthere = bottomthere = false;
     curtop = curbottom = CHARBL;
     nextAni = clock;
-    mx = sx - SCRNBLEN / 2;
-    my = sy - SCRNBWID / 2;
+    mx = cx[0] - SCRNBLEN / 2;
+    my = cy[0] - SCRNBWID / 2;
     if (mx < 0) mx += MLEN;
     if (my < 0) my += MWID;
     for (int l = 0; l < LASTMM; l++) {
