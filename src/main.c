@@ -44,6 +44,7 @@ static int big_id = -1, big_ok;
 static unsigned length(const char *s) {unsigned n = 0; while (s[n]) n++; return n;}
 static char *put(char *p, const char *s) {while (*s) *p++ = *s++; *p = 0; return p;}
 static char *num(char *p, uint32_t n) {char t[11]; int k = 0; do t[k++] = (char)('0' + n % 10); while (n /= 10); while (k) *p++ = t[--k]; *p = 0; return p;}
+static char *num64(char *p, uint64_t n) {char t[21]; int k = 0; do t[k++] = (char)('0' + n % 10); while (n /= 10); while (k) *p++ = t[--k]; *p = 0; return p;}
 static void say(const char *s) {sbx_log(log_fd, s, length(s));}
 /* Serial logs are synchronous. Keep entry-by-entry diagnostics opt-in, not
  * proportional to the card's folder/duplicate count during normal startup. */
@@ -568,6 +569,35 @@ static void perf_line(const struct play_perf *v, unsigned i) {
   p = put(p, " avg us "); p = num(p, v[i].calls ? (uint32_t)(v[i].ns / v[i].calls / 1000u) : 0);
   p = put(p, " max us "); num(p, v[i].max_us); say(line);
 }
+/* A pending snapshot owns its header, histogram and stage totals until drained.
+ * No queue: skip new five-second snapshots while busy, and expose a cumulative
+ * drop count in the next header. The live window still resets every interval. */
+struct play_report {
+  struct play_perf shot[PF_COUNT];
+  char header[320], steps[128];
+  unsigned left;
+  uint64_t dropped;
+};
+static void report_frame(struct play_report *q) {
+  if (!q->left) return;
+  unsigned row = --q->left;
+  if (row == PF_COUNT + 2) say(q->header);
+  else if (row == PF_COUNT + 1) say(q->steps);
+  else if (row == PF_COUNT) {if (aud_on) audio_log("game 5 s");}
+  else perf_line(q->shot, row);
+}
+static void report_snapshot(struct play_report *q, const struct play_perf *perf,
+                            uint32_t frames, uint32_t ticks, uint32_t step_max,
+                            uint32_t draw_max, uint32_t late_max, const uint32_t *per_step) {
+  if (q->left) {q->dropped++; return;}
+  char *p = put(q->header, "GMOS 5 s: "); p = num(p, frames); p = put(p, " frames, tick "); p = num(p, ticks);
+  p = put(p, ", step max "); p = num(p, step_max); p = put(p, " us, draw max "); p = num(p, draw_max);
+  p = put(p, " us, late max "); p = num(p, late_max); p = put(p, " us, reports dropped "); num64(p, q->dropped);
+  p = put(q->steps, "GMOS 5 s ticks per step: 1 x "); p = num(p, per_step[0]); p = put(p, ", 2 x "); p = num(p, per_step[1]);
+  p = put(p, ", 3 x "); p = num(p, per_step[2]); p = put(p, ", 4+ x "); num(p, per_step[3]);
+  for (unsigned i = 0; i < PF_COUNT; i++) q->shot[i] = perf[i];
+  q->left = PF_COUNT + 3; /* header and audio share the same frame budget as every other row */
+}
 /* Plays the chosen game until Esc or its end. Each tick logs its number and the
    view's hash (the Pocket Player host test's), each game key the tick it lands
    before, and every 5 s the timing: the host tests replay those lines. */
@@ -589,7 +619,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   struct play_perf perf[PF_COUNT] = {{0, 0, 0}};
   int force = 1;
   /* The 5 s report goes out one line per frame: a burst of a dozen serial lines held the loop for ~100 ms (two ticks). */
-  struct play_perf shot[PF_COUNT]; char step_line[96]; unsigned report = 0; /* report: lines left to send, counting down */
+  struct play_report report = {0};
   uint32_t per_step[4] = {0, 0, 0, 0}; /* steps that ran 1, 2, 3 or 4+ ticks: the device's own count, which serial log loss cannot touch */
   int r = GS_DRAW, started = 0, sp_on = 0, sp_draw = 0;
   static struct sp_menu sp; char sp_stem[9], sp_key[9]; int sp_ok = !hl_stem(gamname, sp_stem);
@@ -608,7 +638,13 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
       uint32_t first, height;
       gs_draw_changed(&game, px, PLAY_W, force, &first, &height); force = 0;
       uint64_t scaled = clock_ns(); perf_add(&perf[PF_SCALE], scaled - d0);
-      if (height) {sbx_fb_present(fb_fd, 0, first, PLAY_W, height); perf_add(&perf[PF_PRESENT], clock_ns() - scaled);}
+      if (height) {
+        int32_t presented = sbx_fb_present(fb_fd, 0, first, PLAY_W, height);
+        perf_add(&perf[PF_PRESENT], clock_ns() - scaled);
+        /* Only a successful present earns a line; idle draws/catch-up earn none.
+         * Drain here, before sleeping or stepping, so the budget cannot go stale. */
+        if (!presented) report_frame(&report);
+      }
       uint32_t dt = (uint32_t)((clock_ns() - d0) / 1000u); if (dt > draw_max) draw_max = dt;
       frames++;
       uint64_t diag = clock_ns();
@@ -689,21 +725,10 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
       p = put(line, "GMOS t "); p = num(p, game.total_ticks); p = put(p, " lv "); p = num(p, (uint32_t)gp_level() + 1); p = put(p, " h "); num(p, gp_pixels_hash(game.px)); say(line);
     }
     perf_add(&perf[PF_DIAG], clock_ns() - diag);
-    if (report) {
-      report--;
-      if (report == PF_COUNT + 1) say(step_line);
-      else if (report == PF_COUNT) {if (aud_on) audio_log("game 5 s");}
-      else perf_line(shot, report);
-    }
     if (clock_ns() - since >= 5000000000ull) {
-      p = put(line, "GMOS 5 s: "); p = num(p, frames); p = put(p, " frames, tick "); p = num(p, game.total_ticks);
-      p = put(p, ", step max "); p = num(p, step_max); p = put(p, " us, draw max "); p = num(p, draw_max);
-      p = put(p, " us, late max "); p = num(p, late_max); put(p, " us"); say(line);
-      p = put(step_line, "GMOS 5 s ticks per step: 1 x "); p = num(p, per_step[0]); p = put(p, ", 2 x "); p = num(p, per_step[1]);
-      p = put(p, ", 3 x "); p = num(p, per_step[2]); p = put(p, ", 4+ x "); p = num(p, per_step[3]);
+      report_snapshot(&report, perf, frames, game.total_ticks, step_max, draw_max, late_max, per_step);
       per_step[0] = per_step[1] = per_step[2] = per_step[3] = 0;
-      for (unsigned i = 0; i < PF_COUNT; i++) {shot[i] = perf[i]; perf[i] = (struct play_perf){0, 0, 0};}
-      report = PF_COUNT + 2;
+      for (unsigned i = 0; i < PF_COUNT; i++) perf[i] = (struct play_perf){0, 0, 0};
       frames = step_max = draw_max = late_max = 0; since = clock_ns();
     }
   }

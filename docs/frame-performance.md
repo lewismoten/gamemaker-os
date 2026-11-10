@@ -186,3 +186,26 @@ On PI-1 (Pi Zero W), holding Right, Left and Down in Year 2000 level 1:
   loop pass, holding the loop up to about 100 ms (late max 70 to 107 ms, one or two
   2-tick steps per 5 s). The report now goes out one line per frame.
 - After: 91 to 92 steps of 1 tick per 5 s, none of 2 or more; late max 11 to 28 ms.
+
+## Review fixes (run624)
+
+The report header, histogram, audio row and stage rows now share one budget:
+at most one report line immediately after each successful framebuffer present.
+Catch-up iterations, unchanged draws and failed presents do not drain it. An
+unfinished snapshot is retained; later five-second snapshots are skipped while
+it is pending. The next accepted header includes the cumulative `reports dropped`
+count. Sampling windows still reset at each five-second check, so skipped windows
+are not silently merged into a later five-second report.
+
+Level ticks are now 64-bit. Due ticks and next deadlines split quotient and
+remainder before multiplication, avoiding the intermediate overflow at about
+58 years as well as the old 32-bit counter wrap at about 7.5 years. Total tick
+IDs remain modulo 2^32; histogram and sound-repeat logic use unsigned differences.
+
+`tests/test_play_report.py` compiles the production report helpers and present/
+snapshot call sites with fake clock, log and framebuffer I/O. It covers the
+zero-frame drain, delayed double-line/overwrite witnesses, retained 111 us versus
+new 222 us samples, drop reporting, and the audio row's frame budget.
+`tests/host/timing_check.c` runs the real host session/core across UINT32_MAX,
+checks bounded catch-up and resume, and compares late-session boundaries against
+128-bit host arithmetic. These are host regressions, without a new Pi result.

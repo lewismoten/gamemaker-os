@@ -137,3 +137,8 @@ $(HOSTDIR)/scroll_check: tests/host/scroll_check.cpp tests/host/hostio.h $(HOSTD
 # Reproducible frame pipeline benchmark (first scene, scripted left/right input).
 $(HOSTDIR)/frame_bench: tests/host/frame_bench.cpp tests/host/hostio.h $(HOSTDIR)/libgmos.so Makefile
 	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) $(CXX_WARNINGS) -Isrc -isystem third_party/gmcore $< $(HOSTDIR)/libgmos.so -o $@
+
+# Long-session timing regression using production session/core, without ctypes.
+host: $(HOSTDIR)/timing_check
+$(HOSTDIR)/timing_check: tests/host/timing_check.c tests/host/hostio.h $(HOSTDIR)/libgmos.so Makefile
+	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -Isrc -Ithird_party/puff $< $(HOSTDIR)/libgmos.so -o $@
