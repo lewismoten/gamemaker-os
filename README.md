@@ -12,6 +12,8 @@ The first program runs on the board and plays games. `GMOS.ELF` lists the games 
 
 The screen shows the castle badge splash (`docs/boot-art.md`) from the moment `/dev/fb0` is open until the list is ready, and a library diagnostics screen when the library is empty.
 
+The Games page also has **Search**, **Favorites** and **Recent** tabs. Search filters titles and companies live; **F** or the Details **Favorite** button toggles a yellow star. Recent keeps the last 20 games started. Up from the top row focuses tabs, then Left/Right and Enter choose one. Favorites and Recent persist under `/OS/SAVES/GMOS/`. The **/** + exact folder + Enter development command still works. See [library controls and storage](docs/library.md).
+
 Leave a game on its details view for 3 seconds and its demo plays in the picture (any key stops it; see [docs/demo.md](docs/demo.md)).
 
 The game player shares the play core with [Game-Maker Pocket](https://github.com/lewismoten/gamemaker-pocket), the Pocket Player in Game-Maker: Sandbox Edition: `third_party/gmcore` is a copy pinned by commit (see [docs/play.md](docs/play.md)).

@@ -108,7 +108,7 @@ class Keys(unittest.TestCase):
     def test_grid_moves_and_pages(self):
         p = many(14)
         self.assertEqual((p.tab, p.pos, p.view), (SANDBOX, 0, GRID))
-        self.assertEqual(p.key('up'), NONE); self.assertEqual(p.key('left'), NONE)           # the first card stays put
+        self.assertEqual(p.key('up'), MOVED); p.key('down'); self.assertEqual(p.key('left'), NONE)           # the first card stays put
         self.assertEqual(p.key('right'), MOVED); self.assertEqual(p.pos, 1)
         self.assertEqual(p.key('down'), MOVED); self.assertEqual(p.pos, 5)                    # four across
         self.assertEqual(p.key('down'), MOVED); self.assertEqual(p.pos, 9)                    # onto the next page
@@ -129,8 +129,9 @@ class Keys(unittest.TestCase):
         p = Page(); p.add_folder(DICE); p.add('ALPHA', 'A'); p.add('BETA', 'B', gam='BETA.GAM'); p.add('LOOSE', 'L'); p.index(INDEX); p.finish()
         self.assertEqual(p.key('tab'), MOVED); self.assertEqual(p.tab, BIZARRE)
         self.assertEqual(p.key('tab'), MOVED); self.assertEqual(p.tab, OTHER)                 # CD is empty: left out
-        self.assertEqual(p.key('tab'), MOVED); self.assertEqual(p.tab, STARTER)               # around
-        p.key('lshift', 1); self.assertEqual(p.key('tab'), MOVED); self.assertEqual(p.tab, OTHER)  # Shift+Tab goes back
+        for tab in (5, 6, 7, STARTER):
+            self.assertEqual(p.key('tab'), MOVED); self.assertEqual(p.tab, tab)              # virtual tabs, then around
+        p.key('lshift', 1); self.assertEqual(p.key('tab'), MOVED); self.assertEqual(p.tab, 7)  # Shift+Tab goes back
         p.key('lshift', 0); self.assertEqual(p.key('tab'), MOVED); self.assertEqual(p.tab, STARTER)
         self.assertEqual(p.key('rbracket'), MOVED); self.assertEqual(p.tab, SANDBOX)
         self.assertEqual(p.key('lbracket'), MOVED); self.assertEqual(p.tab, STARTER)
@@ -141,7 +142,7 @@ class Keys(unittest.TestCase):
         p.index('\n'.join(f'{{"schema":"gmp-library","title":"{k}{i}","category":["{cat}"],"locator":"{k}{i}"}}'
                           for i in range(4) for k, cat in (('S', 'sandbox'), ('B', 'bizarre')))); p.finish()
         p.keys('right', 'right'); p.key('tab'); self.assertEqual(p.pos, 0); p.key('right')
-        p.key('tab'); self.assertEqual((p.tab, p.pos), (SANDBOX, 2))
+        p.keys('tab', 'tab', 'tab', 'tab'); self.assertEqual((p.tab, p.pos), (SANDBOX, 2))
     def test_details_and_play(self):
         p = many(3)
         p.key('right')
@@ -149,9 +150,10 @@ class Keys(unittest.TestCase):
         self.assertEqual(p.key('enter', 2), NONE)                                             # a held Enter does not play
         self.assertEqual(p.key('left'), NONE)
         self.assertEqual(p.key('right'), MOVED); self.assertEqual(p.button, 1)                # Back
+        self.assertEqual(p.key('right'), MOVED); self.assertEqual(p.button, 2)  # Favorite
         self.assertEqual(p.key('right'), NONE)
         self.assertEqual(p.key('tab'), MOVED); self.assertEqual(p.button, 0)                  # Tab goes around the buttons
-        self.assertEqual(p.key('down'), NONE); self.assertEqual(p.pos, 1)                     # the grid's keys do nothing here
+        self.assertEqual(p.key('down'), MOVED); self.assertEqual(p.pos, 1); p.key('up')                     # the grid's keys do nothing here
         self.assertEqual(p.key('enter'), CHOSEN)                                              # Play
         p.key('right'); self.assertEqual(p.key('enter'), MOVED); self.assertEqual(p.view, GRID)  # Back
         p.key('enter'); self.assertEqual(p.key('esc'), MOVED); self.assertEqual(p.view, GRID)    # Esc goes back too
@@ -189,7 +191,7 @@ class Layout(unittest.TestCase):
         self.assertEqual(bytes(px), bytes(want)); self.assertEqual(bytes(pal), bytes(wpal))
     def test_grid(self):
         p = Page(); p.add_folder(DICE); p.add('ALPHA', 'A'); p.add('BETA', 'B', gam='BETA.GAM'); p.add('LOOSE', 'L'); p.index(INDEX); p.finish()
-        p.keys('tab', 'tab', 'tab')                                                           # Bizarre, Other, Starters (Roll the Dice)
+        p.keys(*(['tab'] * 6))                                                              # Bizarre, Other, Search, Favorites, Recent, Starters (Roll the Dice)
         self.assertEqual(p.tab, STARTER)
         px = p.render(); png(OUT / 'games-grid.png', px)
         self.assertEqual(rgb(px[10 * W + 300]), q(0x000080))                                 # the navy header

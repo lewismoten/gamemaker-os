@@ -258,7 +258,10 @@ static void find_games(void) {
   for(unsigned i=0;i<zip_count;i++)if(!zip_candidates[i].directory){add_zip(i);heartbeat();}
   scan_summary();
   heartbeat(); read_index(); heartbeat(); /* a checkpoint either side of each slow step */
-  gm_finish(&menu); heartbeat();
+  gm_finish(&menu);
+  /* Use the complete scan path, including pack/ZIP names, for library identity. */
+  for (unsigned i=0;i<menu.count;i++) gm_game_key(&menu.games[i],where[i].path,where[i].gam);
+  gm_refresh(&menu); heartbeat();
   cache_end();
 }
 static void open_input(void) {
@@ -591,7 +594,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   uint64_t since = clock_ns();
   struct play_perf perf[PF_COUNT] = {{0, 0, 0}};
   int force = 1;
-  int r = GS_DRAW, started = 0, sp_on = 0, sp_draw = 0;
+  int r = GS_DRAW, started = 0, sp_on = 0, sp_draw = 0, noted_recent = 0;
   static struct sp_menu sp; char sp_stem[9], sp_key[9]; int sp_ok = !hl_stem(gamname, sp_stem);
   if (sp_ok) hl_key(sp_stem, where[g - menu.games].path, gamname, sp_key);
   for (;;) {
@@ -602,6 +605,10 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
       top_ten(px, g, game.score_check ? gp_score() : -1, 0); force = 1;
       r = gs_menu_return(&game, clock_ns());
       started = 0;
+    }
+    if (!noted_recent && game.phase==GS_PLAY) {
+      noted_recent=1;
+      if (gm_played(&menu,(unsigned)(g-menu.games)) && abi_minor>=7 && gm_list_save(&menu.recent,&save_sbx_ops,1)) say("GMOS Recent: changes not saved");
     }
     if (r & GS_DRAW) {
       uint64_t d0 = clock_ns();
@@ -804,6 +811,13 @@ int main(const sbx_startup *start) {
   ge_init(start->major, start->minor);
   splash_px = px; sbx_clock_ns(&splash_t0); splash_last = splash_call = splash_t0; beat_hook = splash_tick;
   find_games();
+  if (abi_minor>=7) {
+    int e=gm_list_load(&menu.favorites,&save_sbx_ops,0);
+    if(e) say("GMOS Favorites read failed; using an empty list");
+    e=gm_list_load(&menu.recent,&save_sbx_ops,1);
+    if(e) say("GMOS Recent read failed; using an empty list");
+  }
+  gm_refresh(&menu);
   splash_tick(1); {char l[64], *q = put(l, "GMOS splash longest gap between checkpoints "); q = num(q, splash_gap_ms); put(q, " ms"); say(l);} splash_px = 0; beat_hook = 0; /* a last step, so a quick load still moves once */
   p = put(line, "GMOS "); p = num(p, menu.count); p = put(p, menu.count == 1 ? " game" : " games"); put(p, " in /sd/GAMES"); say(line);
   for (unsigned i = 0; i < menu.count; i++) {
@@ -863,6 +877,10 @@ int main(const sbx_startup *start) {
         if (aud_on && !menu.background_music) bg_leave();
         if (aud_on && menu.background_music) bg_next = clock_ns();
         redraw = 1;
+      }
+      if (a == GM_FAVORITE) {
+        if (abi_minor<7 || gm_list_save(&menu.favorites,&save_sbx_ops,0)) put(menu.message,"Changes not saved");
+        redraw=1;
       }
       if (a == GM_MOVED) redraw = 1;
       if (a == GM_RESYNC) {sbx_input_state st; sbx_input_state_get(in_fd, &st); menu.shift = 0; say("GMOS input resync after SYN_DROPPED"); break;}

@@ -150,7 +150,7 @@ static unsigned count_lines(int f, int32_t w, const char *s, unsigned max, int32
 }
 static char *put(char *p, const char *s) {while (*s) *p++ = *s++; *p = 0; return p;}
 static char *num(char *p, uint32_t n) {char t[11]; int k = 0; do t[k++] = (char)('0' + n % 10); while (n /= 10); while (k) *p++ = t[--k]; *p = 0; return p;}
-static const char *const TAB_NAME[GM_CATS] = {"Starters", "Sandbox", "Bizarre", "CD", "Other"};
+static const char *const TAB_NAME[GM_CATS] = {"Starters", "Sandbox", "Bizarre", "CD", "Other", "Search", "Favorites", "Recent"};
 static const char *const BADGE[GM_CATS] = {"STARTER", "SANDBOX", "BIZARRE", "CD", "ON THIS CARD"};
 static const char *const TAB_LINE[GM_CATS] = {
   "Small games that each show one Game-Maker idea.",
@@ -158,6 +158,7 @@ static const char *const TAB_LINE[GM_CATS] = {
   "Heartfelt songs about all the wrong things, made into games.",
   "The Game-Maker CD: free gameware, then other people's shareware.",
   "Games in /sd/GAMES that the library index does not list.",
+  "", "Starred games, newest first.", "Recently played, newest first.",
 };
 extern const uint16_t ha_pal[4];
 extern const uint8_t ha_bits[256];
@@ -178,16 +179,17 @@ static void header(void) {
 static void tabs(const struct gm_menu *m) {
   box(16, TABS_Y, GM_W - 32, TABS_H, 8, 1, C_LINE2, C_PANEL, 1);
   unsigned n = 0;
-  for (unsigned t = 0; t < GM_CATS; t++) if (m->tab_count[t]) n++;
+  for (unsigned t = 0; t < GM_CATS; t++) if (m->tab_count[t] || (m->count && t>=GM_CAT_SEARCH)) n++;
   if (!n) return;
   int32_t slot = (int32_t)(GM_W - 40) / (int32_t)n, k = 0;
   for (unsigned t = 0; t < GM_CATS; t++) {
-    if (!m->tab_count[t]) continue;
+    if (!m->tab_count[t] && !(m->count && t>=GM_CAT_SEARCH)) continue;
     char count[8]; num(count, m->tab_count[t]);
     int32_t lw = width(F8, TAB_NAME[t], len(TAB_NAME[t]), 1), cw = width(F5, count, len(count), 1) + 10;
     int32_t cx = 20 + slot * k++ + slot / 2, x = cx - (lw + 6 + cw) / 2;
     int on = t == m->tab;
-    if (on) round_rect(x - 12, TABS_Y + 4, lw + 6 + cw + 24, TABS_H - 8, 6, C_BLUE);
+    if (on) round_rect(x - 5, TABS_Y + 4, lw + 6 + cw + 10, TABS_H - 8, 6, C_BLUE);
+    if (on && m->tabs_focus) box(21+slot*(k-1),TABS_Y+2,slot-2,TABS_H-4,6,1,C_GOLD,0,0);
     text0(F8, x, TABS_Y + 12, TAB_NAME[t], on ? 0xffffffu : C_TEXT);
     round_rect(x + lw + 6, TABS_Y + 9, cw, 14, 7, on ? C_PANEL : C_PILL);
     text0(F5, x + lw + 11, TABS_Y + 12, count, on ? 0xffffffu : C_MUTED);
@@ -202,6 +204,12 @@ static void picture(int32_t x, int32_t y, const uint16_t *pic, int32_t w, int32_
     for (int32_t i = k; i < w - k; i++) dot16(x + i, y + j, pic[j * w + i]);
   }
 }
+/* Yellow five-pointed mark, above the title art as in Pocket Player. */
+static void star(int32_t x, int32_t y) {
+  static const uint16_t bits[]={0x40,0x40,0xe0,0xe0,0x1f0,0x1fff,0xffe,0x7fc,0x3f8,0x3f8,0x7fc,0x71c,0x606};
+  round_rect(x-3,y-3,19,19,5,C_FOOT);
+  for(unsigned j=0;j<13;j++)for(unsigned i=0;i<13;i++)if(bits[j]>>i&1)fill(x+(int32_t)i,y+(int32_t)j,1,1,C_GOLD);
+}
 static void card(const struct gm_menu *m, const struct gm_game *g, unsigned i, int on) {
   uint32_t ux, uy, uw, uh; gm_card_rect(i, &ux, &uy, &uw, &uh);
   int32_t x = (int32_t)ux, y = (int32_t)uy, w = (int32_t)uw, h = (int32_t)uh;
@@ -214,6 +222,7 @@ static void card(const struct gm_menu *m, const struct gm_game *g, unsigned i, i
     const char *say = g->pic < 0 ? "No title screen" : "Loading...";
     text0(F5, x + 1 + ((int32_t)GM_THUMB_W - width(F5, say, len(say), 1)) / 2, y + 1 + (int32_t)GM_THUMB_H / 2 - 4, say, C_DIM);
   }
+  if (gm_is_favorite(m,g)) star(x+w-23,y+10);
   fill(x + 1, y + 1 + (int32_t)GM_THUMB_H, (int32_t)GM_THUMB_W, 1, C_LINE2);
   int32_t ty = y + 1 + (int32_t)GM_THUMB_H + 9;
   unsigned lines = wrap(F8, x + 9, ty, w - 18, g->title, 2, 11, 0xffffffu, 1);
@@ -228,12 +237,35 @@ static void keycap(int32_t *x, int32_t y, const char *key, const char *label) {
 static void footer(const struct gm_menu *m) {
   fill(0, FOOT_Y, GM_W, GM_H - FOOT_Y, C_FOOT);
   fill(0, FOOT_Y, GM_W, 1, C_LINE2);
-  int32_t x = 16, y = FOOT_Y + 18;
-  keycap(&x, y, "M", m->background_music ? "music on" : "music off");
-  if (m->message[0]) {text0(F8, x, y, m->message, C_GOLD); return;}
-  if (m->view == GM_DETAILS) {keycap(&x, y, "Left/Right", "choose"); keycap(&x, y, "Enter", "press"); keycap(&x, y, "H", "high scores"); keycap(&x, y, "Esc", "back to the games"); return;}
-  keycap(&x, y, "Arrows", "choose"); keycap(&x, y, "Enter", "open");
-  keycap(&x, y, "Tab", "category"); keycap(&x, y, "PgUp/PgDn", "page"); keycap(&x, y, "H", "high scores"); keycap(&x, y, "Esc", "quit");
+  int32_t x = 16, y = FOOT_Y + 10;
+  if (m->message[0]) text0(F8,x,y,m->message,C_GOLD);
+  else if (m->search_active) {
+    if(m->search_keyboard) {keycap(&x,y,"Arrows","choose a letter");keycap(&x,y,"Enter","type / Done for results");}
+    else {keycap(&x,y,"Type","title or company");keycap(&x,y,"Arrows","choose");keycap(&x,y,"Enter","details");}
+    keycap(&x,y,"Esc","clear / leave");
+  } else if (m->tabs_focus) {
+    keycap(&x,y,"Left/Right","category");keycap(&x,y,"Enter / Down","open");keycap(&x,y,"Esc","back");
+  } else if (m->view==GM_DETAILS) {
+    keycap(&x,y,"Arrows","choose button");keycap(&x,y,"Enter","press");keycap(&x,y,"F","Favorite");keycap(&x,y,"Esc","back");
+  } else {
+    keycap(&x,y,"Arrows","choose / Up to tabs");keycap(&x,y,"Enter","open");keycap(&x,y,"F","Favorite");keycap(&x,y,"Esc","quit");
+  }
+  x=16;y=FOOT_Y+30;
+  keycap(&x,y,"Tab / [ ]","category");keycap(&x,y,"/","folder name");keycap(&x,y,"H","high scores");
+  keycap(&x,y,"M",m->background_music?"music on":"music off");keycap(&x,y,"PgUp/PgDn","page");
+}
+static void search_keyboard(const struct gm_menu *m) {
+  box(16,304,928,180,8,1,C_LINE,C_PANEL,1);
+  text0(F5,28,314,"Search: choose letters, then Done to browse results. You can also type on a keyboard.",C_MUTED);
+  for(unsigned k=0;k<40;k++) {
+    int32_t x,y,w;
+    const char *label; char letter[2]={0,0};
+    if(k<36) {x=28+(int32_t)(k%9)*101;y=330+(int32_t)(k/9)*29;w=94;letter[0]=GM_SEARCH_KEYS[k];label=letter;}
+    else {static const char *const actions[]={"Space","Delete","Clear","Done"};x=28+(int32_t)(k-36)*227;y=448;w=220;label=actions[k-36];}
+    int on=k==m->keyboard_pos;
+    box(x,y,w,24,4,1,on?C_GOLD:C_LINE,on?C_BLUE:C_PILL,1);
+    text0(F8,x+(w-width(F8,label,len(label),1))/2,y+8,label,C_TEXT);
+  }
 }
 static void grid(const struct gm_menu *m) {
   unsigned t = m->tab, n = m->tab_count[t], p = m->pos[t], first = p / GM_PAGE * GM_PAGE;
@@ -243,13 +275,25 @@ static void grid(const struct gm_menu *m) {
     text0(F5, ((int32_t)GM_W - width(F5, b, len(b), 1)) / 2, 272, b, C_MUTED);
     return;
   }
-  int32_t x = text0(F8, 16, HEAD_Y, TAB_NAME[t], 0xffffffu);
-  text0(F5, x + 10, HEAD_Y, TAB_LINE[t], C_MUTED);
+  if (t==GM_CAT_SEARCH) {
+    box(16,85,650,23,5,1,m->search_active?C_GOLD:C_LINE,C_PANEL,1);
+    int32_t sx=text0(F5,24,92,"Search: All games",C_MUTED);
+    text0(F8,sx+14,92,m->query[0]?m->query:"Type a title or company",m->query[0]?C_TEXT:C_DIM);
+  } else {
+    int32_t x = text0(F8, 16, HEAD_Y, t==GM_CAT_RECENT?"Recently played":TAB_NAME[t], 0xffffffu);
+    text0(F5, x + 10, HEAD_Y, TAB_LINE[t], C_MUTED);
+  }
+  if (!n) {
+    const char *empty=t==GM_CAT_SEARCH?"No matching titles":t==GM_CAT_FAVORITES?"No favorites yet.":"No recently played games yet.";
+    text0(F8,32,220,empty,C_TEXT);
+    if(t==GM_CAT_FAVORITES)text0(F5,32,244,"Choose a game and press F, or open Details and choose Favorite.",C_MUTED);
+  }
   if (n > GM_PAGE) {
     char line[24], *q = put(line, "Page "); q = num(q, p / GM_PAGE + 1); q = put(q, " of "); num(q, (n + GM_PAGE - 1) / GM_PAGE);
     text0(F5, (int32_t)GM_W - 16 - width(F5, line, len(line), 1), HEAD_Y, line, C_MUTED);
   }
-  for (unsigned i = 0; i < GM_PAGE && first + i < n; i++) card(m, gm_tab_game(m, t, first + i), i, first + i == p);
+  for (unsigned i = 0; i < (m->search_active && m->search_keyboard?GM_COLS:GM_PAGE) && first + i < n; i++) card(m, gm_tab_game(m, t, first + i), i, first + i == p);
+  if(m->search_active && m->search_keyboard) search_keyboard(m);
 }
 static uint32_t mix(uint32_t a, uint32_t b, uint32_t k, uint32_t of) {
   uint32_t out = 0;
@@ -308,7 +352,9 @@ static void details(const struct gm_menu *m, const uint8_t *big, const uint8_t *
   button(x, y, 112, "Play", 1, m->button == GM_BTN_PLAY);
   button(x + 124, y, 88, "Back", 0, m->button == GM_BTN_BACK);
   const char *blurb = g->blurb[0] ? g->blurb : "This game has no entry in the library index, so there is no description to show.";
-  y += 50;
+  button(x,y+40,212,gm_is_favorite(m,g)?"In Favorites":"Favorite",0,m->button==GM_BTN_FAVORITE);
+  if(gm_is_favorite(m,g))star(x+12,y+49);
+  y += 90;
   wrap(F5, x, y, w, blurb, (unsigned)((440 - y) / 13), 13, C_TEXT, 1);
   char where[40], *q = put(where, "/sd/GAMES/"); q = put(q, g->dir); q = put(q, "/"); put(q, g->gam);
   text0(F5, x, 464, where, 0xb0a8d0u);

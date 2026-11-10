@@ -8,15 +8,17 @@
 #include <stdbool.h>
 #include "gam.h"
 #include "library.h"
+#include "collections.h"
 #define GM_MAX_GAMES 256u
 #define GM_COLS 4u
 #define GM_PAGE 8u /* cards on a page: four across, two down */
 #define GM_MESSAGE_MAX 48u
-enum {GM_CAT_STARTER, GM_CAT_SANDBOX, GM_CAT_BIZARRE, GM_CAT_CD, GM_CAT_OTHER, GM_CATS};
+#define GM_SEARCH_KEYS "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+enum {GM_CAT_STARTER, GM_CAT_SANDBOX, GM_CAT_BIZARRE, GM_CAT_CD, GM_CAT_OTHER, GM_CAT_SEARCH, GM_CAT_FAVORITES, GM_CAT_RECENT, GM_CATS};
 enum {GM_GRID, GM_DETAILS};       /* what shows */
-enum {GM_BTN_PLAY, GM_BTN_BACK, GM_BUTTONS}; /* the details view's buttons */
+enum {GM_BTN_PLAY, GM_BTN_BACK, GM_BTN_FAVORITE, GM_BUTTONS}; /* the details view's buttons */
 struct gm_game {
-  char dir[9], gam[13];             /* folder and its .GAM file */
+  char dir[9], gam[13], key[9];     /* folder, .GAM file and saved-list identity */
   char title[GM_LIB_TITLE + 1];     /* the index's title, else the .GAM's, else the folder */
   char company[GM_LIB_COMPANY + 1], blurb[GM_LIB_BLURB + 1];
   uint32_t crc; int32_t year, course;
@@ -25,8 +27,14 @@ struct gm_game {
 struct gm_menu {
   struct gm_game games[GM_MAX_GAMES];
   unsigned count;
-  uint16_t order[GM_MAX_GAMES];      /* games by tab, then by course and title */
-  unsigned tab_first[GM_CATS], tab_count[GM_CATS];
+  uint16_t order[GM_MAX_GAMES];      /* by category, then course and title */
+  uint16_t visible[GM_CATS][GM_MAX_GAMES];
+  struct gm_list favorites, recent;
+  char query[25];
+  int search_active, tabs_focus, search_keyboard;
+  unsigned keyboard_pos;
+  unsigned detail_id;              /* stable while a virtual tab changes */
+  unsigned tab_count[GM_CATS];
   unsigned tab, view, button;
   int background_music;             /* owner setting: off on boot, M toggles in the library */
   unsigned pos[GM_CATS];            /* the selected card in each tab (remembered) */
@@ -35,7 +43,7 @@ struct gm_menu {
   char open_dir[10];                /* ninth character makes an overlong name fail */
   char message[GM_MESSAGE_MAX + 1]; /* footer line; empty shows the key help */
 };
-enum {GM_NONE, GM_MOVED, GM_CHOSEN, GM_QUIT, GM_RESYNC, GM_SCORES, GM_MUSIC, GM_OPEN_FOUND, GM_OPEN_MISSING, GM_OPEN_PLAY}; /* GM_SCORES: H, the selected game's Top Ten */
+enum {GM_NONE, GM_MOVED, GM_CHOSEN, GM_QUIT, GM_RESYNC, GM_SCORES, GM_MUSIC, GM_OPEN_FOUND, GM_OPEN_MISSING, GM_OPEN_PLAY, GM_FAVORITE}; /* GM_SCORES: H, the selected game's Top Ten */
 /* Add a game (dir is its folder's name, gam its .GAM file, title from that
    file, crc the .GAM's CRC-32); false when the list is full. */
 bool gm_add(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc);
@@ -46,7 +54,10 @@ int gm_library_line(struct gm_menu *m, const char *line, uint32_t n);
    tab (the web page's default), or of the first tab that has games. */
 void gm_finish(struct gm_menu *m);
 /* One input event (Linux codes). Grid: arrows move, PgUp/PgDn turn the page,
-   Home/End, Tab and Shift+Tab (or [ and ]) change the tab, Enter opens the
+   Home/End, Tab and Shift+Tab (or [ and ]) change the tab. Up from the
+   top row focuses tabs (Left/Right, Enter/Down). Search accepts up to 24
+   characters, filters title/company live; Esc clears then leaves. F toggles
+   Favorite in grid/details. Enter opens the
    details, Esc or Q quits, H shows the selected game's Top Ten. Details: Left/Right/Tab pick a button, Enter or
    Space presses it (Play chooses the game), H shows the Top Ten, Esc goes back. SYN_DROPPED asks
    the caller to resynchronize. Slash starts/resets a DOS folder request in
@@ -64,3 +75,13 @@ const struct gm_game *gm_tab_game(const struct gm_menu *m, unsigned tab, unsigne
    longer one would not fit the game's dir[9] or the board's path buffers). */
 bool gm_dir_ok(const char *name, unsigned n);
 unsigned gm_menu_bytes(void); /* for the host tests, which keep the menu as bytes */
+
+/* Refresh virtual tabs after lists or query change; never opens game assets. */
+void gm_refresh(struct gm_menu *m);
+void gm_search(struct gm_menu *m, const char *query);
+int gm_favorite(struct gm_menu *m);
+int gm_played(struct gm_menu *m, unsigned id);
+int gm_is_favorite(const struct gm_menu *m, const struct gm_game *g);
+
+/* Stable full-path identity (eight hexadecimal FNV-1a digits). */
+void gm_game_key(struct gm_game *g, const char *path, const char *gam);
