@@ -72,14 +72,7 @@ not claimed as tested.
 - No guarantee for arbitrarily large directories: `readdir` creates the entire
   list in the fixed JS heap. Physical board/keyboard/video validation remains open.
 
-## Provenance and publication boundary
+## Provenance
 
 CLOCK retains its upstream signed commit `b73ed161859d0797a1c2e8a409874b10c8009025`.
-The suite was assembled without branch merges on `feature/js-example-apps` from
-fresh `origin/main` at `adf598ad716b2aa5b279c83a51679a6786918a74`, following the
-repository-only clarified base requirement. Contributions in this suite used
-**Hermes OpenAI Codex GPT-6.1 Sol**, provider **openai-codex**, independently
-verified from the active session record. No private `.for-lewis` files are part
-of the changes. Branch publication remains subject to the owner's effective
-local-only contract and a fresh workflow-trigger check; local verification is
-not authorization to push or merge.
+Contributions in this suite were made with **OpenAI Codex (GPT-6.1 Sol)**.
