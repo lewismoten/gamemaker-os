@@ -1,7 +1,9 @@
 # Saves and high scores on the Pi
 
-Status: first slice (design, file layer, high scores), now linked into `GMOS.ELF`. The game-state save
-(`GAME0.SAV`) and demos (`.REC`) are later slices. Nothing has been written to a real card yet.
+Status: file layer and high scores are linked into `GMOS.ELF`. A pure DOS `GAME0.SAV`
+wire codec is now available through `src/savefile.c/.h` ([layout, API and tests](game-save.md));
+there is still no gameplay snapshot bridge or live save/load command. Demos (`.REC`)
+remain a separate slice. Nothing here establishes real-card save acceptance.
 
 ## Decisions
 
@@ -51,9 +53,10 @@ rewrites the file when nothing placed; the Pi doesn't, to spare the card.
 
 ## Still to do (later slices)
 
-1. `GAME0.SAV` to `GAME9.SAV` and `SAVNAMES.DAT`: layout is 37755 + 5M + 3R bytes (max 41505) on
-   the original 3.00 binary; needs a codec and a bridge into the portable core (the core drops
-   monster status fields and keeps no recorder). Needs Kaylee's design review first.
+1. Bridge the [DOS wire codec](game-save.md) to live gameplay for `GAME0.SAV` to
+   `GAME9.SAV`, and implement `SAVNAMES.DAT`. The codec handles 37755 + 5M + 3R
+   bytes (max 41505); the core still drops monster status fields and keeps no
+   recorder. Runtime interchange and the live bridge remain separate acceptance gates.
 2. Re-vendoring the SDK once the kernel with `/OS/SAVES` is released (`sdk/PINNED` names 5732b42).
 3. Real-card checks: power cut during a save, card full, long run.
 4. Demos (`.REC`), later.

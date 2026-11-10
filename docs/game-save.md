@@ -1,0 +1,142 @@
+# DOS `GAME0.SAV` wire codec
+
+Status: pure byte codec in `src/savefile.c/.h`; no live save/load command, file I/O
+wrapper, slot-name support or portable-core state bridge. The same DOS layout
+applies to slots 0–9; this module does not select a filename or acquire write authority.
+It does not change the existing high-score or filesystem implementation.
+
+## Reference and compatibility boundary
+
+The format source is the public GameMaker-SandboxEdition repository, revision
+`7f614cfbfa5c8c15c83d586a46edf57af79d1afc`:
+
+- `code/GM/PLAYGAME.C:1773–1792,1874–1890`: the individual `fread`/`fwrite` calls.
+- `PLAYGAME.C:113–172,207–265`: `minfo`, `cinfo`, block timers and recorder.
+- `code/GM/CHAR.H:18–51`: character/sequence/frame records.
+- `code/GM/MAP.H:8–30`, `BLOC.H:6`, `GMGEN.H:29`, `code/DRV/GEN.H`:
+  array capacities, filename capacity, enum and integer types.
+- `code/GM/MAKERS.MAK`: Borland large-model build (`-ml`); four-byte far pointers.
+
+Source declarations alone do not prove Borland packing. The public shipped
+`cd/gm/playgame.exe` (163130 bytes, SHA-256
+`49ed1c7898b05cd19813e1731f7694f52ee17d768f01e38991666fac86365d4b`)
+independently corroborates the sizes in the table below. Its MZ header is 8192
+bytes. Load-image offsets `0xc322–0xc4dd` contain the save writes, with record
+sizes 1,2,2,2,4,4,1,135,3784,2,2,55,10,2,1,5,70,3 and array counts
+150,150,200,200,10000,`M`,`R` as applicable. `0xb9a8–0xbb6e` corroborates
+reads and the restored recorder far pointer at object offset 55. These are static
+binary checks, **not** a successful DOS runtime session.
+
+The public web save fixtures at this revision start with JSON (`{"version":1`),
+not these DOS records. They are not a DOS oracle and are neither imported nor
+accepted as interchangeable files. No historical/private save file is committed.
+The committed Python oracle creates original synthetic structural fixtures from
+public layout facts; its opaque patterned records are not playable game sessions.
+
+## Layout
+
+There is no magic, version, checksum, padding between writes, or extra header.
+All scalar words are little endian: DOS `int`/`uint`/enum are 2 bytes,
+`long`/`ulongi`/far-pointer tokens are 4 bytes. Byte arrays retain every byte.
+`M` is the first byte, the number of block-spawn timers (0–150; one per background
+block in `PLAYGAME.C:4221–4236`). `R` is the signed recorder index (0–1000).
+Total length is **37755 + 5M + 3R**, from 37755 to 41505 bytes.
+
+| Offset | Bytes | DOS field |
+| --- | --- | --- |
+| 0 | 1 | `MaxBlkMon` (`M`) |
+| 1, 3, 5 | 2 each | `prevscene`, `doscene`, `linkin` |
+| 7 | 4 | saved sound clock |
+| 11 | 150 × 4 | `nxtchg` |
+| 611 | 150 | `blkmap` |
+| 761 | 135 | `cinfo` object image |
+| 896 | 3784 | `chrstruct` object image |
+| 4680, 4682 | 2 each | `mx`, `my` |
+| 4684 | 200 × 55 | `minfo` object images |
+| 15684 | 200 × 10 | `monmapstruct` object images |
+| 17684 | 100 × 100 × 2 | map `[y][x]`, block then monster-slot byte |
+| 37684 | 1 | `NoMons` |
+| 37685 | M × 5 | block byte then next-spawn `ulongi` |
+| 37685 + 5M | 70 | `Recording` object image (below) |
+| 37755 + 5M | R × 3 | 16-bit delta time then key byte |
+
+Recorder offsets relative to `37685 + 5M`:
+
+| Offset | Bytes | Field |
+| --- | --- | --- |
+| 0 | 2 | signed `RecIndex` (`R`) |
+| 2 | 2 | signed `LastRecordedKey` |
+| 4 | 51 | `RecFile` (raw bytes; no NUL required by this codec) |
+| 55 | 4 | DOS far-pointer token `Rec` |
+| 59 | 4 | `RecordTimer` |
+| 63 | 1 | `RecFlag` |
+| 64 | 4 | `LastKeyPress` |
+| 68 | 2 | enum `Paused` |
+
+## API and validation
+
+`save_game_decode` returns an owned caller-provided `struct save_game`.
+`save_game_size` returns the exact encoded size (or zero for invalid counts).
+`save_game_encode` writes exactly that size and updates `*n` only on success.
+There are no heap allocations or I/O in the codec, and no dependency on native
+struct layout, native pointer width, wire alignment or host endian ordering.
+
+The fixed DOS object images (`character_info`, `character`, `monster_info`,
+`monster_map`, `map`) are deliberately exposed as raw wire bytes; scalar headers,
+clocks, timer records and recorder metadata/records are decoded to fixed-width
+integers. All raw fields, stale pointer tokens, reserved bytes, filename tails and
+noncanonical booleans survive decode/encode unchanged. No DOS token becomes a
+host address. Native `struct save_game` padding and unused variable-array capacity
+never enter the wire. Decode zeros its entire destination only **after** framing
+validation succeeds, including unused array entries.
+
+Reject NULL required arguments, overlapping object/wire/output-size storage,
+block counts over 150, negative/over-1000 recorder counts, all short fixed or
+variable records, and any extra trailing byte with `SAVE_EINVAL`. Output capacity
+below the exact length returns `SAVE_EFBIG`. Every failure leaves destination and
+output-length storage unchanged. Wire buffers may be unaligned; object and
+`uint32_t *n` must have ordinary native C alignment. Object/wire ranges use the
+entire supplied input length/output capacity when checking overlap.
+
+This is structural validation, **not** semantic permission to resume a game.
+No game identifier exists in the file. Scene links, map cells, inventory indices,
+monster fields, filename text and gameplay values are not trusted/normalized by
+this layer. DOS's unchecked short-read/ignored-trailer behavior is intentionally
+not reproduced. Other DOS versions, recorder-disabled builds and differently
+packed/recompiled executables are unsupported.
+
+The state object is roughly 43 KiB. Allocate it in owned bounded storage, not a
+small board stack. A future core bridge must parse/validate opaque fields against
+the actual game, relocate or discard DOS pointers, restore required state absent
+from the current portable core and reproduce DOS's post-load resets
+(`PLAYGAME.C:1795–1832`). That bridge and runtime DOS↔Pi, real-card and power-loss
+acceptance are outside this codec. Byte preservation alone does not enable saves
+on the Pi or establish safe gameplay restoration.
+
+## Host verification
+
+```sh
+python3 -m unittest discover -s tests -p test_game_save.py -v
+AUDIO_SANITIZE=1 python3 -m unittest discover -s tests -p test_game_save.py -v
+python3 -m unittest discover -s tests -p test_savefile.py -v
+make host
+GMOS_HOST=build/host python3 -m unittest discover -s tests -v
+# Keep the existing venv interpreter if the ASan helper resolves symlinks and
+# thereby drops installed venv-only dependencies (no package install needed):
+make test-asan FUZZ_ROUNDS=100 ASANPY="$(command -v python3)"
+```
+
+The independent Python `struct.pack` oracle follows DOS's write order, not C
+struct layout or codec offsets. The C harness checks every decoded field/opaque
+byte against independent values, then compares every re-encoded byte with that
+oracle. The matrix has 1151 distinct `(M,R)` pairs covering every allowed value
+of each count, minimum, maximum, signed-word extremes and high-bit clocks. The
+largest fixture tests every one of its 41505 insufficient input lengths and 41505
+insufficient output capacities using exact-sized allocations, malformed counts,
+trailers, error atomicity, overlap rejection, NULL arguments, unaligned wire and
+sentinels. Sanitizers cover the real codec. This is not the full Cartesian count
+matrix and does not assert that patterned opaque records are semantically valid.
+
+Copyright (c) 2026 Lewis Moten. Codec, tests and this document: Hermes Agent,
+OpenAI Codex GPT-6.1 Sol. Format follows RSD's MIT-released source (copyright
+(c) 2014 gandrewstone; (c) 2026 Lewis Moten modifications); see NOTICE.md.

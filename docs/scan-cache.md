@@ -88,7 +88,7 @@ The FAT probe runs actual assets.c/fatput.c with file-backed sector I/O, not the
 user address-space dispatcher or SD hardware. Kernel syscall tests cover that
 separate ABI path. JSON retains compiler commands and production source digests.
 The synthetic fixture is 135 variants of repository DICE GAM plus one duplicate
-pack, generated JSL and an empty folder—not Lewis's real 135-game card copy.
+pack, generated JSL and an empty folder—not a real 135-game card copy.
 
 On Linux/x86_64 in the implementation run, five warmed-process baseline samples
 were about 14.3 ms vs about 2.0 ms warm cache. The full scanner's sector calls

@@ -6,7 +6,7 @@ AI models used on this repository:
 
 | Model | Tool | What it did |
 | --- | --- | --- |
-| GPT-6.1 Sol (OpenAI) | Hermes Agent (openai-codex) | Isolated unlinked PC-speaker PCM producer, bounded PCM8 VOC decoder/resampler and stereo mixer, source/corpus oracles, host/ARM qualification, tests and documentation (2026-11-08); no live dispatch or HDMI output |
+| GPT-6.1 Sol (OpenAI) | Hermes Agent (openai-codex) | Isolated unlinked PC-speaker PCM producer, bounded PCM8 VOC decoder/resampler and stereo mixer, source/corpus oracles, host/ARM qualification, tests and documentation (2026-11-08); no live dispatch or HDMI output. Pure DOS GAME0.SAV wire codec, synthetic host oracles/tests and documentation (2026-11-09); no gameplay save/load bridge |
 | GPT-6.1 Sol (OpenAI) | ChatGPT | The boot art in `art/` (castle badge, HDMI boot and diagnostics layouts, e-ink screens, favicon, social preview), made from the maintainer's directions; MIT (`art/LICENSE.txt`) (2026-11-09) |
 | Claude Opus 5.5 (Anthropic) | Claude Code | Wrote the README (2026-11-06) |
 | Claude Opus 5.5 (Anthropic) | Claude Code | First program GMOS.ELF: games list, .GAM title reader, bitmap font (lowercase and punctuation drawn new), layout, input handling, host tests, build notes, board runs (2026-11-07) |
@@ -19,6 +19,8 @@ AI models used on this repository:
 | Claude Sonnet 5.5 (Anthropic) | Claude Code | Sound on the board: the integer OPL2 synth and CMF player (`src/opl.c`, `src/cmf.c`, tables), the `/dev/audio` mixer and feeder (`src/audio.c`), the background music cycle with fades, preview sound, host tests, and Game-Maker OS's own tune composed in code (`tools/make_ostune.ts`, `src/ostune_data.c`, MIT) (2026-11-09) |
 
 ## Third-party code
+
+- `src/savefile.c/.h` GAME0 codec and `tests/game_save_fixture.py`: wire order and record definitions follow RSD's `code/GM/PLAYGAME.C`, `CHAR.H`, `MAP.H`, `GMGEN.H`, `BLOC.H`, `COORD2D.HPP` and `code/DRV/GEN.H` in GameMaker-SandboxEdition at `7f614cfbfa5c8c15c83d586a46edf57af79d1afc` (MIT source, copyright (c) 2014 gandrewstone; (c) 2026 Lewis Moten modifications). The public shipped DOS executable independently corroborates packed record widths. The codec and synthetic structural fixtures are new; no original executable, game save, or private-reference bytes are imported. See `docs/game-save.md` for provenance and the distinction between wire preservation and live gameplay restoration.
 
 - `src/voc_host.c`: container/PCM8/repeat behavior follows Sandbox Edition's `web/packages/engine/src/formats/voc.ts:1-125`, linear resampling follows `audio/engine.ts:273-295`, and stop/retrigger semantics follow Peter Savage/RSD's `code/GM/SOUNDC.C:153-253`, read at `c97a75265160776318fdde804134b22b01c3fe40` (MIT source, copyright (c) 2014 gandrewstone; (c) 2026 Lewis Moten modifications). The bounded owned-source/index/parser, fixed-point rendering and saturating mixer are original here. VOC is Creative Technology Ltd.'s format; no specification prose, Creative driver, ADPCM tables or third-party implementation is imported. Existing CD audio remains its authors' work and is used only as private source-referenced oracle evidence, not relicensed or copied into this repository. See `docs/voc-host.md` for explicit unsupported encodings and web codec/channel-check omissions. This component remains unlinked.
 
