@@ -40,6 +40,7 @@ def lib():
         c.gs_step.argtypes = [C.c_void_p, C.c_uint64]
         c.gs_wake.argtypes = [C.c_void_p, C.c_uint64]; c.gs_wake.restype = C.c_uint64
         c.gs_draw.argtypes = [C.c_void_p, C.c_void_p, C.c_uint32]
+        c.gs_resume.argtypes = [C.c_void_p, C.c_uint64]  # without this ctypes passes the session pointer as a 32-bit int (a Mac crash, 2026-11-10)
         c.gmos_session_new.restype = C.c_void_p
         for f in ('gmos_session_phase', 'gmos_session_stage', 'gmos_session_card', 'gmos_session_ticks', 'gmos_session_showing_card', 'gmos_session_shown', 'gmos_session_keys'): getattr(c, f).argtypes = [C.c_void_p]
         for f in ('gmos_session_px', 'gmos_session_pal'): getattr(c, f).argtypes = [C.c_void_p]; getattr(c, f).restype = C.c_void_p
