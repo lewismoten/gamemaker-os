@@ -19,12 +19,13 @@ manifest or authoritative list**. Existing GMP seek/title loading is unchanged.
   folder even if it used to be empty; parent folder dates alone cannot detect a
   newly added/reordered .GAM. No GAM payload/decompression/duplicate CRC repeats
   for unchanged positive or negative candidates.
-- Preserve source paths, loose/GMP kind (in the path/root and source layout),
+- Preserve source paths and candidate layout,
   source title/GAM name/duplicate key and embedded library records. Keep the JSL
   bytes as a separately keyed record. Replay embedded records and JSL in their
   original order, preserving category/tab, later-record overwrite behavior,
   metadata matching precedence and reader mappings. Do not cache pointers or
-  thumbnail pixels. ZIP discovery remains **unsupported**, exactly as before.
+  thumbnail pixels. ZIP/SFX candidates and long paths are supported; see
+  [desktop discovery and cache limits](drag-drop.md).
 - Names/sizes/dates/identity are a **metadata trust contract**, not proof that
   arbitrary file bytes are unchanged. External tools must update meaningful FAT
   dates or remove GAMES.IDX after edits. A same-size, in-place edit preserving all
@@ -40,9 +41,9 @@ manifest or authoritative list**. Existing GMP seek/title loading is unchanged.
   Changed valid sources are parsed again; invalid sources are negative-cached
   only when no underlying pack I/O error was detected.
 
-The portable GMI1 container has a 16-byte little-endian header (magic, byte count,
+The portable GMI2 container has a 16-byte little-endian header (magic, byte count,
 entry count, CRC32 covering header[0:12] and payload). Each entry has path/key/value
-lengths and bounded bytes. The board source value is an asserted 48-byte record
+lengths and bounded bytes. The board source value is an asserted 292-byte record
 plus up to 4096 bytes of the embedded library record; scalar fields are LE on
 supported ARM32/host platforms. Bump the magic when scanner interpretation changes.
 CRC32 detects accidental corruption, not malicious cache modification.
@@ -97,6 +98,9 @@ cold build also writes the cache and is a separate phase. These are **host-only*
 results; final exact samples/build IDs belong to the private signed handoff.
 
 ## Mac/Pi validation gate
+
+Physical-card durability and current full-library performance acceptance remain
+**hardware-untested**. The historical host samples above are not current Pi results.
 
 No Pi run or current 135-game card/frame baseline was available on Kaylee.
 Retain baseline/candidate card copies. Mac alone reviews/imports bundles and

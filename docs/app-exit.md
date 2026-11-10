@@ -107,7 +107,8 @@ should contain `tests/games/DICE` for focused-game checks. Without `--launcher`,
 jsrun retains single-app test behavior and returns its exit status to the host.
 The board always uses the launcher driver. Virtual-clock timings are not Pi
 latency measurements. See the private delivery handoff for Linux linker and
-sanitizer adapters if your host lacks the Makefile's macOS libc++ setup.
+sanitizer evidence. The Makefile now selects libc++ on macOS and libstdc++
+on Linux without a linker adapter. App switching remains **hardware-untested**.
 
 ## Pi smoke procedure (not a hardware result)
 

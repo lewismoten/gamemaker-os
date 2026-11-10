@@ -2,8 +2,8 @@
 
 `src/pcspeaker.c` / `.h` are unlinked qualification components. Neither GMOS.ELF,
 JS.ELF nor the host gameplay library links them. No game/session/sound dispatch,
-remote `SND` grammar or destructive `gp_take_sound` call changes. No local audio
-availability is advertised. A separate host-only composition probe can render
+remote `SND` grammar or destructive `gp_take_sound` call changes. The sound branch is not merged; local audio is not shipped.
+Hardware playback remains **hardware-untested**. A separate host-only composition probe can render
 into private bounded scratch, submit copied bytes to the kernel ring, and commit
 the staged producer state only when the entire write succeeds. That probe is not
 a syscall integration or a scheduler.

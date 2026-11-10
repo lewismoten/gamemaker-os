@@ -1,22 +1,23 @@
 # Playing a game
 
-Enter on the games list plays the chosen game from its original DOS files in
-`/sd/GAMES/<DIR>`, the same files the list reads its title from. Nothing is
-converted or packed first.
+Enter opens details; Play starts the game from its DOS files in a loose folder,
+GMP or supported ZIP/SFX archive. See [copying games](drag-drop.md) for limits.
+A loose game needs no conversion or packing first.
 
 ## One play core, shared
 
 The rules of play (the hero, keys, blocks, scrolling, monsters, links between
 levels) are `third_party/gmcore/gmcore.h` and `gmmon.h`, the play core of the
-Pocket Player in [Game-Maker: Sandbox Edition](https://github.com/lewismoten/GameMaker-SandboxEdition)
-(`hardware/pocket-player/src`). That core is a port of the Sandbox Edition's web
+Pocket Player in [Game-Maker Pocket](https://github.com/lewismoten/gamemaker-pocket)
+(`src/`, commit in `third_party/gmcore/PINNED`). That core is a port of the Sandbox Edition's web
 engine, which follows RSD's `PLAYGAME.C`. It is header-only and holds no board
 code, so the same files build the ESP32 firmware there and `GMOS.ELF` here.
 
 `third_party/gmcore` is a copy pinned by commit (`PINNED`), never edited here.
-`scripts/vendor_gmcore.sh <checkout> [commit]` copies the two headers and that
-repository's `LICENSE` and records the commit. A fix to the core goes into the
-Sandbox Edition, then comes here with the script.
+`scripts/vendor_gmcore.sh <gamemaker-pocket checkout> [commit]` copies
+`gmcore.h`, `gmmon.h` and `gmsmall.h` and records the commit, retaining the local
+license notices. A core fix goes into gamemaker-pocket, then comes here with
+the script.
 
 What differs is how each side feeds the core. The Pocket Player reads files that
 a packer squeezed for its small memory. `src/game.cpp` reads the DOS files
@@ -49,7 +50,7 @@ built without exceptions, RTTI or static constructors; `src/libc.c` supplies
 3. On a link: the level's exit pages, the next level's intro, the next level.
    After a death: the level's intro again, unless no lives are left.
 4. Winning shows the level's exit and the won pages; losing the last life
-   shows the lost pages. Then the games list.
+   shows the lost pages. Then the Top Ten flow, if the score places, and the details view.
 
 ## Pages between scenes
 
@@ -94,8 +95,10 @@ up: a page that ends on time begins the next at that moment.
 
 Keys arrive as Linux key codes and reach the game as DOS scan codes: the arrows,
 Home, End, Page Up and Page Down (the diagonals) as the number pad's, and the
-rest of the keyboard as it is (Space, Enter, letters). Esc always goes back to
-the list.
+rest of the keyboard as it is (Space, Enter, letters). Esc leaves play for
+the details view (after any Top Ten entry). During a level, F5 opens Save Game
+and F6 opens Load Game; see [controls and limits](game-save.md). These native
+save/load screens and real-card writes are **hardware-untested**.
 
 ## The screen
 
@@ -200,7 +203,8 @@ at most 24.4 ms and a wake-up at most 4.5 ms late.
 
 ## Sound events
 
-The board has no audio driver yet, so a game's sounds go out on the USB log as
+Local sound is not linked into GMOS.ELF; the sound branch is not merged.
+The SDK's audio declarations do not enable playback. A game's sounds go out on the USB log as
 `SND` lines (`src/sound.h`, from the session in `src/session.c`), for a page on
 the computer at the other end to play from its own copy of the game's files
 (the Sandbox Edition's Pi remote, `#/pi-remote`, with its Pi sound switch on):
