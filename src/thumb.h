@@ -23,3 +23,14 @@ void gm_shrink(const uint8_t *px, const uint8_t *pal, uint16_t *out, uint32_t w,
 const uint16_t *gm_thumb_get(unsigned id);
 void gm_thumb_put(unsigned id, const uint8_t *px, const uint8_t *pal);
 void gm_thumb_clear(void);
+/* Cooperative picture loading: present immediately, then at 50 ms checkpoints.
+   The transport must checkpoint between bounded reads; a blocking syscall itself
+   cannot be preempted here. The callbacks must not load another picture. */
+struct gm_load_progress {
+  uint64_t last;
+  uint64_t (*now)(void *user);
+  void (*present)(void *user);
+  void *user;
+};
+void gm_load_start(struct gm_load_progress *p, uint64_t (*now)(void *), void (*present)(void *), void *user);
+void gm_load_tick(struct gm_load_progress *p);

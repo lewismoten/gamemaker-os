@@ -33,3 +33,8 @@ int puff(unsigned char *dest,           /* pointer to destination pointer */
          unsigned long *destlen,        /* amount of output space */
          const unsigned char *source,   /* pointer to source data pointer */
          unsigned long *sourcelen);     /* amount of input available */
+
+/* GMOS addition: identical result, with optional bounded-work checkpoints. */
+int puff_yield(unsigned char *dest, unsigned long *destlen,
+               const unsigned char *source, unsigned long *sourcelen,
+               void (*yield)(void));

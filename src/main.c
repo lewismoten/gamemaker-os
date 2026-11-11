@@ -22,6 +22,8 @@
 #include "sdzip.h"
 #include "session.h"
 #include "thumb.h"
+#include "fli.h"
+#include "asset_scratch.h"
 #include "view.h"
 #include "bootart.h"
 #include "eink.h"
@@ -302,10 +304,12 @@ static int32_t sd_read(void *user, const char *name, uint8_t *buf, uint32_t cap)
   if (sbx_open(path, length(path), SBX_O_RDONLY, &fd)) return -1;
   int status=0;
   while (have < cap) {
-    uint32_t take=cap-have<(1u<<20)?cap-have:1u<<20;
+    uint32_t take=cap-have<16384u?cap-have:16384u;
     status=sbx_read(fd,buf+have,take,&got);
     if(status||!got)break;
+    if (got > take) {status = -1; break;}
     have+=(uint32_t)got;
+    heartbeat();
   }
   sbx_close(fd);
   heartbeat();
@@ -801,10 +805,20 @@ static int demo_run(uint16_t *px) {
   if (r & GS_EXIT) {demo_stop("the demo ended"); demo_idle = t; return 1;}
   return 0;
 }
+static struct gm_load_progress picture_progress;
+static uint64_t picture_now(void *u) {(void)u; return clock_ns();}
+static void picture_present(void *u) {(void)u; heartbeat(); sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H);}
+static void picture_tick(int force) {(void)force; gm_load_tick(&picture_progress);}
+static void picture_checkpoint(void) {picture_tick(0);}
 /* The title screen of a game (thumb.h), read from its folder; -1 when it has none. */
 static int title_picture(const struct gm_game *g, uint8_t *px, uint8_t *pal) {
+  /* The page is visible before opening any archive or reading the GAM. */
+  gm_load_start(&picture_progress, picture_now, picture_present, 0);
+  beat_hook = picture_tick; gp_decode_hook(picture_checkpoint); ga_yield = picture_checkpoint;
   void *user; gp_read_fn read = reader(g, &user);
-  return read ? gm_title_picture(read, user, where[g-menu.games].gam, px, pal) : -1;
+  int r = read ? gm_title_picture(read, user, where[g-menu.games].gam, px, pal) : -1;
+  gp_decode_hook(0); ga_yield = 0; beat_hook = 0;
+  return r;
 }
 /* The next card on the page whose title screen is not drawn yet: reads it. 1 when one was read. */
 static int load_next_thumb(void) {
@@ -836,7 +850,9 @@ static void show_list(uint16_t *px) {
   }
   const struct gm_game *g = gm_selected(&menu);
   if (menu.view == GM_DETAILS && g && big_id != (int)(g - menu.games)) {
-    uint64_t t0 = clock_ns(); big_id = (int)(g - menu.games); big_ok = !title_picture(g, big_px, big_pal);
+    big_id = (int)(g - menu.games); big_ok = 0;
+    gm_draw(px, GM_W, &menu, 0, big_pal);
+    uint64_t t0 = clock_ns(); big_ok = !title_picture(g, big_px, big_pal);
     char bl[64], *q = put(bl, "GMOS details picture "); q = put(q, g->dir); q = put(q, " in "); q = num(q, (uint32_t)((clock_ns() - t0) / 1000000u)); put(q, " ms"); say(bl);
   }
   gm_draw(px, GM_W, &menu, menu.view == GM_DETAILS && big_ok ? big_px : 0, big_pal);

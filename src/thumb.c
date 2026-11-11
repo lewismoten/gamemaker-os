@@ -41,14 +41,23 @@ static int blank(const uint8_t *px) {
 }
 /* levelPicture.ts busyness: distinct colors (up to 40) times the share not of the commonest, on every 4th pixel; x1000. */
 static uint32_t busyness(const uint8_t *px, const uint8_t *pal) {
-  static uint32_t keys[256], counts[256]; /* an indexed picture has at most 256 colors */
+  uint32_t keys[256], counts[256] = {0}, color_id[256];
   uint32_t n = 0, top = 0, total = 0;
-  for (uint32_t i = 0; i < W * H; i += 4, total++) {
-    const uint8_t *c = pal + px[i] * 3u; uint32_t k = (uint32_t)c[0] << 16 | (uint32_t)c[1] << 8 | c[2], j = 0;
+  /* Merge duplicate palette colors once, rather than search for every pixel. */
+  for (unsigned i = 0; i < 256; i++) {
+    uint32_t k = (uint32_t)pal[i * 3] << 16 | (uint32_t)pal[i * 3 + 1] << 8 | pal[i * 3 + 2], j = 0;
     while (j < n && keys[j] != k) j++;
-    if (j == n) {keys[n] = k; counts[n++] = 0;}
+    if (j == n) keys[n++] = k;
+    color_id[i] = j;
+  }
+  uint32_t distinct = 0;
+  for (uint32_t i = 0; i < W * H; i += 4, total++) {
+    if (!(i & 4095u)) gp_decode_checkpoint();
+    uint32_t j = color_id[px[i]];
+    if (!counts[j]) distinct++;
     if (++counts[j] > top) top = counts[j];
   }
+  n = distinct;
   return (n < 40 ? n : 40) * (1000u - top * 1000u / total);
 }
 static int gif_at(int32_t n, int32_t x, int32_t y, uint8_t *px, uint8_t *pal) {
@@ -64,7 +73,10 @@ static int fli_pic(int32_t n, uint8_t *px, uint8_t *pal) {
   for (uint32_t k = 0; k < f.frames; k++) {
     static uint8_t canvas[GP_FLI_PIXELS];
     if (!k) zero(canvas, sizeof canvas);
+    gp_decode_checkpoint();
+    uint32_t found = f.found;
     gp_fli_frame(&f, canvas, frame_pal);
+    if (found == f.found) break;
     zero(frame, sizeof frame);
     for (uint32_t y = 0; y < H && y < f.h; y++) for (uint32_t x = 0; x < W && x < f.w; x++) frame[y * W + x] = canvas[y * f.w + x];
     uint32_t b = busyness(frame, frame_pal);
@@ -105,6 +117,7 @@ static int list_pic(gp_read_fn read, void *user, const char *name, int depth, ui
   return -1;
 }
 static int graphic(gp_read_fn read, void *user, const char *name, int depth, uint8_t *px, uint8_t *pal) {
+  gp_decode_checkpoint();
   if (!name[0] || splash(name)) return -1;
   const char *e = ext(name); int r = -1;
   if (is(e, ".gif")) r = gif_at(read(user, name, file, sizeof file), 0, 0, px, pal);
@@ -124,7 +137,15 @@ static int graphic(gp_read_fn read, void *user, const char *name, int depth, uin
   else if (is(e, ".lst")) return list_pic(read, user, name, depth, px, pal);
   return r || blank(px) ? -1 : 0;
 }
+static gp_read_fn picture_read;
+static int32_t checked_read(void *user, const char *name, uint8_t *buf, uint32_t cap) {
+  gp_decode_checkpoint();
+  int32_t n = picture_read(user, name, buf, cap);
+  gp_decode_checkpoint();
+  return n >= 0 && (uint32_t)n > cap ? -1 : n;
+}
 int gm_title_picture(gp_read_fn read, void *user, const char *gam_name, uint8_t *px, uint8_t *pal) {
+  picture_read = read; read = checked_read;
   if (gp_open(read, user, gam_name) < 0) return -1;
   char title[GP_NAME_MAX + 1], menu[GP_NAME_MAX + 1]; unsigned k;
   const char *t = gp_graphic(GP_TITLE, 0), *m = gp_graphic(GP_MENU, 0);
@@ -170,4 +191,12 @@ void gm_thumb_put(unsigned id, const uint8_t *px, const uint8_t *pal) {
   }
   owner[s] = (int16_t)id; used[s] = ++clock;
   gm_shrink(px, pal, cache[s], GM_THUMB_W, GM_THUMB_H);
+}
+void gm_load_start(struct gm_load_progress *p, uint64_t (*now)(void *), void (*present)(void *), void *user) {
+  p->now = now; p->present = present; p->user = user;
+  p->last = now(user); present(user);
+}
+void gm_load_tick(struct gm_load_progress *p) {
+  uint64_t now = p->now(p->user);
+  if (now - p->last >= 50000000ull) {p->last = now; p->present(p->user);}
 }

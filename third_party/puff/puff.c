@@ -1,3 +1,4 @@
+/* GMOS alteration: optional per-call cooperative checkpoints during inflate. */
 /*
  * puff.c
  * Copyright (C) 2002-2013 Mark Adler
@@ -96,6 +97,8 @@
 
 /* input and output state */
 struct state {
+    void (*yield)(void);        /* GMOS: optional cooperative checkpoint */
+    unsigned work;
     /* output state */
     unsigned char *out;         /* output buffer */
     unsigned long outlen;       /* available space at out */
@@ -184,8 +187,10 @@ local int stored(struct state *s)
     if (s->out != NIL) {
         if (s->outcnt + len > s->outlen)
             return 1;                           /* not enough output space */
-        while (len--)
+        while (len--) {
+            if (!(s->outcnt & 4095u) && s->yield) s->yield();
             s->out[s->outcnt++] = s->in[s->incnt++];
+        }
     }
     else {                                      /* just scanning */
         s->outcnt += len;
@@ -457,6 +462,7 @@ local int codes(struct state *s,
 
     /* decode literals and length/distance pairs */
     do {
+        if (!(s->work++ & 255u) && s->yield) s->yield();
         symbol = decode(s, lencode);
         if (symbol < 0)
             return symbol;              /* invalid symbol */
@@ -790,15 +796,17 @@ local int dynamic(struct state *s)
  *   block (if it was a fixed or dynamic block) are undefined and have no
  *   expected values to check.
  */
-int puff(unsigned char *dest,           /* pointer to destination pointer */
+int puff_yield(unsigned char *dest,           /* pointer to destination pointer */
          unsigned long *destlen,        /* amount of output space */
          const unsigned char *source,   /* pointer to source data pointer */
-         unsigned long *sourcelen)      /* amount of input available */
+         unsigned long *sourcelen,      /* amount of input available */
+         void (*yield)(void))
 {
     struct state s;             /* input/output state */
     int last, type;             /* block information */
     int err;                    /* return value */
 
+    s.yield = yield; s.work = 0;
     /* initialize output state */
     s.out = dest;
     s.outlen = *destlen;                /* ignored if dest is NIL */
@@ -817,6 +825,7 @@ int puff(unsigned char *dest,           /* pointer to destination pointer */
     else {
         /* process blocks until last block or error */
         do {
+            if (s.yield) s.yield();
             last = bits(&s, 1);         /* one if last block */
             type = bits(&s, 2);         /* block type 0..3 */
             err = type == 0 ?
@@ -837,4 +846,11 @@ int puff(unsigned char *dest,           /* pointer to destination pointer */
         *sourcelen = s.incnt;
     }
     return err;
+}
+
+/* Preserve the upstream entry point for callers without cooperative work. */
+int puff(unsigned char *dest, unsigned long *destlen,
+         const unsigned char *source, unsigned long *sourcelen)
+{
+    return puff_yield(dest, destlen, source, sourcelen, 0);
 }

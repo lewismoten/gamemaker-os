@@ -5,6 +5,7 @@
  * that ends early leaving index 0. Any size of image is drawn through a
  * 320 x 200 window (a backdrop's offset), without decoding it whole. */
 #include "gif.h"
+#include "fli.h"
 #define W 320u
 #define H 200u
 static int16_t prefix[4096];
@@ -15,11 +16,11 @@ static uint8_t suffix[4096], first[4096], stack[4097];
 struct sink {uint8_t *px; int32_t sx, sy; uint32_t w, h, col, y; int pass, interlaced, done;};
 static const uint8_t pass_start[4] = {0, 4, 2, 1}, pass_step[4] = {8, 8, 4, 2};
 static void emit(struct sink *k, uint8_t v) {
-  int32_t x = (int32_t)k->col - k->sx, y = (int32_t)k->y - k->sy;
+  int64_t x = (int64_t)k->col - k->sx, y = (int64_t)k->y - k->sy;
   if (x >= 0 && x < (int32_t)W && y >= 0 && y < (int32_t)H) k->px[(uint32_t)y * W + (uint32_t)x] = v;
   if (++k->col < k->w) return;
   k->col = 0;
-  if (!k->interlaced) {if (++k->y >= k->h || (int32_t)k->y - k->sy >= (int32_t)H) k->done = 1; return;}
+  if (!k->interlaced) {if (++k->y >= k->h || (int64_t)k->y - k->sy >= (int32_t)H) k->done = 1; return;}
   k->y += pass_step[k->pass];
   while (k->y >= k->h) {if (++k->pass >= 4) {k->done = 1; return;} k->y = pass_start[k->pass];}
 }
@@ -30,7 +31,9 @@ static void lzw(const uint8_t *d, uint32_t n, uint32_t at, int min, struct sink 
      clear are 0 until defined, so a stream naming an undefined code decodes the same
      whatever GIF came before (the board and the host decode in different orders). */
   for (int i = 0; i < 4096; i++) {prefix[i] = i < clear ? -1 : 0; suffix[i] = i < clear ? (uint8_t)i : 0; first[i] = i < clear ? (uint8_t)i : 0;}
+  uint32_t work = 0;
   while (o < count && !out->done) {
+    if (!(work++ & 255u)) gp_decode_checkpoint();
     while (bits < (uint32_t)size) {
       if (!left) {if (at >= n || !(left = d[at++])) return;}
       if (at >= n) return;
@@ -44,7 +47,7 @@ static void lzw(const uint8_t *d, uint32_t n, uint32_t at, int min, struct sink 
     while (c >= clear && sp < 4096) {stack[sp++] = suffix[c]; c = prefix[c];}
     stack[sp++] = (uint8_t)c;
     int head = c;
-    while (sp > 0 && o < count && !out->done) {emit(out, stack[--sp]); o++;}
+    while (sp > 0 && o < count && !out->done) {if (!(o & 1023u)) gp_decode_checkpoint(); emit(out, stack[--sp]); o++;}
     if (prev >= 0 && next < 4096) {
       prefix[next] = (int16_t)prev; suffix[next] = (uint8_t)head; first[next] = first[prev]; next++;
       if (next == 1 << size && size < 12) size++;
@@ -92,7 +95,7 @@ int gp_gif_draw(const uint8_t *d, uint32_t n, int32_t sx, int32_t sy, uint8_t *p
   /* the part of the image on the screen starts as index 0: data that ends early leaves it */
   for (int32_t y = 0; y < (int32_t)H; y++)
     for (int32_t x = 0; x < (int32_t)W; x++)
-      if (x + sx >= 0 && x + sx < (int32_t)w && y + sy >= 0 && y + sy < (int32_t)h) px[(uint32_t)y * W + (uint32_t)x] = 0;
+      if ((int64_t)x + sx >= 0 && (int64_t)x + sx < w && (int64_t)y + sy >= 0 && (int64_t)y + sy < h) px[(uint32_t)y * W + (uint32_t)x] = 0;
   if (!w || !h) return 0;
   struct sink k = {px, sx, sy, w, h, 0, 0, 0, (flags & 0x40) != 0, 0};
   lzw(d, n, at, min, &k, w * h);
