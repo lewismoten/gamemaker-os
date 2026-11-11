@@ -7,9 +7,11 @@ kernel's published SDK.
 ## Sound and library music
 
 Library background music defaults to **off** on every boot. Press **M** in the
-library grid or details to enable or disable it for the current run; the footer
+library grid, details or Options to enable or disable it for the current run; the footer
 shows the setting. Game and demo music and effects follow the DOS game's events
-regardless of this library setting. Entering a game restores unity gain even
+regardless of this library setting. In games, **M** toggles music independently
+(default on when entering a game), while effects keep playing. Search, folder
+and high-score name entry retain M as text. Entering a game restores unity gain even
 when there was no background song to fade out. `GMOS.ELF` links CMF/OPL2 music,
 PC-speaker effects and supported streamed VOC clips; `JS.ELF` keeps remote `SND`
 events only. Local HDMI playback remains **hardware-untested**.
@@ -22,14 +24,24 @@ The vendored SDK's `sbx_audio_query` initializes all output fields to zero
 before the ioctl. `sbx_write` returns status separately from the transferred
 byte count: writes contain whole 4-byte stereo frames, short writes preserve
 the remaining samples, and `EAGAIN` retries on a later pump without blocking.
-Fatal errors close the device; close drops queued audio.
+Fatal errors close the device; close drops queued audio. Every toggle logs
+`GMOS music on` or `GMOS music off`. Open/query/write failures show a brief
+**No sound device** overlay and log the operation and exact negative kernel
+status, including failures reported while pumping. Turning music on retries a
+closed device; game sound requests remain connected for recovery.
+
+A successful open/query does **not** establish that the TV can play sound.
+The pinned kernel accepts `/dev/audio` with a null backend if HDMI startup
+fails; ABI 1.8 exposes no backend or TV-presence field. Check the kernel's
+`AUDIO` diagnostic for `backend=hdmi`, its `AUDIO hdmi: unavailable ...` boot
+reason, and the card's `hdmi_drive=2` setting. See the full
+[M key and audio trace](music-key.md).
 
 Queue thresholds are bounded by the queried capacity. At the pinned kernel
-commit `a6044c2c28091035b922941b8f402841d49defc4`, `include/audio_ring.h`
-uses 16,384 frames, although `docs/audio-device.md` still describes 4,096;
-both sizes are tested. Games target 3,120 queued frames (65 ms) with a 2,400
-frame refill threshold; the library targets 15,000 with a 12,000 threshold,
-clamped for smaller rings. A new silent library does not write until a sound
+commit `32fd0d26005b147d79da787d120976e79399eeea`, `include/audio_ring.h`
+uses 16,384 frames; older 4,096-frame rings are also tested. Games and the
+library target 15,000 queued frames (312.5 ms), with a 12,000-frame refill
+threshold, clamped for smaller rings. A new silent library does not write until a sound
 starts. After the first write, gaps count as underruns and the kernel outputs
 zeros, never stale samples; the OS keeps pumping, including silence, between
 sounds. Slow storage may still underrun; counters report the gaps. HDMI drains

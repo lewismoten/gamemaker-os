@@ -28,6 +28,7 @@
 #include "bootart.h"
 #include "eink.h"
 #include "audio.h"
+#include "font.h"
 #include "ostune.h"
 #include "awake.h"
 #ifndef GMOS_SCAN_VERBOSE
@@ -335,7 +336,7 @@ static uint32_t crc32(const void *data, uint32_t bytes) {
   for (uint32_t i = 0; i < bytes; i++) c = table[(c ^ b[i]) & 0xff] ^ c >> 8;
   return ~c;
 }
-/* ABI 1.8: /dev/audio, opened once for the OS's life (audio.h). The library plays background tunes only when enabled by its owner
+/* ABI 1.8: /dev/audio, kept open and retried on opt-in after failure (audio.h). The library plays background tunes only when enabled by its owner
    (bg_*), a game's or a preview's sound replaces them, and every switch fades and keys all channels off. */
 static struct gs_session game;
 static int demo_on, demo_none = -1; /* the preview (below) */
@@ -343,10 +344,43 @@ static struct au aud; static uint64_t audio_fd; static int aud_on, aud_busy;
 static uint8_t bgm_buf[8192]; /* the background tune's file: a game's play and preview use pic_px (64 KB) while they run */
 static const char *doing = "start"; /* what the main loop is busy with, for the underrun log */
 static uint64_t last_under, audio_t_open, au_prev_ns, au_prev_t;
+/* Retain the exact kernel status even after the failed handle is closed. */
+static int32_t audio_error;
+static const char *audio_error_op = "open";
+static uint64_t audio_note_until;
+static int audio_note_dirty;
+static void audio_error_log(void) {
+  char line[112], *p = put(line, "GMOS audio ");
+  p = put(p, audio_error_op); p = put(p, ": error ");
+  if (audio_error < 0) p = put(p, "-");
+  num(p, audio_error < 0 ? 0u - (uint32_t)audio_error : (uint32_t)audio_error); say(line);
+}
+static void audio_failure(const char *op, int32_t rc) {
+  audio_error_op = op; audio_error = rc; audio_error_log();
+  audio_note_until = clock_ns() + 2500000000ull; audio_note_dirty = 1;
+}
+/* A short overlay also works on idle game menus and an empty library. */
+static int audio_note_tick(void) {
+  if (audio_note_until && clock_ns() >= audio_note_until) {audio_note_until = 0; audio_note_dirty = 1;}
+  int dirty = audio_note_dirty; audio_note_dirty = 0; return dirty;
+}
+static void audio_note_draw(void *pixels, unsigned pitch, int rgb32) {
+  if (!audio_note_until) return;
+  static const char note[] = "No sound device";
+  for (unsigned y = 8; y < 34; y++) for (unsigned x = 8; x < 204; x++) {
+    unsigned col = (x - 16) / 12, row = (y - 12) / 2, bit = (x - 16) % 12 / 2;
+    int ink = x >= 16 && y >= 12 && col < sizeof note - 1 && row < GM_FONT_H && bit < GM_FONT_W &&
+              (gm_font[(unsigned)note[col] - 32][row] & (1u << (4 - bit)));
+    if (rgb32) ((uint32_t *)pixels)[y * pitch + x] = ink ? 0xffffffu : 0x182030u;
+    else ((uint16_t *)pixels)[y * pitch + x] = ink ? 0xffffu : 0x1906u;
+  }
+}
 static int32_t au_query(void *u, uint32_t *queued, uint32_t *cap) {
   (void)u; sbx_audio_info i; int32_t rc = sbx_audio_query(audio_fd, &i);
   if (!rc) {
-    if (i.rate != SBX_AUDIO_RATE || !i.capacity_frames || i.capacity_frames > UINT32_MAX || i.queued_frames > i.capacity_frames) return -1;
+    if (i.rate != SBX_AUDIO_RATE || !i.capacity_frames || i.capacity_frames > UINT32_MAX || i.queued_frames > i.capacity_frames) {
+      audio_failure("query format", -SBX_EINVAL); return -SBX_EINVAL;
+    }
     *queued = (uint32_t)i.queued_frames; *cap = (uint32_t)i.capacity_frames;
     if (i.underruns > last_under) { /* a stall: the ring ran dry (silence, never a repeat) */
       char line[120], *p = put(line, "GMOS audio underrun +"); p = num(p, (uint32_t)(i.underruns - last_under)); p = put(p, " at ");
@@ -354,24 +388,28 @@ static int32_t au_query(void *u, uint32_t *queued, uint32_t *cap) {
       last_under = i.underruns;
     }
   }
+  if (rc) audio_failure("query", rc);
   return rc;
 }
 static int32_t au_write(void *u, const void *pcm, uint32_t bytes) {
   (void)u; uint64_t done = 0; int32_t rc = sbx_write(audio_fd, pcm, bytes, &done);
-  return rc ? (rc < 0 ? rc : -rc) : (int32_t)done;
+  if (rc && rc != -SBX_EAGAIN) audio_failure("write", rc);
+  if (!rc && (done > bytes || done % 4)) {audio_failure("write count", -SBX_EIO); return -SBX_EIO;}
+  return rc ? rc : (int32_t)done;
 }
 static uint64_t au_now(void *u) {(void)u; uint64_t t = 0; sbx_clock_ns(&t); return t;}
 static const struct au_sink au_sink = {0, au_query, au_write, au_now};
+static void audio_disable(void) {
+  aud_on = 0; audio_hook = 0;
+  au_silence(&aud); sbx_close(audio_fd); audio_fd = 0;
+}
 static void audio_poll(void) {
   if (aud_on && !aud_busy) {
     /* Leave the newly opened device unstarted while the library is silent.
        Once started, keep feeding silence between sounds: the kernel counts every short drain. */
     if (!aud.frames && !aud.cmf.playing && !aud.pc.active && aud.vp.state != VP_PLAYING) return;
     aud_busy = 1;
-    if (au_pump(&aud, &au_sink) < 0) {
-      aud_on = 0; audio_hook = 0; game.sound.event = 0;
-      au_silence(&aud); sbx_close(audio_fd); audio_fd = 0;
-    }
+    if (au_pump(&aud, &au_sink) < 0) audio_disable();
     aud_busy = 0;
   }
 }
@@ -433,7 +471,8 @@ static void audio_log(const char *what) { /* the kernel's counters, and what the
   sbx_audio_info i; char line[512], *p = put(line, "GMOS audio "); p = put(p, what);
   uint64_t t = clock_ns();
   if (!aud_on) return;
-  if (sbx_audio_query(audio_fd, &i)) {put(p, ": no query"); say(line); return;}
+  int32_t rc = sbx_audio_query(audio_fd, &i);
+  if (rc) {audio_failure("query counters", rc); return;}
   p = put(p, ": rendered "); p = num(p, (uint32_t)aud.frames); p = put(p, " frames, queued "); p = num(p, (uint32_t)i.queued_frames);
   p = put(p, ", underruns "); p = num(p, (uint32_t)i.underruns); p = put(p, ", overruns "); p = num(p, (uint32_t)i.overruns);
   p = put(p, ", eagain "); p = num(p, aud.eagain); p = put(p, ", songs "); p = num(p, aud.music_loads);
@@ -444,35 +483,66 @@ static void audio_log(const char *what) { /* the kernel's counters, and what the
   au_prev_ns = aud.total_ns; au_prev_t = t;
 }
 static void audio_open(void) {
-  if (abi_minor < 8) {say("GMOS audio: kernel ABI below 1.8, SND lines only"); return;}
-  if (sbx_open("/dev/audio", 10, SBX_O_WRONLY, &audio_fd)) {say("GMOS audio: /dev/audio not available"); return;}
-  sbx_audio_info info;
-  if (sbx_audio_query(audio_fd, &info) || info.rate != SBX_AUDIO_RATE ||
-      !info.capacity_frames || info.capacity_frames > UINT32_MAX || info.queued_frames > info.capacity_frames) {
-    sbx_close(audio_fd); audio_fd = 0; return; /* unavailable or incompatible: silent fallback */
+  static int initialized;
+  if (aud_on) return;
+  if (!initialized) {
+    au_init(&aud, bgm_buf, sizeof bgm_buf); aud.voc_open = voc_open;
+    game.sound.event = au_event; game.sound.event_user = 0; initialized = 1;
+    gp_decode_hook(audio_poll);
   }
-  au_init(&aud, bgm_buf, sizeof bgm_buf); aud.voc_open = voc_open; game.sound.event = au_event; game.sound.event_user = 0; aud_on = 1; audio_hook = audio_poll; gp_decode_hook(audio_poll);
-  audio_t_open = au_prev_t = clock_ns();
-  sbx_audio_info i; char line[80], *p = put(line, "GMOS audio open, ring ");
-  if (!sbx_audio_query(audio_fd, &i)) {p = num(p, (uint32_t)i.capacity_frames); p = put(p, " frames at "); p = num(p, (uint32_t)i.rate); put(p, " Hz");} else put(p, "(no query)");
-  say(line);
+  if (abi_minor < 8) {audio_failure("requires ABI 1.8", -SBX_ENOSYS); return;}
+  int32_t rc = sbx_open("/dev/audio", 10, SBX_O_WRONLY, &audio_fd);
+  if (rc) {audio_failure("open /dev/audio", rc); return;}
+  uint32_t queued, cap;
+  last_under = 0; audio_t_open = au_prev_t = clock_ns();
+  if (au_query(0, &queued, &cap)) {
+    sbx_close(audio_fd); audio_fd = 0; return;
+  }
+  aud_on = 1; audio_hook = audio_poll; aud.vol_target = AU_VOL_ONE;
+  audio_error = 0; audio_note_until = 0; audio_note_dirty = 1;
+  /* A fatal failure silenced the synth; resume the latest requested song. */
+  au_music(&aud, aud.want_music);
+  char line[80], *p = put(line, "GMOS audio open, ring ");
+  p = num(p, cap); put(p, " frames at 48000 Hz"); say(line);
+  say("GMOS audio: HDMI sink status requires kernel AUDIO diagnostics");
+}
+/* Every actual toggle is observable, even if the optional device is closed. */
+static void music_feedback(int enabled) {
+  say(enabled ? "GMOS music on" : "GMOS music off");
+  if (aud_on) {
+    /* Probe even an unstarted/silent device so M exposes a failed handle now. */
+    uint32_t queued, cap;
+    if (au_query(0, &queued, &cap)) audio_disable();
+    return;
+  }
+  if (enabled) audio_open();
+  else audio_failure(audio_error_op, audio_error);
+}
+/* Reserve M before game menus, card-skip and save handlers. Ignore repeats
+ * and releases; typed M in name entry remains owned by that text field. */
+static int play_music_event(const sbx_input_event *event) {
+  if (event->type != SBX_EV_KEY || event->code != 50) return 0;
+  if (event->value == 1) {
+    aud.music_muted = !aud.music_muted;
+    music_feedback(!aud.music_muted);
+  }
+  return 1;
 }
 /* The background tune ends its place to a game or a preview: fade it out (at most a second), then everything stops. */
 static void bg_leave(void);
 /* The game's or the preview's sound owns the player (music in the 64 KB scratch), until bg_return. */
 static void audio_take(void) {
-  if (!aud_on) return;
-  bg_leave(); aud.vol = aud.vol_target = AU_VOL_ONE; aud.music = pic_px; aud.music_cap = sizeof pic_px;
+  bg_leave(); aud.want_music[0] = 0; aud.music_muted = 0; aud.vol = aud.vol_target = AU_VOL_ONE; aud.music = pic_px; aud.music_cap = sizeof pic_px;
 }
 /* Back to the list: hard stop (every channel keyed off, chip reset), the tune buffer back, the cycle restarts after a pause. */
 static int bg_state; static uint64_t bg_t0, bg_next; static uint32_t bg_fail, bg_loops0, bg_picks, bg_seed = 12345u;
 static void bg_return(const char *why) {
-  if (!aud_on) return;
+  aud.music_muted = 0; aud.want_music[0] = 0;
   au_set_playing(&aud, 0); au_silence(&aud); aud.music = bgm_buf; aud.music_cap = sizeof bgm_buf; bg_state = 0; bg_next = clock_ns() + 800000000ull; doing = "list";
   audio_log(why);
 }
 static void bg_leave(void) {
-  if (bg_state && aud.cmf.playing) {
+  if (aud_on && bg_state && aud.cmf.playing) {
     au_volume(&aud, 0);
     for (uint64_t end = clock_ns() + 1100000000ull; aud.vol && clock_ns() < end;) {heartbeat(); audio_sleep_until(clock_ns() + 10000000ull);}
   }
@@ -668,11 +738,16 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
       noted_recent=1;
       if (gm_played(&menu,(unsigned)(g-menu.games)) && abi_minor>=7 && gm_list_save(&menu.recent,&save_sbx_ops,1)) say("GMOS Recent: changes not saved");
     }
+    if (audio_note_tick()) {force = 1; r |= GS_DRAW;}
     if (r & GS_DRAW) {
       uint64_t d0 = clock_ns();
       uint32_t first, height;
       audio_poll();
       gs_draw_changed(&game, px, PLAY_W, force, &first, &height); force = 0;
+      if (audio_note_until) {
+        audio_note_draw(px, PLAY_W, 1);
+        height += first; first = 0; if (height < 34) height = 34;
+      }
       audio_poll();
       uint64_t scaled = clock_ns(); perf_add(&perf[PF_SCALE], scaled - d0);
       if (height) {
@@ -709,6 +784,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     for (unsigned batch = 0; batch < GI_DRAIN && have_input && !(s = gi_read(in_fd, ev, &count)); batch++) {
       for (uint32_t i = 0; i < count; i++) {
         if (ev[i].type == 0 && ev[i].code == 3) {sbx_input_state st; sbx_input_state_get(in_fd, &st); gp_release_all(); say("GMOS input resync after SYN_DROPPED"); break;}
+        if (play_music_event(&ev[i])) continue;
         if (sp_on || (ev[i].type == 1 && ev[i].value == 1 && (ev[i].code == 63 || ev[i].code == 64) && sp_ok && game.phase == GS_PLAY && !game.demo)) {
           /* PLAYGAME's F5 (SaveGame) and F6 (LoadGame): the play waits while the screen is up (PLAYGAME.C 1609-1613) */
           int q;
@@ -861,6 +937,7 @@ static void show_list(uint16_t *px) {
     const char *const why[] = {"NO GAMES FOUND.", "LOOKED IN /SD/GAMES AND /SD/POCKET FOR", "FOLDERS WITH A .GAM, AND .GMP, .ZIP, .EXE FILES.", l3, l5,
                                "CHECK THE CARD IS IN, AND COPY GAMES TO /SD/GAMES.", "BACK/ESC: OPTIONS (INCLUDING QUIT)."};
     ba_diag(px, GM_W, why, sizeof why / sizeof why[0]);
+    audio_note_draw(px, GM_W, 0);
     sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H); say("GMOS library diagnostics"); return;
   }
   const struct gm_game *g = gm_selected(&menu);
@@ -872,6 +949,7 @@ static void show_list(uint16_t *px) {
   }
   audio_poll();
   gm_draw(px, GM_W, &menu, menu.view == GM_DETAILS && big_ok ? big_px : 0, big_pal);
+  audio_note_draw(px, GM_W, 0);
   audio_poll();
   sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H);
   audio_poll();
@@ -930,6 +1008,7 @@ static int gmos_main(const sbx_startup *start) {
   for (;;) {
     awake_set(demo_on);
     heartbeat();
+    if (audio_note_tick()) show_list(px);
     if (aud_on) {
       audio_service(demo_on ? game.read : 0, game.user); if (!demo_on) bg_tick();
       if (clock_ns() - list_log >= 10000000000ull) {list_log = clock_ns(); audio_log(demo_on ? "demo 10 s" : "list 10 s");}
@@ -969,6 +1048,7 @@ static int gmos_main(const sbx_startup *start) {
         if (a == GM_OPEN_PLAY) a = GM_CHOSEN;
       }
       if (a == GM_MUSIC) {
+        music_feedback(menu.background_music);
         music_changed = 1;
         redraw = 1;
       }
@@ -990,7 +1070,7 @@ static int gmos_main(const sbx_startup *start) {
     /* Finish the immutable input batch before any file IO, decode or nested
      * screen loop. Those operations may outlive the device that supplied it. */
     if (save_favorite && (abi_minor<7 || gm_list_save(&menu.favorites,&save_sbx_ops,0))) put(menu.message,"Changes not saved");
-    if (music_changed && aud_on) {
+    if (music_changed) {
       if (!menu.background_music) bg_leave();
       else bg_next = clock_ns();
     }

@@ -255,6 +255,10 @@ int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
   if (type != 1) return GM_NONE;
   if (code == 42 || code == 54) {m->shift = value != 0; return GM_NONE;} /* KEY_LEFTSHIFT, KEY_RIGHTSHIFT */
   if (!value) return GM_NONE;                    /* key presses and repeats only */
+  /* Text entry owns letters; Options otherwise keeps the M shortcut live. */
+  if (!m->open_active && !m->search_active && code == 50 && value == 1) {
+    m->background_music = !m->background_music; return GM_MUSIC;
+  }
   if(m->options_active) {
     if(code==1 && value==1) {m->options_active=0;return GM_MOVED;}
     if(code==103 || code==105) {m->option=(m->option+GM_OPTIONS-1)%GM_OPTIONS;return GM_MOVED;}
@@ -294,7 +298,6 @@ int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
     }
   }
   if (code==33 && value==1) return gm_favorite(m); /* F */
-  if (code == 50 && value == 1) {m->background_music = !m->background_music; return GM_MUSIC;} /* M: owner music setting */
   if (m->view == GM_DETAILS) {
     unsigned b = m->button;
     if ((code == 105 || code == 103) && b) b--;                                         /* Left */

@@ -69,6 +69,7 @@ void au_render(struct au *a, int16_t *out, unsigned n) {
     opl_render(&a->opl, acc + i, run);
     a->until_q16 -= run << 16; i += run;
   } else opl_render(&a->opl, acc, n); /* a stopped song's last notes ring out their release */
+  if (a->music_muted) for (unsigned k = 0; k < n; k++) acc[k] = 0;
   if (a->pc.active) {
     pc_render(&a->pc, sp, n);
     for (unsigned k = 0; k < n; k++) acc[k] += sp[k * 2];

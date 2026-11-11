@@ -272,8 +272,10 @@ under 80 characters. `tests/test_sound.py` checks them.
 ## Sound on the board (ABI 1.8)
 
 Local HDMI playback remains **hardware-untested**. Missing, busy, incompatible
-or failed devices fall back to silent play, preserving remote `SND` events.
-With ABI major 1, minor >= 8 and a usable `/dev/audio`, GMOS opens it once and plays through HDMI, 16-bit stereo at 48 kHz.
+or failed devices preserve play and remote `SND` events. Failures show a brief
+**No sound device** note and log the failing operation and negative kernel status.
+Turning music on retries a closed device. With ABI major 1, minor >= 8 and a
+usable `/dev/audio`, GMOS queues 16-bit stereo at 48 kHz for the kernel's sink.
 The synth runs in the main loop, never blocking the 18.2 Hz tick or the heartbeat: `au_pump` (`src/audio.c`) asks the
 ring's level and writes only when under 250 ms is queued (the heartbeat pumps too, so long reads inside a step keep
 feeding). Queue targets are clamped to the reported capacity: kernel develop currently has 16,384 frames,
@@ -286,6 +288,9 @@ reads, and between sleep slices of at most 10 ms. The latency tradeoff is up to 
 older 4,096-frame rings cap it at about 85 ms and cannot cover a single 150 ms stall.
 See [audio underruns](audio-underrun.md) for the diagnosis and host regression.
 HDMI is used when available; otherwise the kernel's null backend drains silently.
+ABI 1.8 cannot distinguish these sinks. A successful queue is not evidence of
+TV sound; check the kernel `AUDIO` diagnostic and HDMI startup logs.
+See the [M key and audio trace](music-key.md).
 
 - `src/opl.c`, `src/cmf.c`: an integer OPL2 and CMF player, a port of the web engine's `audio/opl.ts` and `audio/cmfPlayer.ts`
   (tables from `tools/make_opl_tables.py`, no floats in the sample loop). `tools/compare_opl.py` renders songs with both and
@@ -295,8 +300,10 @@ HDMI is used when available; otherwise the kernel's null backend drains silently
 - Every song change fades the old one out (0.68 s), resets the chip (all channels keyed off) and fades the new one in.
 - A game's own sound, or a preview's (its menu song and the game's effects, as PLAYGAME's demo plays them), replaces the
   library's background tune when enabled. Library music defaults off at every boot; the owner can toggle
-  it with **M** in the library (the footer shows the setting). Game/demo sound follows the DOS game regardless
-  of that setting. The background cycle (`bg_tick` in `src/main.c`): the OS's own tune (`tools/make_ostune.ts`,
+  it with **M** in the library grid, details or Options (the footer shows the setting).
+  Game/demo sound follows the DOS game regardless of that setting. In a game,
+  **M** toggles music independently (initially on), preserving effects and the song's
+  advancing position; presses log `GMOS music on/off`. Text entry retains M as a letter. The background cycle (`bg_tick` in `src/main.c`): the OS's own tune (`tools/make_ostune.ts`,
   composed in code) every third pick, otherwise a random library game's first-level song (its menu song if none), a
   short gap between tunes. Songs over 8 KB are skipped for the background.
 - The log has `GMOS audio ...` lines with the kernel's counters, the synth's CPU in per mille, and each underrun with

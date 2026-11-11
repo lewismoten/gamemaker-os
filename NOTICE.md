@@ -21,6 +21,8 @@ AI models used on this repository:
 
 ## Third-party code
 
+- `tests/host/keyboard/`: unchanged sandbox-kernel boot-report decoder, multi-keyboard union and headers at `32fd0d26005b147d79da787d120976e79399eeea` (MIT, copyright (c) 2026 Lewis Moten). Test-only; provenance and synthetic report limits are recorded in its `README.md`.
+
 - `src/dosmenu.c/.h` and the DOS menu in `src/session.c` follow RSD's `PLAYGAME.C` (`DoGame`, `GameMenu`, `GVertMenu`, `DrawDefaultScrn`) and `PALC.C` (`RandCols`), with the menu patch IDs, offsets, limits and stock values from Game-Maker: Sandbox Edition's `web/packages/engine/src/player/patchTable.ts` and `engine/menus.ts` (MIT, copyright (c) 2014 gandrewstone; (c) 2026 Lewis Moten modifications). No DOS executable is included; only the patch map is used to read a game's supplied player data.
 
 - `src/savefile.c/.h` GAME0 codec and `tests/game_save_fixture.py`: wire order and record definitions follow RSD's `code/GM/PLAYGAME.C`, `CHAR.H`, `MAP.H`, `GMGEN.H`, `BLOC.H`, `COORD2D.HPP` and `code/DRV/GEN.H` in GameMaker-SandboxEdition at `7f614cfbfa5c8c15c83d586a46edf57af79d1afc` (MIT source, copyright (c) 2014 gandrewstone; (c) 2026 Lewis Moten modifications). The public shipped DOS executable independently corroborates packed record widths. The codec and synthetic structural fixtures are new; no original executable, game save, or private-reference bytes are imported. See `docs/game-save.md` for provenance and the distinction between wire preservation and live gameplay restoration.

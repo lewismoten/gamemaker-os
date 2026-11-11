@@ -41,6 +41,7 @@ struct au {
   /* Requests from the session, served by au_service (which reads files). */
   char want_music[AU_NAME_MAX + 1]; uint8_t music_pending;
   char want_snd[AU_NAME_MAX + 1]; int want_tune; uint8_t beep_pending;
+  uint8_t music_muted;         /* advances the song silently; effects keep playing */
   uint8_t playing;             /* gameplay mode; both modes retain stall headroom */
   uint64_t last_pump_ns, gap_max_ns, svc_max_ns; /* interval maxima, in every mode */
   uint64_t gap_peak_ns, slice_peak_ns; /* lifetime observations for low-water sizing */
