@@ -90,14 +90,22 @@ int au_pump(struct au *a, const struct au_sink *s) {
   if (low > cap) low = cap;
   if (fill > cap) fill = cap;
   if (queued >= low) return 0;
-  uint32_t want = fill > queued ? fill - queued : 0;
-  while (want) {
+  uint32_t budget = fill * 2u;
+  while (queued < fill) {
+    uint32_t want = fill - queued;
     if (!a->hold_len) {
-      uint32_t n = want < AU_CHUNK ? want : AU_CHUNK;
+      if (!budget) break;
+      uint32_t n = want < AU_BATCH ? want : AU_BATCH;
+      if (n > budget) n = budget;
       uint64_t t0 = s->now(s->user);
-      au_render(a, a->hold, n);
+      for (uint32_t offset = 0; offset < n;) {
+        uint32_t run = n - offset < AU_CHUNK ? n - offset : AU_CHUNK;
+        au_render(a, a->hold + offset * 2u, run);
+        offset += run;
+      }
       a->total_ns += s->now(s->user) - t0;
       a->hold_len = n * 4u; a->hold_off = 0;
+      budget -= n;
     }
     uint32_t bytes = a->hold_len;
     if (bytes > want * 4u) bytes = want * 4u;
@@ -105,7 +113,20 @@ int au_pump(struct au *a, const struct au_sink *s) {
     if (w == -11 || w == 0) {a->eagain++; break;} /* keep the unsent samples for the next pump */
     if (w < 0 || (uint32_t)w > bytes || w % 4) return -1;
     a->writes++; a->hold_off += (uint32_t)w; a->hold_len -= (uint32_t)w; sent += (uint32_t)w / 4u;
-    want -= (uint32_t)w / 4u;
+    if (s->query(s->user, &queued, &cap) || !cap || queued > cap) return -1;
+    fill = a->playing ? AU_PLAY_FILL_FRAMES : AU_FILL_FRAMES;
+    if (fill > cap) fill = cap;
+    if (!a->hold_len && queued < fill && fill - queued <= AU_REFILL_MARGIN) break;
   }
   return (int)sent;
+}
+void au_wait_until(const struct au_sink *sink, uint64_t deadline,
+                   void (*service)(void *), void (*sleep_until)(void *, uint64_t)) {
+  for (;;) {
+    service(sink->user);
+    uint64_t now = sink->now(sink->user);
+    if (now >= deadline) return;
+    uint64_t slice = deadline - now < AU_SLEEP_NS ? deadline : now + AU_SLEEP_NS;
+    sleep_until(sink->user, slice);
+  }
 }

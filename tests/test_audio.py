@@ -20,6 +20,14 @@ def rms(v):
 
 
 class AudioTests(unittest.TestCase):
+    def test_realtime_ring(self):
+        with tempfile.TemporaryDirectory(prefix='audio-clock-') as directory:
+            executable = str(Path(directory) / 'audio-clock')
+            build(executable, 'tests/host/audio_clock.c')
+            result = subprocess.run([executable], cwd=ROOT, check=False,
+                                    capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_host_checks(self):
         with tempfile.TemporaryDirectory(prefix='audio-') as d:
             exe = str(Path(d) / 'audio')

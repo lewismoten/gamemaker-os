@@ -276,7 +276,12 @@ The synth runs in the main loop, never blocking the 18.2 Hz tick or the heartbea
 ring's level and writes only when under 250 ms is queued (the heartbeat pumps too, so long reads inside a step keep
 feeding). Queue targets are clamped to the reported capacity: kernel develop currently has 16,384 frames,
 while 4,096-frame rings also work with less protection against slow storage. Game play uses a shorter
-65 ms queue for effects. HDMI is used when available; otherwise the kernel's null backend drains silently.
+120 ms queue for effects, topped up every pass and between sleep slices of at most 10 ms.
+The pump rechecks the ring after each write to account for synthesis-time drainage, and batches
+up to 40 ms of PCM without changing synthesis or PLAYGAME's sound events. This trades up to
+120 ms of output latency for headroom; older 4,096-frame rings cap it at about 85 ms.
+See [audio underruns](audio-underrun.md) for the diagnosis and host regression.
+HDMI is used when available; otherwise the kernel's null backend drains silently.
 
 - `src/opl.c`, `src/cmf.c`: an integer OPL2 and CMF player, a port of the web engine's `audio/opl.ts` and `audio/cmfPlayer.ts`
   (tables from `tools/make_opl_tables.py`, no floats in the sample loop). `tools/compare_opl.py` renders songs with both and

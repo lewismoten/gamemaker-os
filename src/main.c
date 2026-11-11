@@ -400,6 +400,12 @@ static void au_event(void *u, int kind, const char *name, int n) {
   (void)u;
   if (kind == SND_EV_MUSIC) au_music(&aud, name); else if (kind == SND_EV_BEEP) au_beep(&aud, name, n); else if (kind == SND_EV_VOC) au_voc(&aud, name); else au_stop(&aud);
 }
+static void audio_wait_poll(void *user) {(void)user; audio_poll();}
+static void audio_wait_sleep(void *user, uint64_t wake) {(void)user; sbx_sleep_until(wake);}
+static void audio_sleep_until(uint64_t wake) {
+  if (aud_on) au_wait_until(&au_sink, wake, audio_wait_poll, audio_wait_sleep);
+  else sbx_sleep_until(wake);
+}
 static void audio_log(const char *what) { /* the kernel's counters, and what the synth cost since the last line */
   sbx_audio_info i; char line[320], *p = put(line, "GMOS audio "); p = put(p, what);
   uint64_t t = clock_ns();
@@ -444,7 +450,7 @@ static void bg_return(const char *why) {
 static void bg_leave(void) {
   if (bg_state && aud.cmf.playing) {
     au_volume(&aud, 0);
-    for (uint64_t end = clock_ns() + 1100000000ull; aud.vol && clock_ns() < end;) {heartbeat(); sbx_sleep_until(clock_ns() + 10000000ull);}
+    for (uint64_t end = clock_ns() + 1100000000ull; aud.vol && clock_ns() < end;) {heartbeat(); audio_sleep_until(clock_ns() + 10000000ull);}
   }
   au_silence(&aud); bg_state = 0;
 }
@@ -535,7 +541,7 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
     if (r & HS_DONE) break;
     r = 0;
     uint64_t now = clock_ns(), wake = hs_wake(&hsc, now); if (wake > now + (aud_on ? 10000000ull : 500000000ull)) wake = now + (aud_on ? 10000000ull : 500000000ull);
-    sbx_sleep_until(wake);
+    audio_sleep_until(wake);
     int32_t s = -SBX_EAGAIN;
     while (have_input && !(s = sbx_read(in_fd, ev, sizeof ev, &got))) {
       for (uint32_t i = 0; i < got / sizeof ev[0] && !(r & HS_DONE); i++) {
@@ -667,7 +673,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
       uint64_t soon = clock_ns() + 10000000ull; /* wake every 10 ms to keep the ring fed */
       if (wake > soon) wake = soon;
     }
-    sbx_sleep_until(wake);
+    audio_sleep_until(wake);
     int32_t s = -SBX_EAGAIN;
     while (have_input && !(s = sbx_read(in_fd, ev, sizeof ev, &got))) {
       for (uint32_t i = 0; i < got / sizeof ev[0]; i++) {
@@ -861,7 +867,7 @@ int main(const sbx_startup *start) {
     }
     ge_poll();
     if (!have_input) {
-      sbx_sleep_until(clock_ns() + 100000000ull);
+      audio_sleep_until(clock_ns() + 100000000ull);
       open_input();
       continue;
     }
@@ -869,7 +875,7 @@ int main(const sbx_startup *start) {
     if (s == -SBX_EAGAIN) { /* nothing pressed: draw the next card's title screen, or look again in 10 ms */
       if (demo_on) {
         if (demo_run(px)) show_list(px);
-        else {uint64_t w = gs_wake(&game, clock_ns()), n = clock_ns() + 10000000ull; sbx_sleep_until(w < n ? w : n);}
+        else {uint64_t w = gs_wake(&game, clock_ns()), n = clock_ns() + 10000000ull; audio_sleep_until(w < n ? w : n);}
         continue;
       }
       doing = "thumbnail";
@@ -878,7 +884,7 @@ int main(const sbx_startup *start) {
         doing = "list";
         const struct gm_game *g = gm_selected(&menu);
         if (menu.view == GM_DETAILS && g && demo_none != (int)(g - menu.games) && gs_demo_idle_due(demo_idle, clock_ns()) && abi_minor >= 1) demo_start(px, g);
-        else sbx_sleep_until(clock_ns() + 10000000ull);
+        else audio_sleep_until(clock_ns() + 10000000ull);
       }
       continue;
     }
