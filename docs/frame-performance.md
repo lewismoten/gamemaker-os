@@ -82,7 +82,7 @@ DYLD settings, commit, device install or hardware run was used.
   the output rows. It compares against the mapped staging surface, writes only
   changed rows, and returns a single bounding row span. No retained cache or
   extra full-frame allocation is required. Every row outside the crop stays black.
-* The pinned kernel `a6044c2` (`sdk/PINNED`), `core/sys.c::ioctl_fb`, copies the
+* The measured kernel revision `a6044c2`, `core/sys.c::ioctl_fb`, copies the
   requested rectangle from the application's write-back staging pages to an
   uncached hardware framebuffer, calling inline `fb_native` per 32-bit pixel.
   `drivers/fb_hw.c` maps the hardware buffer uncached. `core/uspace.c` documents

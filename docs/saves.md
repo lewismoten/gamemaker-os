@@ -66,5 +66,5 @@ rewrites the file when nothing placed; the Pi doesn't, to spare the card.
 - Save/load menu behavior on the board, including failed reads and writes.
 - New demo recording; existing `.REC` preview playback is separate.
 
-The SDK already includes save storage (ABI 1.7) and is pinned at ABI 1.10;
+The SDK already includes save storage (ABI 1.7) and is pinned at ABI 1.11;
 no SDK refresh is needed to expose the current calls.

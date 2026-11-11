@@ -7,7 +7,7 @@ The pack format, inflation code and logical mapping are unchanged.
 ## Kernel contract and compatibility
 
 The vendored SDK is pinned to sandbox-kernel commit
-`a6044c2c28091035b922941b8f402841d49defc4` (ABI 1.10; see `sdk/PINNED`).
+`32fd0d26005b147d79da787d120976e79399eeea` (ABI 1.11; see `sdk/PINNED`).
 Seek was introduced in ABI 1.3 as call 9, `sbx_seek(fd, offset,
 &position)`, a 48-byte record using absolute `SBX_SEEK_SET` only.
 

@@ -27,7 +27,8 @@ release alone do not exit. Polling input normally takes at most 10 ms of idle
 sleep, **plus the execution time of the current callback/native operation**.
 Esc remains app/game navigation: FILES uses it to go up; a focused game uses it
 to return to its containing JS page. Q is an example-app convention, not a
-host-wide reserved key. CLOCK, FILES and SETTINGS all use Q to call the API.
+host-wide reserved key. CLOCK and SETTINGS use Back/Esc or Q to call the API;
+FILES uses Back at card root (after leaving text/ascending folders), or Q.
 
 ## Where control goes
 
@@ -47,7 +48,7 @@ entries are visible per page. Each launch has a fresh JS realm and app-relative
 or throwing MAIN.JS falls back to the picker; failures are logged. If the picker
 itself cannot start, JS.ELF returns failure 5. `sys.launch(name)` is an internal
 picker operation; ordinary apps cannot use it to bypass the return lifecycle.
-F10 in the picker quits JS.ELF with status 0 through the **existing** startup
+Back/Esc or F10 in the picker quits JS.ELF with status 0 through the **existing** startup
 stub's return to the kernel-supplied link address. The kernel's entry-return
 path handles status/cleanup; this does not add or call a new syscall. This is
 distinct from exiting an individual app.
@@ -122,8 +123,9 @@ on Linux without a linker adapter. App switching remains **hardware-untested**.
 3. In the picker select CLOCK and Enter. Require `CLOCK ready` in logs and
    advancing uptime. Press Q: require status 0 and picker, **without reboot**.
    Enter CLOCK again; press F10. Require the same return. Release keys fully.
-4. Select FILES and Enter. Open a folder, use Esc to go up (not exit), then Q.
-   Relaunch FILES; F10 exits. Select SETTINGS; change a setting then Q.
+4. Select FILES and Enter. Open a folder, use Back/Esc to go up, then Back
+   at card root to return to the picker. Relaunch FILES; F10 exits. Select
+   SETTINGS; change a setting then Back. CLOCK also returns with Back.
    Relaunch SETTINGS: defaults must be restored; F10 returns. Repeat this
    sequence ten times and inspect logs for errors or memory exhaustion.
 5. With HELLO installed, launch a native game from its page. F10 must return

@@ -25,7 +25,8 @@ Native library Options (Back from cards, or Up from tabs) includes:
   or disables slowdown (0 seconds). This is independent of Screen off.
 
 Arrows select either control; OK changes it without closing Options; Back
-returns to the library. Defaults remain 10 minutes and Power saving On.
+returns to the library. Both controls work with an empty library too. Defaults
+remain 10 minutes and Power saving On.
 Changes apply immediately and are saved with the other native GMOS data in
 `/sd/OS/SAVES/GMOS/SETTINGS.DAT`, using the same temporary-file, fsync and
 rename path as Favorites and Recent. Music remains a session-only setting.

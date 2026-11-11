@@ -15,8 +15,9 @@ Missing instructions/story/credits show PLAYGAME's message for ten seconds or
 a key. Play starts a fresh game, with its first level's intro. F5/F6 during play
 keep their existing save/load behavior.
 
-A win, the last life lost, or Esc during play checks the Top Ten. A qualifying
-score opens keyboard name entry (22 characters, Backspace erases, Enter accepts),
+A win, the last life lost, or Leave game from the Back/Esc pause menu checks
+the Top Ten. A qualifying score opens the shared on-screen name keyboard
+(22 characters, arrows/OK edit, Done or Back accepts; physical typing also works),
 then the score table, then the game's menu. Scores stay in the existing
 `/OS/SAVES` location; see [high scores](saves.md). The e-ink display continues to
 show the active game's title until returning to the library.

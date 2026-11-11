@@ -1,7 +1,8 @@
 # Copying games onto a FAT card
 
 This is a **host-qualified candidate**, paired with sandbox-kernel ABI 1.5
-(local signed commit `3010a7c4c66f76bbef61fe21ccf0545cfe1ea39d`, `sdk/PINNED`).
+(original qualification commit `3010a7c4c66f76bbef61fe21ccf0545cfe1ea39d`;
+the current `sdk/PINNED` is ABI 1.11).
 New desktop-card/Pi acceptance is not claimed. The Mac owns integration and
 physical-card testing; neither repository was pushed or merged for this work.
 
@@ -21,7 +22,8 @@ physical-card testing; neither repository was pushed or merged for this work.
    away, while assets themselves may be nested within the kernel path limits.
 4. Eject/unmount the card safely, power down the Pi, insert the card and boot.
    This is not a hot-swap workflow. Select the game, open its details and Play.
-   Esc leaves the game for the list. Hardware input remains the existing kernel
+   Back/Esc pauses play; Leave game returns through scores and the DOS menu,
+   where Back returns to library details. Hardware input remains the existing kernel
    input mechanism; this does not add USB gamepad drivers.
 
 Existing GMPs still work in `GAMES` and `POCKET`, including their established

@@ -3,7 +3,9 @@
 Leave a game on its details view for 3 seconds and its demo plays where the title screen was.
 Any key press stops it (and then does what it always does: Enter plays the game, Esc goes back).
 When the demo ends, the title screen returns and the 3 seconds start again. A game with no demo
-shows nothing extra.
+shows nothing extra. Options and folder-name entry suppress idle previews.
+On ABI 1.11+, active demos hold the TV awake and prevent clock slowdown, even
+without an input device; stopping releases the hold. See [power.md](power.md).
 
 ## The recording
 

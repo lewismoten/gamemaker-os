@@ -30,8 +30,10 @@ metadata already in memory; typing never opens game assets.
 - Move Down past a page's last row to reach the next page; Left across its first
   card returns to the previous page. Up from the first row of any page focuses
   tabs. **PgUp/PgDn**, Home and End still work.
-- **Back/Esc never quits from the library**, including an empty list. **Q** remains
-  the keyboard-only quit shortcut. The CEC remote has no quit command.
+- **Back/Esc** on cards opens **Options**, including with an empty library.
+  Up from tabs also opens it. Choose **Quit** to exit; **Q** remains a shortcut.
+  Options also exposes Favorite, High scores, Music, Open by folder name and
+  saved [Screen off after / Power saving](power.md) controls.
 
 The existing development command is unchanged: **/**, exact folder alias, **Enter**
 opens Details across categories, ignoring case. **Shift+Enter** also presses Play.
@@ -44,18 +46,18 @@ categories. Missing games stay in the saved lists but are omitted from the page.
 
 ## Remote audit: every screen
 
-All required UI actions use Linux arrows (103/105/106/108), OK/Enter (28),
-Back/Esc (1). No digit, channel or color button is required. The supplied
-`sandbox-kernel/drivers/cec_keys.c` path was absent in this checkout; the read-only
-sibling `sandbox-kernel-cec/drivers/cec_keys.c` confirms this mapping. It also maps
-0 to 11, 1–9 to 2–10, Clear to 14, channel up/down to 104/109, and
-blue/red/green/yellow to F1–F4 (59–62).
+Native launcher actions use Linux arrows (103/105/106/108), OK/Enter (28),
+Back/Esc (1). The kernel must translate remote keys to these events; no digit,
+channel or color button is required. See the full [remote-only audit](remote-only.md),
+including the separate JS picker and sample apps. CEC delivery still needs a Pi check.
 
 | Screen | Arrows + OK + Back path | Keyboard extras |
 | --- | --- | --- |
-| Games/category tabs | Up from the current page's top row, Left/Right tab, OK/Down enter; arrows cross page boundaries; Back stays in GMOS | Tab/Shift+Tab, brackets, Home/End, PgUp/PgDn; Q quits |
+| Games/category tabs | Up from the current page's top row, Left/Right tab, OK/Down enter; arrows cross page boundaries; Back on cards or Up from tabs opens Options | Tab/Shift+Tab, brackets, Home/End, PgUp/PgDn; Q quits |
 | Search | Enter tab to show keyboard; arrows choose letters/digits/Space/Delete/Clear/Done, OK types and filters live; Done browses results, OK opens Details; Back clears then returns to tabs | Physical typing hides keyboard, Backspace edits; slash opens exact folder alias |
 | Favorites/Recent | Same tabs, cards and paging, including empty tabs; Details retains game identity after unstarring | F favorites, Recent updates on actual play/load |
+| Options | Arrows select Back/Favorite/High scores/Music/Open by folder name/Quit/Screen off after/Power saving; OK activates, Back cancels | Shortcuts on cards: F/H/M/Q and slash |
+| Open by folder name | Options opens the shared keyboard; Done opens details for an exact DOS alias (up to eight characters); Back cancels | Slash, type alias, Enter; Shift+Enter also plays |
 | Details | Arrows select Play/Back/Favorite/High scores/Music, OK presses; Back returns to cards | F/H/M, Space, Tab/Shift+Tab |
 | Top Ten list | OK or Back returns; existing 30-second timeout remains | Any key dismisses |
 | Top Ten name | Shared on-screen keyboard, Done accepts; Back accepts current name as before | Type directly, Backspace/Left erase, Enter accepts after typing; Up/Down restores keyboard |
@@ -66,18 +68,44 @@ blue/red/green/yellow to F1–F4 (59–62).
 | Save name | Shared keyboard edits existing slot name, Clear replaces it, Done saves; Back cancels without saving | Physical typing and Backspace/Left; Enter accepts after typing; Up/Down restores keyboard |
 | Save/Load result | OK/Back dismisses, or wait two seconds | Any key dismisses |
 
-Search, Top Ten and save names use the same bounded text-entry component
-(`src/osk.h`), with 36 letters/digits and Space/Delete/Clear/Done. Search filters
+Search, folder aliases, Top Ten and save names use the same bounded text-entry component
+(`src/osk.h`), with letters/digits, hyphen, underscore and Space/Delete/Clear/Done. Search filters
 after each edit; Top Ten retains its 22-character limit and save names their
 20-character limit. OK repeats never insert text or activate Done. Direct keyboard
-input retains case and punctuation. These are the only interactive text prompts
-in the native GMOS flow; DOS text pages display content without asking for text.
-The optional exact-folder development prompt remains available by keyboard;
-remote users can find every installed game through Search instead.
+input retains case and punctuation. DOS text pages display content without asking for text.
+Open by folder name uses the DOS alias, not the display title or long path; a
+miss preserves selection. Search finds partial title/company matches.
 
 Pause freezes game ticks and releases held controls. Resuming resets the play
 clock, so time spent in menus is never replayed as game ticks. Save/load requests
 use the same persistent save layer and screens as F5/F6.
+
+## Input and details limits
+
+Input reads hold at most 16 events; nested screens drain at most four batches
+per pass. EOF, closed devices and malformed byte counts trigger recovery;
+EAGAIN means no input. Removal/reopen and SYN_DROPPED clear launcher Shift/repeat
+state; gameplay releases held controls. Reattachment snapshots clear queued
+input rather than replaying held keys. Launcher repeats need a seen press,
+a timestamp no older than 100 ms and at least 100 ms since the last accepted
+press/repeat. Fresh presses/releases remain ordered. These are host-tested
+policies, not a claim of USB hub or CEC hardware qualification.
+
+Details shows the page before artwork reads, then presents/heartbeats at
+50 ms cooperative checkpoints during reads, decode and archive inflation.
+Reads are chunked to 16 KiB; a blocking syscall cannot be interrupted, and
+loading does not dispatch input. Keys queue until loading finishes.
+Title assets use a 1 MiB buffer; slide lists read at most 4095 bytes and 32
+entries, with bounded nesting. GIF/BKD output is a 320x200 window; FLI/FLC
+canvases are limited to 64,000 pixels. PCX is unsupported. Bad or missing
+artwork falls through to alternatives, then “No title screen”; this is not
+complete validation of every malformed game file.
+
+Index title/company/blurb fields hold at most 63/31/639 bytes. Details titles
+wrap to three lines; blurbs use the remaining space above y=440, with `...`
+when text remains. There is no description scrolling. `test_details_bounds.py`
+checks decoder canaries, truncated/mutated files and cooperative presents;
+`test_input.py` covers repeat bursts, hotplug during loading and malformed reads.
 
 ## Card storage
 
@@ -104,6 +132,8 @@ are retained. Reads are bounded to 320 bytes. Writes use the existing save layer
 is never loaded. Changes happen in memory even if storage is unavailable; a failed
 favorite save shows **Changes not saved**, and a failed Recent save is logged.
 Older kernels keep the lists for the running session only.
+`SETTINGS.DAT` beside them stores native power settings through the same save
+layer; see [defaults, errors and ABI behavior](power.md).
 
 ## Host verification
 

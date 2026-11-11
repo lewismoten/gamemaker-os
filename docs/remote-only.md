@@ -18,7 +18,7 @@ The gap column records the initial audit and the resolution in this change.
 | Favorites | Reach through tabs even when empty. OK opens details. Choose Favorite in details or Options to add/remove the selected game. | F had an existing details-button alternative; Options adds access from cards. Removing the last favorite keeps details attached to that game until Back. |
 | Recent | Reach through tabs even when empty. Arrows select; OK opens details. A launched game moves to the front when play begins. | Already remote accessible. The board owns recording/persisting launches; host tests simulate that callback. |
 | Open by name | Back on cards → Options → Open by folder name. Arrows/OK enter the DOS folder alias; Delete edits, Clear resets, Done opens details; Back cancels. OK on Play then launches. | Previously `/`, typed letters and Enter only. Added the shared letter grid with digits, spaces, hyphen and underscore (eight-character alias limit). A miss reports “not found” and preserves selection. This is the folder alias; Search finds display titles/company names. |
-| Game details | Arrows choose Play, Back, Favorite, High scores, Music. OK presses; Back returns to originating cards/results. | F/H/M already had button alternatives. Existing keyboard shortcuts remain available. Idle demo previews stop on any press; folder entry suppresses previews. |
+| Game details | Arrows choose Play, Back, Favorite, High scores, Music. OK presses; Back returns to originating cards/results. | F/H/M already had button alternatives. Existing keyboard shortcuts remain available. Idle demo previews stop on any press; Options and folder entry suppress previews. |
 | Options / music setting | Back on cards, or Up from tabs. Arrows choose Back to library, Favorite, High scores, Music, Open by folder name, Quit, Screen off after, Power saving. OK activates; Back cancels. | New visible alternatives to F/H/M/Q and `/`. Music starts off and is a session setting. Empty-library Options still allows Music and Quit; game-specific commands do nothing without a selection. |
 | Native power settings | In Options, arrows select Screen off after or Power saving. OK cycles 5 / 10 / 30 min / Never or toggles On / Off while keeping focus; Back returns to the library. | Saved beside Favorites/Recent in `GMOS/SETTINGS.DAT` and applied immediately and at boot via call 23 on ABI 1.11+. Older kernels quietly skip the call. Available with an empty library too. |
 | Empty/unreadable library diagnostics | Back opens Options; Back cancels it. Options → Quit exits. | Previously only Q could exit; diagnostics now advertise Back. |
@@ -38,6 +38,9 @@ The gap column records the initial audit and the resolution in this change.
 
 Native GMOS and JS apps are separate executables; GMOS does not launch Settings
 or other JS apps. Benchmark/demo apps are developer tools, not library flows.
+See [input recovery and details limits](library.md#input-and-details-limits)
+and [keep-awake/settings behavior](power.md). Fresh presses are processed in
+order; launcher repeats are rate-limited and stale repeats are dropped.
 Game-specific movement/action bindings still come from the original game: the
 six-key launcher contract does not remap arbitrary DOS gameplay controls.
 CEC hardware translation and TV-specific key delivery need device verification;
