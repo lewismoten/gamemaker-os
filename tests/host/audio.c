@@ -136,33 +136,58 @@ static void feeding(void) {
   CHECK(total == 480 || total > 480, "partial writes lost frames: %d", total);
   printf("fed %u frames (%d reported) in %d pumps; %d quiet\n", r.gotn, wrote, pumps, quiet_pumps);
 }
-/* SFX latency: a beep event at the main loop's 10 ms wake; the time from it to the beep's first sample reaching the play head,
-   with the long queue (library) and the small one (a game playing). Also: no gap, and the switch repeats no sample. */
+/* Measure actual effect PCM against a music-only render, through the append-only
+   ring to its play head. pc.active alone does not mean a sample was written or
+   heard: a pump can leave a ring above low water untouched. */
 static void latency(void) {
-  static struct au a; static int16_t got[48000 * 5 * 2]; static struct ring r; struct au_sink sink = {&r, rq, rw, rn};
+  static struct au a, ref; static uint8_t ref_music[65536];
+  static int16_t got[48000 * 5 * 2], want[48000 * 5 * 2];
+  static struct ring r; struct au_sink sink = {&r, rq, rw, rn};
   for (unsigned cap = 4096; cap <= 16384; cap *= 4) for (int mode = 0; mode <= 1; mode++) {
-    memset(&r, 0, sizeof r); r.cap = cap; r.take = 4000; r.got = got; memset(got, 0, sizeof got);
-    au_init(&a, music_buf, sizeof music_buf); au_set_playing(&a, 0);
-    FILE *f = fopen("tests/data/syn.cmf", "rb"); uint32_t n = f ? (uint32_t)fread(music_buf, 1, sizeof music_buf, f) : 0; if (f) fclose(f);
-    cmf_load(&a.cmf, music_buf, n);
-    uint32_t played = 0, dry = 0, ev_idx = 0; int ev = 0; double worst = 0, sum = 0; int cnt = 0; uint32_t first = 0; int waiting = 0;
+    memset(&r, 0, sizeof r); r.cap = cap; r.take = 4000; r.got = got;
+    au_init(&a, music_buf, sizeof music_buf);
+    au_init(&ref, ref_music, sizeof ref_music);
+    FILE *f = fopen("tests/data/syn.cmf", "rb");
+    CHECK(f != 0, "no syn.cmf for latency"); if (!f) return;
+    uint32_t n = (uint32_t)fread(music_buf, 1, sizeof music_buf, f); fclose(f);
+    memcpy(ref_music, music_buf, n);
+    CHECK(cmf_load(&a.cmf, music_buf, n) == 0 && cmf_load(&ref.cmf, ref_music, n) == 0, "latency song refused");
+    uint32_t played = 0, dry = 0, ev_idx = 0, ev_queue = 0, refill_idx = 0;
+    uint32_t first = UINT32_MAX;
+    int waiting = 0, refilled = 0, cnt = 0, events = 0;
+    double worst = 0, refill_worst = 0;
     for (unsigned ms = 0; ms < 4000; ms += 10) {
       if (ms == 1200 && mode) au_set_playing(&a, 1);
-      if (ms >= 1800 && ms % 370 == 0 && !waiting) { /* a beep at an off-beat moment */
-        au_beep(&a, "T.SND", 3); waiting = 1; ev = (int)ms; ev_idx = played; au_service(&a, reader, 0); first = 0;
+      if (ms >= 1800 && ms % 370 == 0 && !waiting) {
+        au_beep(&a, "T.SND", 3);
+        CHECK(au_service(&a, reader, 0) == 1, "latency beep did not start");
+        waiting = 1; refilled = 0; events++; ev_idx = played; ev_queue = r.queued; first = UINT32_MAX;
       }
       uint32_t before = r.gotn;
-      au_pump(&a, &sink);
-      if (waiting && !first) { /* the beep's first sample is the first nonzero frame in this write that is not music: use the PC speaker flag */
-        if (a.pc.active) first = before; /* a rendered chunk that holds speaker output starts here */
+      CHECK(au_pump(&a, &sink) >= 0, "latency pump failed");
+      render(&ref, want + before * 2, r.gotn - before);
+      if (waiting && r.gotn > before) {
+        if (!refilled) {refill_idx = played; refilled = 1;}
+        for (uint32_t i = before; i < r.gotn && first == UINT32_MAX; i++)
+          if (got[i * 2] != want[i * 2] || got[i * 2 + 1] != want[i * 2 + 1]) first = i;
       }
-      if (waiting && first && r.gotn > before) {double lat = ((double)first - ev_idx) / 48.0 + 0; if (lat < 0) lat = 0; sum += lat; cnt++; if (lat > worst) worst = lat; waiting = 0; (void)ev;}
       if (r.queued < 480) dry++;
-      r.queued = r.queued > 480 ? r.queued - 480 : 0;
-      played += 480;
+      uint32_t drain = r.queued < 480 ? r.queued : 480;
+      r.queued -= drain; played += drain;
+      if (waiting && first < played) {
+        CHECK(first >= ev_idx + ev_queue, "effect overwrote queued PCM");
+        double lat = (double)(first - ev_idx) / 48.0;
+        double refill_lat = (double)(first - refill_idx) / 48.0;
+        if (lat > worst) worst = lat;
+        if (refill_lat > refill_worst) refill_worst = refill_lat;
+        cnt++; waiting = 0;
+      }
     }
-    printf("%s queue: SFX start %.0f ms after the event on average, %.0f ms worst (%d beeps), dry pumps %u\n", mode ? "small" : "long", cnt ? sum / cnt : 0, worst, cnt, dry);
-    if (mode) CHECK(worst <= 323, "game-play SFX latency %.0f ms", worst);
+    printf("%s ring %u: actual SFX PCM %.2f ms worst after event, %.2f ms after next refill (%d audible beeps), dry pumps %u\n",
+           mode ? "game" : "list", cap, worst, refill_worst, cnt, dry);
+    CHECK(cnt == events && cnt > 0 && !waiting, "only %d of %d effects reached playback", cnt, events);
+    /* Existing ABI bound; this does NOT certify the requested <60 ms target. */
+    CHECK(worst <= 323, "SFX latency %.2f ms", worst);
     CHECK(dry == 0, "queue ran dry %u times", dry);
   }
 }

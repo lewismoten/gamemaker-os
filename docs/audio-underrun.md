@@ -72,6 +72,60 @@ ARM image at **7.04 MiB of 8 MiB**, leaving **984 KiB** headroom. `git diff
 --check` passes. No network, sanitizer, display window, audio device or commit
 was used; changes remain in the working tree.
 
+## Effect latency follow-up: blocked by the device ABI
+
+The requested **under 60 ms from the next refill** is not implemented. The
+250 ms safety floor remains unchanged to preserve the 150 ms stall regression.
+
+The pinned SDK (`sdk/include/sandbox/abi.h`, audio ABI 1.8, still used by
+ABI 1.11) exposes one write-only PCM stream and `SBX_IOC_AUDIO_QUERY`.
+Its contract explicitly says writes never overwrite queued audio. There is no
+ring mapping, seek, replacement, injection or independent effects stream.
+`src/main.c` adapts that interface to `au_sink.query/write/now`; the application
+cannot access the read position's PCM. Both speaker and VOC output are already
+mixed into the next rendered slice by `au_render`, but that slice must be
+appended behind all PCM already accepted by the device.
+
+At 48 kHz, 60 ms is 2,880 frames, whereas surviving a 150 ms unserviced stall
+requires at least 7,200 queued frames before accounting for synthesis time.
+Keeping music ahead only in application memory cannot protect a device that
+consumes its own ring during that stall. Closing/reopening would discard the
+queue, interrupt music and reset the per-open underrun counters; it would not
+provide a continuous, atomic replacement. Lowering the device queue or using a
+fake host-only injection callback would not establish both requirements on the
+shipped ABI.
+
+The host latency test now compares actual written PCM with a parallel
+music-only render and waits until the first differing frame reaches the play
+head. It checks every triggered effect reaches playback in both modes and ring
+sizes. The previous test inferred output from `pc.active`, even on polls that
+wrote nothing, and could silently pass without detecting an audible effect.
+With events every 370 ms after warm-up, the corrected measurement is:
+
+| Ring | Mode | Worst from trigger | Worst from next refill | Audible effects |
+| --- | --- | ---: | ---: | ---: |
+| 16,384 frames | Library / game | 270.00 ms | 240.00 ms | 6 per mode |
+| 4,096 frames | Library / game | 75.33 ms | 75.33 ms | 6 per mode |
+
+These are deterministic sampled measurements, not a new worst-case guarantee.
+The test retains the existing 323 ms regression bound; a passing suite does
+**not** certify the requested 60 ms target. The 150 ms stall tests still require
+zero underruns in both modes on the 16,384-frame ring.
+
+To meet both targets, the kernel needs an operation that mixes a separate
+bounded effect stream near its playback cursor while retaining the queued
+music. That operation must define a safe lead time, atomicity relative to the
+consumer, saturation, partial acceptance and per-open counters. It then needs a
+production SDK/sink adapter and a host model that drains music during stalls
+while detecting injected effect PCM within 2,880 frames of the next refill.
+Completing that operation requires changes in `sandbox-kernel`, whose source
+is outside this worktree.
+
+Follow-up verification: `make all test` passes **244 tests (7 skipped)**,
+including the zero-underrun 150 ms stall cases. ARM headroom remains **984 KiB**;
+`git diff --check` passes. No network, sanitizers, windows, sound device or commit
+was used. Only this document and the host latency test changed.
+
 ## Historical diagnosis and verification (2026-11-10)
 
 ## Cause
