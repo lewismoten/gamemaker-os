@@ -120,6 +120,7 @@ static int read_at(void *user, unsigned v, uint32_t off, void *buf, uint32_t n) 
   uint64_t got;
   while (cur.pos < off) { /* forward to off */
     uint32_t take = off - cur.pos < sizeof skip ? off - cur.pos : (uint32_t)sizeof skip;
+    if (sp_beat) sp_beat();
     if (sbx_read(cur.fd, skip, take, &got) || !got || got > take) {sp_io_errors++;close_cur(); return -1;}
     cur.pos += (uint32_t)got;
     if (sp_beat) sp_beat();
@@ -127,6 +128,7 @@ static int read_at(void *user, unsigned v, uint32_t off, void *buf, uint32_t n) 
   uint8_t *out = (uint8_t *)buf;
   while (n) {
     uint32_t take = n < 16384u ? n : 16384u;
+    if (sp_beat) sp_beat();
     if (sbx_read(cur.fd, out, take, &got) || !got || got > take) {sp_io_errors++;close_cur(); return -1;}
     out += got; n -= (uint32_t)got; cur.pos += (uint32_t)got;
     if (sp_beat) sp_beat();

@@ -277,11 +277,13 @@ With ABI major 1, minor >= 8 and a usable `/dev/audio`, GMOS opens it once and p
 The synth runs in the main loop, never blocking the 18.2 Hz tick or the heartbeat: `au_pump` (`src/audio.c`) asks the
 ring's level and writes only when under 250 ms is queued (the heartbeat pumps too, so long reads inside a step keep
 feeding). Queue targets are clamped to the reported capacity: kernel develop currently has 16,384 frames,
-while 4,096-frame rings also work with less protection against slow storage. Game play uses a shorter
-120 ms queue for effects, topped up every pass and between sleep slices of at most 10 ms.
-The pump rechecks the ring after each write to account for synthesis-time drainage, and batches
-up to 40 ms of PCM without changing synthesis or PLAYGAME's sound events. This trades up to
-120 ms of output latency for headroom; older 4,096-frame rings cap it at about 85 ms.
+while 4,096-frame rings also work with less protection against slow storage. Gameplay and the
+library now share a 12,000-frame (250 ms) low-water floor and a 15,000-frame (312.5 ms) target.
+Observed worst pump gaps plus the worst synthesis slice and 20 ms margin can raise the low-water
+mark to the target. Each call renders at most 1,920 frames, writing 480-frame slices and rechecking
+live drainage after each write. Refills run around ticks, rendering, presentation, decoding and file
+reads, and between sleep slices of at most 10 ms. The latency tradeoff is up to 312.5 ms for effects;
+older 4,096-frame rings cap it at about 85 ms and cannot cover a single 150 ms stall.
 See [audio underruns](audio-underrun.md) for the diagnosis and host regression.
 HDMI is used when available; otherwise the kernel's null backend drains silently.
 

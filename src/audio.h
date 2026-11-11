@@ -8,12 +8,12 @@
 #include "cmf.h"
 #include "pcspeaker.h"
 #include "vocplay.h"
-#define AU_LOW_FRAMES 12000u  /* write when fewer frames than this are queued (250 ms: longer than any read the OS does) */
+#define AU_LOW_FRAMES 12000u  /* 250 ms floor: 150 ms stall + one 55 ms tick + 45 ms synth/scheduling margin */
 #define AU_FILL_FRAMES 15000u /* and top up to this many (312 ms; the kernel ring holds 16384, an older one 4096) */
 #define AU_VOL_MAX 65535u     /* full uint16 gain range, Q15; saturated after mixing */
 #define AU_VOL_ONE 32768u     /* master volume 1.0 (Q15); it ramps one step a sample: 0.68 s from silence to full */
-#define AU_PLAY_FILL_FRAMES 5760u /* gameplay headroom: 120 ms, clamped to the kernel ring */
-#define AU_PLAY_LOW_FRAMES AU_PLAY_FILL_FRAMES
+#define AU_PLAY_FILL_FRAMES AU_FILL_FRAMES /* 312.5 ms, clamped to the kernel ring */
+#define AU_PLAY_LOW_FRAMES AU_LOW_FRAMES
 #define AU_CHUNK 480u        /* frames per synthesis slice (10 ms); pcspeaker.h's limit is 1920 */
 #define AU_BATCH (AU_CHUNK * 4u)
 #define AU_REFILL_MARGIN 48u
@@ -34,15 +34,17 @@ struct au {
   char want_voc[AU_NAME_MAX + 1]; uint8_t voc_pending;
   uint32_t vol, vol_target;    /* master volume, Q15, ramped per sample so nothing clicks */
   uint32_t until_q16;          /* samples to the next sequencer tick, 16 fractional bits */
-  int16_t hold[AU_BATCH * 2]; uint32_t hold_len, hold_off; /* rendered frames the ring has not taken yet */
+  int16_t hold[AU_CHUNK * 2]; uint32_t hold_len, hold_off; /* rendered frames the ring has not taken yet */
   uint8_t *music; uint32_t music_cap; /* the caller's scratch for a song (the biggest in the games is 19.8 KB) */
   uint8_t snd[2430];
   char snd_name[AU_NAME_MAX + 1]; uint32_t snd_len;
   /* Requests from the session, served by au_service (which reads files). */
   char want_music[AU_NAME_MAX + 1]; uint8_t music_pending;
   char want_snd[AU_NAME_MAX + 1]; int want_tune; uint8_t beep_pending;
-  uint8_t playing;             /* 1: the small queue (a game is being played); 0: the long one (library, preview, loads) */
-  uint64_t last_pump_ns, gap_max_ns, svc_max_ns; /* longest time between pumps and longest au_service, while playing */
+  uint8_t playing;             /* gameplay mode; both modes retain stall headroom */
+  uint64_t last_pump_ns, gap_max_ns, svc_max_ns; /* interval maxima, in every mode */
+  uint64_t gap_peak_ns, slice_peak_ns; /* lifetime observations for low-water sizing */
+  uint32_t low_frames; /* last effective low-water mark, capacity clamped */
   /* Counters. */
   uint64_t frames, total_ns; uint32_t writes, eagain, music_loads, beeps, vocs, voc_refused;
 };
@@ -65,10 +67,9 @@ void au_volume(struct au *a, uint32_t target);
 int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, uint32_t), void *user);
 /* Renders n frames (at most AU_CHUNK) of stereo s16 into out: the sequencer ticks, the synth, the speaker. */
 void au_render(struct au *a, int16_t *out, unsigned n);
-/* The queue to keep: small while a game plays (a draining queue is simply not topped up; the samples stay continuous, so nothing clicks),
-   long otherwise (the next pump refills it in one go). Call it with 0 before any slow read. */
+/* Select gameplay/library mode without discarding queued PCM or gap history. */
 void au_set_playing(struct au *a, int playing);
-/* Feeds the ring if low, rechecking after writes, with at most twice the target rendered per call;
+/* Feeds the ring if low, rechecking after writes, with at most AU_BATCH frames rendered per call;
    clamped to capacity. Returns frames written, or -1 on a fatal sink error. */
 int au_pump(struct au *a, const struct au_sink *sink);
 void au_wait_until(const struct au_sink *sink, uint64_t deadline,

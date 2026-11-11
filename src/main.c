@@ -64,7 +64,7 @@ static void scan_summary(void) {
 static int no_index; /* read_index found no LIBRARY.JSL */
 static void (*beat_hook)(int); /* the loading splash's animation, set in main: called between files and games */
 static void (*audio_hook)(void); /* feeds /dev/audio (set while a game plays): the heartbeat is called all through its slow steps */
-static void heartbeat(void) {sbx_health(generation, ++beat); if (beat_hook) beat_hook(0); if (audio_hook) audio_hook();}
+static void heartbeat(void) {if (audio_hook) audio_hook(); sbx_health(generation, ++beat); if (beat_hook) beat_hook(0); if (audio_hook) audio_hook();}
 static int ends_with_gam(const char *s, unsigned n) {
   return n > 4 && s[n - 4] == '.' && (s[n - 3] == 'G'||s[n - 3]=='g') && (s[n - 2] == 'A'||s[n - 2]=='a') && (s[n - 1] == 'M'||s[n - 1]=='m');
 }
@@ -301,10 +301,12 @@ static int32_t sd_read(void *user, const char *name, uint8_t *buf, uint32_t cap)
   char path[256],clean[256];
   if(gz_path(name,clean,0)||gz_noise(clean)||!scan_join(path,(const char *)user,clean))return -1;
   uint64_t fd, got; uint32_t have = 0;
+  heartbeat();
   if (sbx_open(path, length(path), SBX_O_RDONLY, &fd)) return -1;
   int status=0;
   while (have < cap) {
     uint32_t take=cap-have<16384u?cap-have:16384u;
+    heartbeat();
     status=sbx_read(fd,buf+have,take,&got);
     if(status||!got)break;
     if (got > take) {status = -1; break;}
@@ -373,6 +375,15 @@ static void audio_poll(void) {
     aud_busy = 0;
   }
 }
+/* File reads may yield back into audio_poll; only the pump owns aud_busy. */
+static void audio_service(gp_read_fn read, void *user) {
+  audio_poll();
+  uint64_t start = clock_ns();
+  au_service(&aud, read, user);
+  uint64_t elapsed = clock_ns() - start;
+  if (elapsed > aud.svc_max_ns) aud.svc_max_ns = elapsed;
+  audio_poll();
+}
 /* A clip of the playing game for vocplay.h: a folder's file is streamed (an open fd, 384-byte reads); a pack's or zip's is read whole
  * into index_text (the library's scan buffer, idle while a game plays; a clip that does not fit is refused). */
 static uint64_t voc_fd, voc_pos; static uint32_t voc_blob_n;
@@ -419,7 +430,7 @@ static void audio_sleep_until(uint64_t wake) {
   else sbx_sleep_until(wake);
 }
 static void audio_log(const char *what) { /* the kernel's counters, and what the synth cost since the last line */
-  sbx_audio_info i; char line[320], *p = put(line, "GMOS audio "); p = put(p, what);
+  sbx_audio_info i; char line[512], *p = put(line, "GMOS audio "); p = put(p, what);
   uint64_t t = clock_ns();
   if (!aud_on) return;
   if (sbx_audio_query(audio_fd, &i)) {put(p, ": no query"); say(line); return;}
@@ -428,7 +439,8 @@ static void audio_log(const char *what) { /* the kernel's counters, and what the
   p = put(p, ", eagain "); p = num(p, aud.eagain); p = put(p, ", songs "); p = num(p, aud.music_loads);
   p = put(p, ", beeps "); p = num(p, aud.beeps); p = put(p, ", vocs "); p = num(p, aud.vocs); p = put(p, "/"); p = num(p, aud.voc_refused); p = put(p, ", synth CPU "); p = num(p, t > au_prev_t ? (uint32_t)((aud.total_ns - au_prev_ns) * 1000u / (t - au_prev_t)) : 0);
   p = put(p, " per mille, longest pump gap "); p = num(p, (uint32_t)(aud.gap_max_ns / 1000u)); p = put(p, " us, longest sound read "); p = num(p, (uint32_t)(aud.svc_max_ns / 1000u));
-  put(p, " us (while playing); since the last line"); say(line); aud.gap_max_ns = aud.svc_max_ns = 0;
+  p = put(p, " us, low water "); p = num(p, aud.low_frames);
+  put(p, " frames; since the last line"); say(line); aud.gap_max_ns = aud.svc_max_ns = 0;
   au_prev_ns = aud.total_ns; au_prev_t = t;
 }
 static void audio_open(void) {
@@ -439,7 +451,7 @@ static void audio_open(void) {
       !info.capacity_frames || info.capacity_frames > UINT32_MAX || info.queued_frames > info.capacity_frames) {
     sbx_close(audio_fd); audio_fd = 0; return; /* unavailable or incompatible: silent fallback */
   }
-  au_init(&aud, bgm_buf, sizeof bgm_buf); aud.voc_open = voc_open; game.sound.event = au_event; game.sound.event_user = 0; aud_on = 1; audio_hook = audio_poll;
+  au_init(&aud, bgm_buf, sizeof bgm_buf); aud.voc_open = voc_open; game.sound.event = au_event; game.sound.event_user = 0; aud_on = 1; audio_hook = audio_poll; gp_decode_hook(audio_poll);
   audio_t_open = au_prev_t = clock_ns();
   sbx_audio_info i; char line[80], *p = put(line, "GMOS audio open, ring ");
   if (!sbx_audio_query(audio_fd, &i)) {p = num(p, (uint32_t)i.capacity_frames); p = put(p, " frames at "); p = num(p, (uint32_t)i.rate); put(p, " Hz");} else put(p, "(no query)");
@@ -548,7 +560,7 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
   for (;;) {
     heartbeat();
     ge_poll();
-    if (aud_on) {au_service(&aud, game.read, game.user); audio_poll();}
+    if (aud_on) audio_service(game.read, game.user);
     if (r & HS_DRAW) {hs_draw_colors(&hsc, hs_px, hs_pal, back ? back_px : 0, back_pal, open ? 0 : game.colors); gs_show(hs_px, hs_pal, px, PLAY_W); sbx_fb_present(fb_fd, 0, 0, PLAY_W, PLAY_H);}
     if (r & HS_DONE) break;
     r = 0;
@@ -659,11 +671,14 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     if (r & GS_DRAW) {
       uint64_t d0 = clock_ns();
       uint32_t first, height;
+      audio_poll();
       gs_draw_changed(&game, px, PLAY_W, force, &first, &height); force = 0;
+      audio_poll();
       uint64_t scaled = clock_ns(); perf_add(&perf[PF_SCALE], scaled - d0);
       if (height) {
         int32_t presented = sbx_fb_present(fb_fd, 0, first, PLAY_W, height);
         perf_add(&perf[PF_PRESENT], clock_ns() - scaled);
+        audio_poll();
         /* Only a successful present earns a line; idle draws/catch-up earn none.
          * Drain here, before sleeping or stepping, so the budget cannot go stale. */
         if (!presented) report_frame(&report);
@@ -684,9 +699,8 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     if (started) {game.t0 = clock_ns(); game.ticks = 0; started = 0;} /* a level's clock starts once its files are read and its first frame is up */
     uint64_t wake = sp_on ? sp_wake(&sp, clock_ns()) : gs_wake(&game, clock_ns());
     if (aud_on) {
-      uint64_t s0 = clock_ns(); au_service(&aud, game.read, game.user);
-      if (aud.playing && clock_ns() - s0 > aud.svc_max_ns) aud.svc_max_ns = clock_ns() - s0;
-      audio_poll(); perf_add(&perf[PF_AUDIO], clock_ns() - s0);
+      uint64_t s0 = clock_ns(); audio_service(game.read, game.user);
+      perf_add(&perf[PF_AUDIO], clock_ns() - s0);
       uint64_t soon = clock_ns() + 10000000ull; /* wake every 10 ms to keep the ring fed */
       if (wake > soon) wake = soon;
     }
@@ -740,7 +754,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     r = gs_step(&game, t);
     if (game.ran) perf_add(&perf[PF_TICK], game.tick_ns);
     if (game.render_ns) perf_add(&perf[PF_RENDER], game.render_ns);
-    au_set_playing(&aud, aud_on && game.phase == GS_PLAY); if (!aud.playing) audio_poll();
+    au_set_playing(&aud, aud_on && game.phase == GS_PLAY); audio_poll();
     if (sp_draw) {r |= GS_DRAW; sp_draw = 0;}
     uint32_t dt = (uint32_t)((clock_ns() - t) / 1000u); if (game.ran && dt > step_max) step_max = dt;
     if (was != GS_PLAY && game.phase == GS_PLAY) started = 1;
@@ -772,7 +786,8 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
 static uint64_t demo_idle;
 static void demo_present(uint16_t *px) {
   uint32_t x, y, w, h; gm_picture_rect(&x, &y, &w, &h);
-  gm_draw_picture(px, GM_W, game.px, game.pal); sbx_fb_present(fb_fd, x, y, w, h);
+  audio_poll(); gm_draw_picture(px, GM_W, game.px, game.pal); audio_poll();
+  sbx_fb_present(fb_fd, x, y, w, h); audio_poll();
 }
 static void demo_stop(const char *why) {
   char line[64], *p = put(line, "GMOS demo stopped: "); put(p, why); say(line);
@@ -809,7 +824,7 @@ static struct gm_load_progress picture_progress;
 static uint64_t picture_now(void *u) {(void)u; return clock_ns();}
 static void picture_present(void *u) {(void)u; heartbeat(); sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H);}
 static void picture_tick(int force) {(void)force; gm_load_tick(&picture_progress);}
-static void picture_checkpoint(void) {picture_tick(0);}
+static void picture_checkpoint(void) {audio_poll(); picture_tick(0); audio_poll();}
 /* The title screen of a game (thumb.h), read from its folder; -1 when it has none. */
 static int title_picture(const struct gm_game *g, uint8_t *px, uint8_t *pal) {
   /* The page is visible before opening any archive or reading the GAM. */
@@ -817,7 +832,7 @@ static int title_picture(const struct gm_game *g, uint8_t *px, uint8_t *pal) {
   beat_hook = picture_tick; gp_decode_hook(picture_checkpoint); ga_yield = picture_checkpoint;
   void *user; gp_read_fn read = reader(g, &user);
   int r = read ? gm_title_picture(read, user, where[g-menu.games].gam, px, pal) : -1;
-  gp_decode_hook(0); ga_yield = 0; beat_hook = 0;
+  gp_decode_hook(audio_poll); ga_yield = 0; beat_hook = 0;
   return r;
 }
 /* The next card on the page whose title screen is not drawn yet: reads it. 1 when one was read. */
@@ -855,8 +870,11 @@ static void show_list(uint16_t *px) {
     uint64_t t0 = clock_ns(); big_ok = !title_picture(g, big_px, big_pal);
     char bl[64], *q = put(bl, "GMOS details picture "); q = put(q, g->dir); q = put(q, " in "); q = num(q, (uint32_t)((clock_ns() - t0) / 1000000u)); put(q, " ms"); say(bl);
   }
+  audio_poll();
   gm_draw(px, GM_W, &menu, menu.view == GM_DETAILS && big_ok ? big_px : 0, big_pal);
+  audio_poll();
   sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H);
+  audio_poll();
   int pending = 0;
   if (menu.view == GM_GRID) {
     unsigned t = menu.tab, first = menu.pos[t] / GM_PAGE * GM_PAGE;
@@ -913,7 +931,7 @@ static int gmos_main(const sbx_startup *start) {
     awake_set(demo_on);
     heartbeat();
     if (aud_on) {
-      au_service(&aud, demo_on ? game.read : 0, game.user); if (!demo_on) bg_tick();
+      audio_service(demo_on ? game.read : 0, game.user); if (!demo_on) bg_tick();
       if (clock_ns() - list_log >= 10000000000ull) {list_log = clock_ns(); audio_log(demo_on ? "demo 10 s" : "list 10 s");}
     }
     ge_poll();

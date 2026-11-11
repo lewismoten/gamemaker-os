@@ -1,4 +1,78 @@
-# Audio underruns: 2026-11-10
+# Audio refill starvation: 2026-11-11
+
+This follow-up supersedes the 120 ms gameplay policy in the historical notes below.
+No board run was performed; the numbers here are deterministic host simulations.
+
+The ring is 16,384 stereo frames at 48 kHz (341.3 ms), but gameplay used only
+5,760 frames (120 ms). A single 150 ms draw/read consumes 7,200 frames: even a
+full gameplay queue cannot cover it. The 18.2 Hz tick is about 54.925 ms, and
+render, scale, present, diagnostics and file reads can compound between polls.
+The library's 250 ms threshold was larger, but details decode checkpoints only
+serviced audio indirectly when their progress indicator actually presented.
+A long decode without a progress redraw could therefore starve background CMF.
+
+OPL2/CMF, streamed VOC and PC-speaker beeps share `au_render`. CMF advances at
+about 145.7 sequencer ticks/s independently of game ticks. Pumping must replace
+samples consumed while synthesis runs. The previous per-call budget of twice
+the target allowed 11,520 gameplay or 30,000 library frames of synthesis in one
+call. At the test's 4 ms CPU per 480 frames, those budgets take 96 or 250 ms.
+VOC prescanning also reset its visit budget for each sample segment, allowing a
+whole many-segment clip to be scanned synchronously despite a nominal budget.
+
+The fix:
+
+- Both modes use a 12,000-frame (250 ms) low-water floor and a 15,000-frame
+  (312.5 ms) target, clamped to the reported kernel capacity. The floor covers
+  the requested 150 ms stall, one 55 ms game tick, and 45 ms synthesis/scheduling
+  margin before runtime observations exist. The effective threshold is the
+  larger of that floor and `ceil((worst gap + worst synth slice + 20 ms) * 48000)`,
+  capped at the target/capacity. Observations include library and quiet polls;
+  lifetime maxima survive interval report resets and gameplay transitions.
+- Every pump renders at most 1,920 frames (40 ms of audio), writing at most
+  480 frames (10 ms) before checking live queue drainage again. At the test's
+  40% synth CPU load this is at most 16 ms of synthesis per call. An overloaded
+  synth still returns after that frame budget. Partial-write/EAGAIN tails keep
+  their original sample order. Short writes no longer need a 1,920-frame hold.
+- Refills run before/after game ticks and core rendering, scale/compare, list
+  drawing and frame presents, details decode checkpoints, and around loose,
+  pack and ZIP reads. The decode hook stays active outside details loading.
+  Heartbeats service audio around progress redraws; waits retain 10 ms slices.
+  Tick debt and the one-report-line-per-successful-present budget are preserved.
+- VOC preparation shares one 64-visit budget across all segments in a service
+  call and continues on subsequent calls. Accepted/refused counters advance
+  once at completion; cancelling a pending clip does not count it as accepted.
+- Audio logs now measure gaps/service time in every mode and print the effective
+  low-water mark. Gap/service maxima reset per log; cumulative audio counters
+  and the lifetime threshold observations do not reset.
+
+`tests/host/audio_clock.c` drains the fake ring during stalls, synthesis and
+sleep, using a real CMF through the production mixer. Twenty 150 ms stalls at
+the low-water boundary produce **zero underruns** in both game and library mode
+with 4 ms synthesis cost per 480 frames. A counterexample starting each stall
+with the old 5,760-frame target produces **40 underrun events** including
+recovery drainage. Tests prime the ring before injecting the stalls.
+
+Both 60-second simulated ring tests (16,384 and 4,096 frames) execute **1,093
+game ticks**, report **zero underruns**, write at most **480 frames** at once,
+and sleep at most **10 ms**. Three-second monotonic-clock runs also have zero
+underruns. A counter test observes a 280 ms quiet library gap, raises the
+threshold to **14,400 frames**, and verifies that interval resets and gameplay
+transitions retain this sizing. The VOC test verifies 64, then 128, then
+completion at 130 sample blocks, including acceptance/refusal/cancel counters.
+PCM identity, partial writes, EAGAIN, capacity clamps, fades, speaker timing and
+the reference OPL waveform remain covered by the host tests.
+
+The tradeoff is effects latency of up to 312.5 ms. An older 4,096-frame ring
+holds only 85.3 ms and cannot survive an unsliced 150 ms stall. No queue covers
+sustained synthesis slower than real time or arbitrary storage stalls; runtime
+gap and synth CPU logs are still needed for board qualification.
+
+Final verification: `make all test` passes **244 tests (7 skipped)**, with the
+ARM image at **7.04 MiB of 8 MiB**, leaving **984 KiB** headroom. `git diff
+--check` passes. No network, sanitizer, display window, audio device or commit
+was used; changes remain in the working tree.
+
+## Historical diagnosis and verification (2026-11-10)
 
 ## Cause
 

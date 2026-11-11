@@ -11,6 +11,7 @@ static int present_error, aud_on;
 static char output[64][320];
 static uint64_t clock_ns(void) {return now;}
 static void say(const char *s) {assert(lines < 64); snprintf(output[lines++], 320, "%s", s);}
+static void audio_poll(void) {}
 static void audio_log(const char *s) {(void)s; say("audio");}
 static int32_t sbx_fb_present(int fd, unsigned x, unsigned y, unsigned w, unsigned h) {
   (void)fd; (void)x; (void)y; (void)w; (void)h;

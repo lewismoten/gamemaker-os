@@ -95,7 +95,7 @@ DYLD settings, commit, device install or hardware run was used.
 * `heartbeat` can pump audio. The explicit audio block also services requested
   assets and feeds the ring, waking at most 10 ms later. The synth produces
   48 kHz stereo; the original play policy kept 50–65 ms queued (superseded by
-  [live 120 ms refills and sliced waits](audio-underrun.md)). Asset I/O and synthesis
+  [bounded refills and sliced waits](audio-underrun.md)). Asset I/O and synthesis
   share the single CPU with play and presentation.
 * `ge_poll` checks the clock and sends only changed status, at least 2.1 s apart.
   A steady title does not trigger a physical e-ink refresh every frame.

@@ -107,7 +107,10 @@ int vp_prepare(struct vp *v, unsigned budget) {
   if (v->state != VP_PENDING) return v->state == VP_PLAYING ? VP_OK : v->state;
   struct vp_seg seg;
   for (;;) {
+    uint32_t before = v->scan.visits;
     int r = next(v, &v->scan, &seg, budget);
+    uint32_t used = v->scan.visits - before;
+    budget = used < budget ? budget - used : 0;
     if (r == 2) return VP_PENDING;
     if (r < 0) {vp_stop(v); v->state = VP_LIMIT; return VP_LIMIT;}
     if (!r) break;

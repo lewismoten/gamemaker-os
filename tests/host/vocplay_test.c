@@ -93,6 +93,30 @@ int main(void) {
     for (int k = 0; k < 30; k++) au_render(&a, out, AU_CHUNK);
     CHECK(a.vp.state == 0 && out[100] == 0);
     free(fa); free(fb); free(fc); }
+  /* A prescan budget covers ALL segments in a call, not each segment anew.
+     Accepted/refused counters advance once, on completion; cancellation is quiet. */
+  { static struct au a; uint8_t blocks[130 * 7];
+    for (unsigned i = 0; i < 130; i++) {
+      const uint8_t block[] = {1, 3, 0, 0, 165, 0, 128};
+      memcpy(blocks + i * 7, block, 7);
+    }
+    uint32_t len; uint8_t *f = mk(&len, blocks, sizeof blocks, 1);
+    cur[0] = (struct mem){f, len, 0, 0};
+    au_init(&a, scratch, sizeof scratch); a.voc_open = open_clip;
+    au_voc(&a, "A.VOC");
+    CHECK(au_service(&a, 0, 0) == 0 && a.vp.scan.visits == 64 && a.vp.state == VP_PENDING);
+    CHECK(!a.vocs && !a.voc_refused);
+    CHECK(au_service(&a, 0, 0) == 0 && a.vp.scan.visits == 128);
+    CHECK(au_service(&a, 0, 0) == 1 && a.vocs == 1 && !a.voc_refused);
+    CHECK(au_service(&a, 0, 0) == 0 && a.vocs == 1);
+    au_voc(&a, "A.VOC"); au_service(&a, 0, 0); au_stop(&a);
+    CHECK(a.vp.state == 0 && au_service(&a, 0, 0) == 0 && a.vocs == 1 && !a.voc_refused);
+    f[0] = 0; au_voc(&a, "A.VOC"); au_service(&a, 0, 0);
+    CHECK(a.voc_refused == 1 && a.vocs == 1);
+    au_service(&a, 0, 0); CHECK(a.voc_refused == 1);
+    free(f);
+    puts("VOC counters: 64 visits per service, accepted/refused counted once, cancel OK");
+  }
   puts(fails ? "vocplay_test FAILED" : "vocplay_test ok");
   return fails ? 1 : 0;
 }

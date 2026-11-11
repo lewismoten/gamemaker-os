@@ -21,7 +21,7 @@ int au_play_loaded(struct au *a, uint32_t n) {
   if (cmf_load(&a->cmf, a->music, n)) {cmf_stop(&a->cmf); return -1;}
   a->until_q16 = 0; a->music_loads++; a->vol_target = AU_VOL_ONE; return 0;
 }
-void au_set_playing(struct au *a, int playing) {if (a->playing != (playing != 0)) {a->playing = playing != 0; a->last_pump_ns = 0;}}
+void au_set_playing(struct au *a, int playing) {a->playing = playing != 0;}
 int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, uint32_t), void *user) {
   int started = 0;
   if (a->music_pending) {
@@ -47,10 +47,13 @@ int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, ui
     struct vp_io io; int st = VP_INVALID;
     if (a->voc_open && !a->voc_open(a->want_voc, &io)) {
       st = vp_begin(&a->vp, &io); /* the scan takes a few block reads; a clip of thousands of blocks is stopped by its budget */
-      for (unsigned i = 0; st == VP_PENDING && i < VP_MAX_VISITS / 64u + 2u; i++) st = vp_prepare(&a->vp, 64);
-      if (st == VP_PENDING) {vp_stop(&a->vp); st = VP_LIMIT;}
     }
-    if (st == VP_OK) {a->vocs++; started = 1;} else a->voc_refused++;
+    if (st != VP_PENDING) a->voc_refused++;
+  }
+  if (a->vp.state == VP_PENDING) {
+    int st = vp_prepare(&a->vp, 64); /* scan incrementally, between ring refills */
+    if (st == VP_OK) {a->vocs++; started = 1;}
+    else if (st != VP_PENDING) a->voc_refused++;
   }
   return started;
 }
@@ -85,25 +88,34 @@ int au_pump(struct au *a, const struct au_sink *s) {
   uint32_t queued = 0, cap = 0, sent = 0;
   if (s->query(s->user, &queued, &cap)) return -1;
   uint32_t low = a->playing ? AU_PLAY_LOW_FRAMES : AU_LOW_FRAMES, fill = a->playing ? AU_PLAY_FILL_FRAMES : AU_FILL_FRAMES;
-  if (a->playing) {uint64_t t = s->now(s->user); if (a->last_pump_ns && t - a->last_pump_ns > a->gap_max_ns) a->gap_max_ns = t - a->last_pump_ns; a->last_pump_ns = t;}
+  uint64_t t = s->now(s->user);
+  if (a->last_pump_ns) {
+    uint64_t gap = t - a->last_pump_ns;
+    if (gap > a->gap_max_ns) a->gap_max_ns = gap;
+    if (gap > a->gap_peak_ns) a->gap_peak_ns = gap;
+  }
+  a->last_pump_ns = t;
+  /* Round up observed worst gap + worst slice + two 10 ms scheduling slices.
+     Keep a conservative floor before observations, and never exceed the target. */
+  uint64_t observed = ((a->gap_peak_ns + a->slice_peak_ns + 2u * AU_SLEEP_NS) * 48000u + 999999999u) / 1000000000u;
+  if (observed > low) low = observed < fill ? (uint32_t)observed : fill;
   if (!cap || queued > cap) return -1;
   if (low > cap) low = cap;
   if (fill > cap) fill = cap;
+  a->low_frames = low;
   if (queued >= low) return 0;
-  uint32_t budget = fill * 2u;
+  uint32_t budget = AU_BATCH;
   while (queued < fill) {
     uint32_t want = fill - queued;
     if (!a->hold_len) {
       if (!budget) break;
-      uint32_t n = want < AU_BATCH ? want : AU_BATCH;
+      uint32_t n = want < AU_CHUNK ? want : AU_CHUNK;
       if (n > budget) n = budget;
       uint64_t t0 = s->now(s->user);
-      for (uint32_t offset = 0; offset < n;) {
-        uint32_t run = n - offset < AU_CHUNK ? n - offset : AU_CHUNK;
-        au_render(a, a->hold + offset * 2u, run);
-        offset += run;
-      }
-      a->total_ns += s->now(s->user) - t0;
+      au_render(a, a->hold, n);
+      uint64_t elapsed = s->now(s->user) - t0;
+      a->total_ns += elapsed;
+      if (elapsed > a->slice_peak_ns) a->slice_peak_ns = elapsed;
       a->hold_len = n * 4u; a->hold_off = 0;
       budget -= n;
     }

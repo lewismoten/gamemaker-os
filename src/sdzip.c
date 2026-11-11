@@ -17,9 +17,11 @@ static int read_at(void *u,uint32_t off,void *out,uint32_t n) {
   if(pos!=off&&seekable){uint64_t p;int r=sbx_seek(fd,off,&p);if(!r)pos=(uint32_t)p;else if(r==-SBX_ENOSYS)seekable=0;else {sz_io_errors++;return -1;}}
   if(pos>off&&reopen())return -1;
   while(pos<off){uint32_t take=off-pos<sizeof skip?off-pos:(uint32_t)sizeof skip;uint64_t got;
+    if(sz_beat)sz_beat();
     if(sbx_read(fd,skip,take,&got)||!got||got>take){sz_io_errors++;sz_close();return -1;}pos+=(uint32_t)got;if(sz_beat)sz_beat();}
   uint8_t *p=out;
   while(n){uint32_t take=n<16384?n:16384;uint64_t got;
+    if(sz_beat)sz_beat();
     if(sbx_read(fd,p,take,&got)||!got||got>take){sz_io_errors++;sz_close();return -1;}pos+=(uint32_t)got;p+=got;n-=(uint32_t)got;if(sz_beat)sz_beat();}
   return 0;
 }

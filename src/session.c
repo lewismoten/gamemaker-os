@@ -81,14 +81,18 @@ static void queue(struct gs_session *s, const char *slot) {
   }
 }
 static void render_play(struct gs_session *s) {
+  gp_decode_checkpoint();
   uint64_t t = s->clock_ns ? s->clock_ns() : 0;
   gp_render(s->px); s->showing_card = 0;
   if (s->clock_ns) s->render_ns += s->clock_ns() - t;
+  gp_decode_checkpoint();
 }
 static char play_tick(struct gs_session *s) {
+  gp_decode_checkpoint();
   uint64_t t = s->clock_ns ? s->clock_ns() : 0;
   char r = gp_tick();
   if (s->clock_ns) s->tick_ns += s->clock_ns() - t;
+  gp_decode_checkpoint();
   return r;
 }
 void gs_fade_palette(const uint8_t *from, const uint8_t *to, uint32_t step, uint32_t steps, uint8_t *out) {

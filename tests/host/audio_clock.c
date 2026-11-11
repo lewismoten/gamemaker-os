@@ -103,9 +103,9 @@ static int exercise(uint32_t capacity, int realtime) {
   uint32_t size = (uint32_t)fread(ring.music, 1, sizeof ring.music, song);
   fclose(song);
   if (au_play_loaded(&ring.audio, size)) return 1;
-  service(&ring);
+  for (unsigned i = 0; i < 32 && ring.queued < AU_PLAY_LOW_FRAMES; i++) service(&ring);
   uint32_t target = capacity < AU_PLAY_FILL_FRAMES ? capacity : AU_PLAY_FILL_FRAMES;
-  if (ring.queued > target || target - ring.queued > AU_REFILL_MARGIN) ring.failed = 1;
+  if (ring.queued > target || ring.queued < (capacity < AU_PLAY_LOW_FRAMES ? capacity - AU_REFILL_MARGIN : AU_PLAY_LOW_FRAMES)) ring.failed = 1;
   uint64_t start = ring.time, duration = realtime ? 3000000000ull : 60000000000ull;
   uint32_t ticks = 0;
   struct au_sink sink = {&ring, ring_query, ring_write, ring_now};
@@ -119,7 +119,7 @@ static int exercise(uint32_t capacity, int realtime) {
     ring.deadline = deadline;
     au_wait_until(&sink, deadline, service, sleep_until);
   }
-  if (ring.underruns || ring.max_sleep > AU_SLEEP_NS || !ring.sleeps || ring.max_write != AU_BATCH) ring.failed = 1;
+  if (ring.underruns || ring.max_sleep > AU_SLEEP_NS || !ring.sleeps || ring.max_write != AU_CHUNK) ring.failed = 1;
   if (ring.written < duration * 48000u / 1000000000ull) ring.failed = 1;
   uint64_t expected_ticks = duration * 10u / GS_TICK_NS10;
   if (!realtime && (ticks < expected_ticks || ticks > expected_ticks + 2u)) ring.failed = 1;
@@ -135,7 +135,7 @@ static int overloaded(void) {
   au_init(&ring.audio, ring.music, sizeof ring.music);
   au_set_playing(&ring.audio, 1);
   service(&ring);
-  uint64_t limit = AU_PLAY_FILL_FRAMES * 2u;
+  uint64_t limit = AU_BATCH;
   if (ring.failed || ring.audio.frames != limit || ring.queued >= AU_PLAY_FILL_FRAMES) {
     puts("overloaded synth did not respect refill budget");
     return 1;
@@ -143,8 +143,70 @@ static int overloaded(void) {
   return 0;
 }
 
+/* A long draw/read cannot yield internally. Probe at the low-water boundary,
+   rather than only immediately after a full refill. Include synth drain. */
+static int stall(int play, int old_policy) {
+  static struct clock_ring ring;
+  memset(&ring, 0, sizeof ring);
+  ring.capacity = 16384; ring.fixed_cost = 4000000; ring.time = ring.last_drain = 1;
+  au_init(&ring.audio, ring.music, sizeof ring.music);
+  au_set_playing(&ring.audio, play);
+  FILE *song = fopen("tests/data/syn.cmf", "rb");
+  if (!song) return 1;
+  uint32_t size = (uint32_t)fread(ring.music, 1, sizeof ring.music, song);
+  fclose(song);
+  if (au_play_loaded(&ring.audio, size)) return 1;
+  for (unsigned i = 0; i < 32 && ring.queued < AU_LOW_FRAMES; i++) service(&ring);
+  uint64_t frames = ring.audio.frames;
+  for (unsigned repeat = 0; repeat < 20; repeat++) {
+    /* The old gameplay policy starts with only 120 ms, even at its target. */
+    ring.queued = old_policy ? 5760u : AU_LOW_FRAMES;
+    if (!old_policy) service(&ring); /* at the threshold: a legal no-op */
+    advance(&ring, ring.time + 150000000u);
+    service(&ring); /* after the heavy work */
+    for (unsigned i = 0; i < 40; i++) {
+      service(&ring);
+      advance(&ring, ring.time + 10000000u);
+    }
+  }
+  int failed = ring.failed || (old_policy ? !ring.underruns : ring.underruns != 0);
+  if (!old_policy && (ring.audio.gap_max_ns < 150000000u || ring.audio.frames <= frames)) failed = 1;
+  printf("150 ms stall %s %s: %u underruns, max gap %llu us, low water %u%s\n",
+         play ? "game" : "list", old_policy ? "120 ms counterexample" : "fixed",
+         ring.underruns, (unsigned long long)(ring.audio.gap_max_ns / 1000u),
+         ring.audio.low_frames, failed ? " FAIL" : "");
+  return failed;
+}
+
+/* Gap counters must include quiet (no-write) polls and list mode; report resets
+   must not erase lifetime headroom sizing. Synthetic time is exact here. */
+static int counters(void) {
+  static struct clock_ring ring;
+  memset(&ring, 0, sizeof ring);
+  ring.capacity = 16384; ring.queued = AU_FILL_FRAMES;
+  ring.time = ring.last_drain = 1;
+  au_init(&ring.audio, ring.music, sizeof ring.music);
+  service(&ring);
+  advance(&ring, ring.time + 280000000u);
+  service(&ring);
+  if (ring.audio.gap_max_ns != 280000000u || ring.audio.gap_peak_ns != 280000000u ||
+      ring.audio.low_frames != 14400u || ring.audio.frames || ring.audio.writes) return 1;
+  ring.audio.gap_max_ns = 0; /* audio_log resets the interval */
+  au_set_playing(&ring.audio, 1);
+  advance(&ring, ring.time + 10000000u);
+  service(&ring);
+  if (ring.audio.gap_max_ns != 10000000u || ring.audio.gap_peak_ns != 280000000u ||
+      ring.audio.low_frames != 14400u || ring.audio.total_ns || ring.audio.eagain) return 1;
+  puts("counters: list/game gaps, interval reset, lifetime low water 14400, quiet polls OK");
+  return 0;
+}
+
 int main(void) {
   int failed = overloaded();
+  failed |= counters();
+  failed |= stall(1, 1);
+  failed |= stall(1, 0);
+  failed |= stall(0, 0);
   failed |= exercise(16384, 0);
   failed |= exercise(4096, 0);
   failed |= exercise(16384, 1);
