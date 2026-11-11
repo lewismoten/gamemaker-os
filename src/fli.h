@@ -17,3 +17,8 @@ int gp_fli_open(struct gp_fli *f, const uint8_t *d, uint32_t n);
    Returns 1 when it changed the palette, 0 otherwise (also when the file has no
    more frame records: the frame shows unchanged). */
 int gp_fli_frame(struct gp_fli *f, uint8_t *px, uint8_t *pal);
+
+/* Optional cooperative loader checkpoint; callback must not reenter decoders.
+   Cleared by the caller after loading. No heap or decoder state is exposed. */
+void gp_decode_hook(void (*hook)(void));
+void gp_decode_checkpoint(void);

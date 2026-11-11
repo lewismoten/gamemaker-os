@@ -223,6 +223,7 @@ extern "C" int gp_open(gp_read_fn read, void *user, const char *gam_name) {
   bblName[0] = cblName[0] = chrName[0] = monName[0] = mblName[0] = sndName[0] = palName[0] = 0;
   haveHero = false;
   int32_t n = read(user, gam_name, gam, GAM_CAP);
+  if (n < 0 || (uint32_t)n > GAM_CAP) return -1;
   if (n >= 2 && !(gam[0] == 'G' && gam[1] == 'M')) {  // an older file: GameClass::Load converts it
     uint32_t k = (uint32_t)n < sizeof oldGam ? (uint32_t)n : sizeof oldGam;
     for (uint32_t i = 0; i < k; i++) oldGam[i] = gam[i];
