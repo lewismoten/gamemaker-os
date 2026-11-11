@@ -71,7 +71,7 @@ class OpenGame(unittest.TestCase):
         for name in ('QHM', 'A_0-Z123', 'DICE'):
             self.assertEqual(send(p, name), FOUND)
         lib().gmos_menu_music.argtypes = [C.c_void_p]
-        self.assertEqual(lib().gmos_menu_music(p.m), 0)
+        self.assertEqual(lib().gmos_menu_music(p.m), 1)
         self.assertEqual(helper.request_keys('dice'), ['53', '32', '23', '46', '18', 'enter'])
         for bad in ('', '../DICE', '123456789', 'A B', 'é'):
             with self.subTest(bad=bad), self.assertRaises(ValueError):

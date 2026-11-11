@@ -80,7 +80,7 @@ void gm_finish(struct gm_menu *m) {
   for (unsigned i = m->count; i--;) {unsigned t = m->games[m->order[i]].cat; m->tab_count[t]++;}
   m->tab = GM_CAT_SANDBOX;
   if (!m->tab_count[m->tab]) for (unsigned t = 0; t < GM_CATS; t++) if (m->tab_count[t]) {m->tab = t; break;}
-  m->view = GM_GRID; m->button = GM_BTN_PLAY; m->shift = 0; m->message[0] = 0; m->background_music = 0;
+  m->view = GM_GRID; m->button = GM_BTN_PLAY; m->shift = 0; m->message[0] = 0; m->background_music = 1;
   m->options_active=m->open_keyboard=0; m->option=0;
   gm_settings_defaults(&m->settings);
   m->open_active = 0; m->open_dir[0] = 0;

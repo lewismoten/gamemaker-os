@@ -91,19 +91,19 @@ class Library(unittest.TestCase):
         self.assertEqual(c().gm_crc32(0, data, len(data)), zlib.crc32(data))
 
 class Keys(unittest.TestCase):
-    def test_background_music_requires_owner_opt_in(self):
+    def test_background_music_default_on_and_m_toggles(self):
         p = many(2)
         c().gmos_menu_music.argtypes = [C.c_void_p]
-        self.assertEqual(c().gmos_menu_music(p.m), 0)
+        self.assertEqual(c().gmos_menu_music(p.m), 1)
         self.assertEqual(p.key(50, 0), NONE)  # M release
         self.assertEqual(p.key(50, 2), NONE)  # M repeat
-        self.assertEqual(c().gmos_menu_music(p.m), 0)
-        self.assertEqual(p.key(50), 6)
         self.assertEqual(c().gmos_menu_music(p.m), 1)
+        self.assertEqual(p.key(50), 6)
+        self.assertEqual(c().gmos_menu_music(p.m), 0)
         p.key('enter')  # the setting also works in details
         self.assertEqual(p.key(50), 6)
-        self.assertEqual(c().gmos_menu_music(p.m), 0)
-        self.assertEqual(c().gmos_menu_music(many(1).m), 0)
+        self.assertEqual(c().gmos_menu_music(p.m), 1)
+        self.assertEqual(c().gmos_menu_music(many(1).m), 1)
 
     def test_grid_moves_and_pages(self):
         p = many(14)

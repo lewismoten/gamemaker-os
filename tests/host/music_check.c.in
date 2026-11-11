@@ -184,7 +184,7 @@ int main(void) {
   usbkbd_init(); gi_reset(&keys);
   assert(usbkbd_hid_mounted(1, 0, true) && usbkbd_hid_mounted(2, 0, true));
   assert(usbkbd_count() == 2 && hidboot_linux_key(0x10) == 50);
-  gm_finish(&menu); assert(!menu.background_music);
+  gm_finish(&menu); assert(menu.background_music);
   /* Both keyboards independently toggle in grid, details, and Options. */
   for (unsigned view = 0; view < 3; view++) for (unsigned d = 1; d <= 2; d++) {
     menu.view = view == 1 ? GM_DETAILS : GM_GRID; menu.options_active = view == 2;

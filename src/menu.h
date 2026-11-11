@@ -39,7 +39,7 @@ struct gm_menu {
   unsigned detail_id;              /* stable while a virtual tab changes */
   unsigned tab_count[GM_CATS];
   unsigned tab, view, button;
-  int background_music;             /* owner setting: off on boot, M toggles in the library */
+  int background_music;             /* owner setting: on by default, M toggles in the library */
   struct gm_settings settings;
   unsigned pos[GM_CATS];            /* the selected card in each tab (remembered) */
   int shift;                        /* a Shift key is held (Shift+Tab) */
