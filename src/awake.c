@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 #include "awake.h"
 #include "session.h"
+#include "settings.h"
 #include <sandbox/syscall.h>
 static int supported;
 static uint64_t token;
@@ -8,6 +9,11 @@ static uint64_t token;
 void awake_init(uint32_t major, uint32_t minor) {
   supported = major == 1 && minor >= 11;
   token = 0;
+}
+int32_t awake_configure(const struct gm_settings *settings) {
+  if (!supported) return 0;
+  return sbx_power_timeouts(settings->power_saving ? 60 : 0,
+                            gm_settings_blank_seconds(settings));
 }
 int32_t awake_set(int watching) {
   if (!supported) return 0;

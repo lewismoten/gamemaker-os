@@ -380,11 +380,16 @@ void gm_draw(uint16_t *px, uint32_t stride, const struct gm_menu *m, const uint8
     search_keyboard(m);
   }
   if(m->options_active) {
-    static const char *const labels[GM_OPTIONS]={"Back to library","Favorite / Unfavorite","High scores","Music","Open by folder name","Quit Game-Maker OS"};
-    box(240,100,480,360,12,2,C_GOLD,C_PANEL,1);
-    text0(F8,268,118,"Options",C_GOLD);
-    for(unsigned i=0;i<GM_OPTIONS;i++)
-      button(268,150+(int32_t)i*48,424,i==GM_OPT_MUSIC?(m->background_music?"Music: On":"Music: Off"):labels[i],0,m->option==i);
+    static const char *const labels[GM_OPTIONS]={"Back to library","Favorite / Unfavorite","High scores","Music","Open by folder name","Quit Game-Maker OS","Screen off after","Power saving"};
+    box(240,64,480,404,12,2,C_GOLD,C_PANEL,1);
+    text0(F8,268,82,"Options",C_GOLD);
+    for(unsigned i=0;i<GM_OPTIONS;i++) {
+      const char *label=labels[i];
+      if(i==GM_OPT_MUSIC) label=m->background_music?"Music: On":"Music: Off";
+      if(i==GM_OPT_SCREEN) label=gm_settings_screen_label(&m->settings);
+      if(i==GM_OPT_POWER) label=m->settings.power_saving?"Power saving: On":"Power saving: Off";
+      button(268,120+(int32_t)i*42,424,label,0,m->option==i);
+    }
   }
   footer(m);
 }

@@ -9,6 +9,7 @@
 #include "gam.h"
 #include "library.h"
 #include "collections.h"
+#include "settings.h"
 #define GM_MAX_GAMES 256u
 #define GM_COLS 4u
 #define GM_PAGE 8u /* cards on a page: four across, two down */
@@ -25,7 +26,7 @@ struct gm_game {
   uint32_t crc; int32_t year, course;
   uint8_t cat; int8_t pic;          /* pic: 0 not looked for yet, 1 found, -1 none */
 };
-enum {GM_OPT_BACK, GM_OPT_FAVORITE, GM_OPT_SCORES, GM_OPT_MUSIC, GM_OPT_OPEN, GM_OPT_QUIT, GM_OPTIONS};
+enum {GM_OPT_BACK, GM_OPT_FAVORITE, GM_OPT_SCORES, GM_OPT_MUSIC, GM_OPT_OPEN, GM_OPT_QUIT, GM_OPT_SCREEN, GM_OPT_POWER, GM_OPTIONS};
 struct gm_menu {
   struct gm_game games[GM_MAX_GAMES];
   unsigned count;
@@ -39,6 +40,7 @@ struct gm_menu {
   unsigned tab_count[GM_CATS];
   unsigned tab, view, button;
   int background_music;             /* owner setting: off on boot, M toggles in the library */
+  struct gm_settings settings;
   unsigned pos[GM_CATS];            /* the selected card in each tab (remembered) */
   int shift;                        /* a Shift key is held (Shift+Tab) */
   int options_active, open_keyboard; unsigned option;
@@ -46,7 +48,7 @@ struct gm_menu {
   char open_dir[10];                /* ninth character makes an overlong name fail */
   char message[GM_MESSAGE_MAX + 1]; /* footer line; empty shows the key help */
 };
-enum {GM_NONE, GM_MOVED, GM_CHOSEN, GM_QUIT, GM_RESYNC, GM_SCORES, GM_MUSIC, GM_OPEN_FOUND, GM_OPEN_MISSING, GM_OPEN_PLAY, GM_FAVORITE}; /* GM_SCORES: H, the selected game's Top Ten */
+enum {GM_NONE, GM_MOVED, GM_CHOSEN, GM_QUIT, GM_RESYNC, GM_SCORES, GM_MUSIC, GM_OPEN_FOUND, GM_OPEN_MISSING, GM_OPEN_PLAY, GM_FAVORITE, GM_SETTINGS}; /* GM_SCORES: H, the selected game's Top Ten */
 /* Add a game (dir is its folder's name, gam its .GAM file, title from that
    file, crc the .GAM's CRC-32); false when the list is full. */
 bool gm_add(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc);

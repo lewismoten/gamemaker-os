@@ -19,7 +19,8 @@ The gap column records the initial audit and the resolution in this change.
 | Recent | Reach through tabs even when empty. Arrows select; OK opens details. A launched game moves to the front when play begins. | Already remote accessible. The board owns recording/persisting launches; host tests simulate that callback. |
 | Open by name | Back on cards → Options → Open by folder name. Arrows/OK enter the DOS folder alias; Delete edits, Clear resets, Done opens details; Back cancels. OK on Play then launches. | Previously `/`, typed letters and Enter only. Added the shared letter grid with digits, spaces, hyphen and underscore (eight-character alias limit). A miss reports “not found” and preserves selection. This is the folder alias; Search finds display titles/company names. |
 | Game details | Arrows choose Play, Back, Favorite, High scores, Music. OK presses; Back returns to originating cards/results. | F/H/M already had button alternatives. Existing keyboard shortcuts remain available. Idle demo previews stop on any press; folder entry suppresses previews. |
-| Options / music setting | Back on cards, or Up from tabs. Arrows choose Back to library, Favorite, High scores, Music, Open by folder name, Quit. OK activates; Back cancels. | New visible alternatives to F/H/M/Q and `/`. Music starts off and is a session setting. Empty-library Options still allows Music and Quit; game-specific commands do nothing without a selection. |
+| Options / music setting | Back on cards, or Up from tabs. Arrows choose Back to library, Favorite, High scores, Music, Open by folder name, Quit, Screen off after, Power saving. OK activates; Back cancels. | New visible alternatives to F/H/M/Q and `/`. Music starts off and is a session setting. Empty-library Options still allows Music and Quit; game-specific commands do nothing without a selection. |
+| Native power settings | In Options, arrows select Screen off after or Power saving. OK cycles 5 / 10 / 30 min / Never or toggles On / Off while keeping focus; Back returns to the library. | Saved beside Favorites/Recent in `GMOS/SETTINGS.DAT` and applied immediately and at boot via call 23 on ABI 1.11+. Older kernels quietly skip the call. Available with an empty library too. |
 | Empty/unreadable library diagnostics | Back opens Options; Back cancels it. Options → Quit exits. | Previously only Q could exit; diagnostics now advertise Back. |
 | DOS menu before play | Up/Down chooses Play, Instructions, Storyline, Credits, High scores, Quit; OK activates. Back returns to library details. | Already accessible. DOS Quit also returns to library details. |
 | Title, instructions, story, credits, level pages | OK advances timed/key-wait pages (after their transition). Back returns to DOS menu before play; during a running game it finishes the session through scores/menu. | Already accessible. Missing optional pages show a message then return; Back also returns. |
@@ -45,8 +46,11 @@ the host suite drives the production consumers of translated key events.
 `tests/test_remote_only.py` uses only arrows, Enter and Esc for tab traversal,
 Search, Favorites, Recent, options, settings/music, open-by-name editing,
 miss/cancel, alias punctuation, empty-library quit, details/Play, DOS pages,
-scores and pause/return. `tests/test_collections.py` additionally types DICE
-through the Search grid and exercises paging. `tests/host/hiscreen.c` enters,
+scores and pause/return. `tests/test_settings.py` runs `settings_check` against
+the production native menu, persistence codec and SDK call-23 records, including
+every setting pair, Never, restart, old kernels and failed saves.
+`tests/test_collections.py` additionally types DICE through the Search grid and
+exercises paging. `tests/host/hiscreen.c` enters,
 edits and commits DICE using only remote keys. `tests/host/saveplay.c` scenario
 7 clears/names/saves a slot with remote keys; `test_dosmenu.py` covers pause
 Save/Load requests. `test_app_exit.py` drives Settings controls and Back through

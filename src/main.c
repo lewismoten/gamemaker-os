@@ -870,7 +870,10 @@ static int gmos_main(const sbx_startup *start) {
     if(e) say("GMOS Favorites read failed; using an empty list");
     e=gm_list_load(&menu.recent,&save_sbx_ops,1);
     if(e) say("GMOS Recent read failed; using an empty list");
+    e=gm_settings_load(&menu.settings,&save_sbx_ops);
+    if(e) say("GMOS Settings read failed; using defaults");
   }
+  if (awake_configure(&menu.settings)) say("GMOS power timeouts not applied");
   gm_refresh(&menu);
   splash_tick(1); {char l[64], *q = put(l, "GMOS splash longest gap between checkpoints "); q = num(q, splash_gap_ms); put(q, " ms"); say(l);} splash_px = 0; beat_hook = 0; /* a last step, so a quick load still moves once */
   p = put(line, "GMOS "); p = num(p, menu.count); p = put(p, menu.count == 1 ? " game" : " games"); put(p, " in /sd/GAMES"); say(line);
@@ -933,6 +936,13 @@ static int gmos_main(const sbx_startup *start) {
       }
       if (a == GM_FAVORITE) {
         if (abi_minor<7 || gm_list_save(&menu.favorites,&save_sbx_ops,0)) put(menu.message,"Changes not saved");
+        redraw=1;
+      }
+      if (a == GM_SETTINGS) {
+        int saved = abi_minor>=7 && !gm_settings_save(&menu.settings,&save_sbx_ops);
+        int applied = !awake_configure(&menu.settings);
+        put(menu.message, !saved ? "Changes not saved" :
+            !applied ? "Power timeouts not applied" : "Settings saved");
         redraw=1;
       }
       if (a == GM_MOVED) redraw = 1;
