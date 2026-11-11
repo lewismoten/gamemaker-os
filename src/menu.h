@@ -25,6 +25,7 @@ struct gm_game {
   uint32_t crc; int32_t year, course;
   uint8_t cat; int8_t pic;          /* pic: 0 not looked for yet, 1 found, -1 none */
 };
+enum {GM_OPT_BACK, GM_OPT_FAVORITE, GM_OPT_SCORES, GM_OPT_MUSIC, GM_OPT_OPEN, GM_OPT_QUIT, GM_OPTIONS};
 struct gm_menu {
   struct gm_game games[GM_MAX_GAMES];
   unsigned count;
@@ -40,6 +41,7 @@ struct gm_menu {
   int background_music;             /* owner setting: off on boot, M toggles in the library */
   unsigned pos[GM_CATS];            /* the selected card in each tab (remembered) */
   int shift;                        /* a Shift key is held (Shift+Tab) */
+  int options_active, open_keyboard; unsigned option;
   int open_active;                  /* slash starts a folder-name request */
   char open_dir[10];                /* ninth character makes an overlong name fail */
   char message[GM_MESSAGE_MAX + 1]; /* footer line; empty shows the key help */
@@ -59,7 +61,7 @@ void gm_finish(struct gm_menu *m);
    top row focuses tabs (Left/Right, Enter/Down). Search accepts up to 24
    characters, filters title/company live; Esc clears then leaves. F toggles
    Favorite in grid/details. Enter opens the
-   details, Q quits (Esc stays in the library), H shows the selected game's Top Ten. Details: Left/Right/Tab pick a button, Enter or
+   details, Q quits (Esc opens Options in the library), H shows the selected game's Top Ten. Details: Left/Right/Tab pick a button, Enter or
    Space presses it (Play chooses the game), H shows the Top Ten, Esc goes back. SYN_DROPPED asks
    the caller to resynchronize. Slash starts/resets a DOS folder request in
    either view: letters/digits/-/_ type, Backspace edits, Esc cancels, Enter

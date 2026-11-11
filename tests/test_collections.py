@@ -109,7 +109,7 @@ class Collections(unittest.TestCase):
         p.keys('down','down','down');self.assertEqual(p.key('enter'),5)
         p.key('down');self.assertEqual(p.key('enter'),6)
         self.assertEqual(p.key('enter',2),0)
-        p.key('esc');self.assertEqual(p.key('esc'),0)
+        p.key('esc');self.assertEqual(p.key('esc'),1)
         p=Page()
         for i in range(19):p.add(f'G{i}',f'Game {i:02}')
         p.finish();p.keys('down','down');self.assertEqual(p.pos,8)

@@ -81,6 +81,7 @@ void gm_finish(struct gm_menu *m) {
   m->tab = GM_CAT_SANDBOX;
   if (!m->tab_count[m->tab]) for (unsigned t = 0; t < GM_CATS; t++) if (m->tab_count[t]) {m->tab = t; break;}
   m->view = GM_GRID; m->button = GM_BTN_PLAY; m->shift = 0; m->message[0] = 0; m->background_music = 0;
+  m->options_active=m->open_keyboard=0; m->option=0;
   m->open_active = 0; m->open_dir[0] = 0;
   m->query[0] = 0; m->search_active = m->tabs_focus = m->search_keyboard = 0; m->keyboard_pos=0;
   gm_refresh(m);
@@ -180,10 +181,16 @@ int gm_open_dir(struct gm_menu *m, const char *dir) {
 /* Linux key codes, independent of keyboard layout; requests use DOS aliases.
  * Consume command letters before shortcuts such as Q, H and M. */
 static int open_event(struct gm_menu *m, uint16_t code) {
+  if(m->open_keyboard && (code==103 || code==108 || code==105 || code==106 || code==28)) {
+    int c=osk_press(&m->keyboard_pos,code,1);
+    if(c==13) {m->open_active=m->open_keyboard=0;return gm_open_dir(m,m->open_dir);}
+    if(c)osk_edit(m->open_dir,8,c);
+    return GM_MOVED;
+  }
   static const char letters[] = "QWERTYUIOPASDFGHJKLZXCVBNM";
   static const uint8_t codes[] = {16,17,18,19,20,21,22,23,24,25,30,31,32,33,34,35,36,37,38,44,45,46,47,48,49,50};
   unsigned n = 0; while (m->open_dir[n]) n++;
-  if (code == 1) {m->open_active = 0; m->message[0] = 0; return GM_MOVED;}
+  if (code == 1) {m->open_active=m->open_keyboard=0; m->message[0] = 0; return GM_MOVED;}
   if (code == 28) {
     int play = m->shift; m->open_active = 0;
     int result = gm_open_dir(m, m->open_dir);
@@ -243,11 +250,28 @@ static int search_event(struct gm_menu *m, uint16_t code, int32_t value) {
   m->pos[GM_CAT_SEARCH]=0;gm_refresh(m);return GM_MOVED;
 }
 int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
-  if (type == 0 && code == 3) {m->open_active = m->search_active = m->tabs_focus = m->search_keyboard = 0; m->message[0] = 0; return GM_RESYNC;}  /* EV_SYN, SYN_DROPPED */
+  if (type == 0 && code == 3) {m->options_active = m->open_keyboard = m->open_active = m->search_active = m->tabs_focus = m->search_keyboard = 0; m->message[0] = 0; return GM_RESYNC;}  /* EV_SYN, SYN_DROPPED */
   if (type != 1) return GM_NONE;
   if (code == 42 || code == 54) {m->shift = value != 0; return GM_NONE;} /* KEY_LEFTSHIFT, KEY_RIGHTSHIFT */
   if (!value) return GM_NONE;                    /* key presses and repeats only */
+  if(m->options_active) {
+    if(code==1 && value==1) {m->options_active=0;return GM_MOVED;}
+    if(code==103 || code==105) {m->option=(m->option+GM_OPTIONS-1)%GM_OPTIONS;return GM_MOVED;}
+    if(code==108 || code==106) {m->option=(m->option+1)%GM_OPTIONS;return GM_MOVED;}
+    if(code!=28 || value!=1)return GM_NONE;
+    unsigned option=m->option;m->options_active=0;
+    if(option==GM_OPT_FAVORITE) {int r=gm_favorite(m);return r==GM_NONE?GM_MOVED:r;}
+    if(option==GM_OPT_SCORES)return gm_selected(m)?GM_SCORES:GM_MOVED;
+    if(option==GM_OPT_MUSIC) {m->background_music=!m->background_music;return GM_MUSIC;}
+    if(option==GM_OPT_QUIT)return GM_QUIT;
+    if(option==GM_OPT_OPEN) {
+      m->search_active=m->tabs_focus=m->search_keyboard=0;
+      m->open_active=m->open_keyboard=1;m->keyboard_pos=0;m->open_dir[0]=m->message[0]=0;
+    }
+    return GM_MOVED;
+  }
   if (code == 53 && value == 1) {
+    m->open_keyboard=0;
     m->search_active=m->tabs_focus=m->search_keyboard=0; m->open_active = 1; m->open_dir[0] = 0;
     copy(m->message, "Open game: ", GM_MESSAGE_MAX); return GM_MOVED;
   }
@@ -255,6 +279,7 @@ int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
   if (m->view==GM_GRID && (code==15 || code==26 || code==27)) return next_tab(m,code==26 || (code==15 && m->shift)?-1:1);
   if (m->search_active) return search_event(m,code,value);
   if (m->view==GM_GRID && m->tabs_focus) {
+    if(code==103) {m->options_active=1;m->option=0;return GM_MOVED;}
     if (code==105 || code==106) return next_tab(m,code==105?-1:1);
     if (code==108 || code==28 || code==1) {
       m->tabs_focus=0; m->search_active=m->tab==GM_CAT_SEARCH;
@@ -290,6 +315,7 @@ int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
   if (r != GM_NONE || value != 1) return r;      /* no repeats past here */
   if (code == 28 && gm_selected(m)) {m->detail_id=(unsigned)(gm_selected(m)-m->games); m->view = GM_DETAILS; m->button = GM_BTN_PLAY; m->message[0] = 0; return GM_MOVED;} /* KEY_ENTER */
   if (code == 35 && gm_selected(m)) return GM_SCORES; /* KEY_H */
-  if (code == 16) return GM_QUIT;   /* Q quits; Back/Esc stays in the library. */
+  if(code==1) {m->options_active=1;m->option=0;return GM_MOVED;}
+  if (code == 16) return GM_QUIT;   /* Q quits; Back/Esc opens Options. */
   return GM_NONE;
 }

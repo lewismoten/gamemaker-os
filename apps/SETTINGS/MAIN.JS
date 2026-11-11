@@ -29,7 +29,7 @@ box('text', 'preview-title', 440, 168, 480, 27, 'LIVE PREVIEW');
 const preview = box('text', 'preview', 440, 224, 480, 27, 'Night theme / hints on');
 const hint = box('text', 'hint', 440, 280, 480, 27, 'Enter or Space changes a setting.');
 box('text', 'save-gap', 40, 424, 880, 27, 'Memory only: no file-write API; restart resets settings.');
-box('text', 'controls', 40, 488, 880, 27, 'Arrows: focus   Enter/Space: activate   Reset: restore defaults');
+box('text', 'controls', 40, 488, 880, 27, 'Arrows: focus   Enter: activate   Esc: back');
 // State is app-owned; updating it repaints the controls and the live preview.
 const defaults = { paper: false, hints: true };
 let state = { ...defaults };
@@ -50,9 +50,9 @@ function render() {
 themeButton.addEventListener('click', () => { state.paper = !state.paper; render(); });
 hintsButton.addEventListener('click', () => { state.hints = !state.hints; render(); });
 resetButton.addEventListener('click', () => { state = { ...defaults }; render(); });
-// Native arrow focus and Enter/Space clicks; Q demonstrates the exit API.
+// Native arrow focus and Enter/Space clicks; Esc returns to the picker.
 document.addEventListener('keydown', event => {
-  if (event.code === 'KeyQ' && !event.repeat) sys.exit(0);
+  if ((event.code === 'KeyQ' || event.key === 'Escape') && !event.repeat) sys.exit(0);
 });
 render();
 themeButton.focus();

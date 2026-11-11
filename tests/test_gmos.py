@@ -161,7 +161,7 @@ class Keys(unittest.TestCase):
         p.key('enter'); self.assertEqual(p.key('space'), CHOSEN)
     def test_quit_resync_and_empty(self):
         p = many(2)
-        self.assertEqual(p.key('esc'), NONE); self.assertEqual(p.key('q'), QUIT); self.assertEqual(p.key('space'), NONE)
+        self.assertEqual(p.key('esc'), MOVED); self.assertEqual(p.key('esc'), MOVED); self.assertEqual(p.key('q'), QUIT); self.assertEqual(p.key('space'), NONE)
         self.assertEqual(c().gm_event(p.m, 0, 3, 0), RESYNC); self.assertEqual(c().gm_event(p.m, 0, 0, 0), NONE)
         self.assertEqual(c().gm_event(p.m, 3, 0, 100), NONE)                                  # axes do nothing yet
         e = page()

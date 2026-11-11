@@ -822,11 +822,11 @@ static int load_next_thumb(void) {
 }
 /* Draws the games page and presents it; once every card on it is drawn, logs the frame's CRC (the host tests render the same frame). */
 static void show_list(uint16_t *px) {
-  if (!menu.count) { /* an empty or unreadable library: the OS says why (bootart.h) */
+  if (!menu.count && !menu.options_active && !menu.open_keyboard) { /* an empty or unreadable library: the OS says why (bootart.h) */
     static char l3[40], l5[48]; char *p;
     p = put(l3, "SCAN NOTES: "); num(p, scan_detail_count); p = put(l5, "INDEX: "); put(p, no_index ? "NO LIBRARY.JSL FOUND" : "READ");
     const char *const why[] = {"NO GAMES FOUND.", "LOOKED IN /SD/GAMES AND /SD/POCKET FOR", "FOLDERS WITH A .GAM, AND .GMP, .ZIP, .EXE FILES.", l3, l5,
-                               "CHECK THE CARD IS IN, AND COPY GAMES TO /SD/GAMES."};
+                               "CHECK THE CARD IS IN, AND COPY GAMES TO /SD/GAMES.", "BACK/ESC: OPTIONS (INCLUDING QUIT)."};
     ba_diag(px, GM_W, why, sizeof why / sizeof why[0]);
     sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H); say("GMOS library diagnostics"); return;
   }
@@ -909,7 +909,7 @@ static int gmos_main(const sbx_startup *start) {
       else {
         doing = "list";
         const struct gm_game *g = gm_selected(&menu);
-        if (!menu.open_active && menu.view == GM_DETAILS && g && demo_none != (int)(g - menu.games) && gs_demo_idle_due(demo_idle, clock_ns()) && abi_minor >= 1) demo_start(px, g);
+        if (!menu.open_active && !menu.options_active && menu.view == GM_DETAILS && g && demo_none != (int)(g - menu.games) && gs_demo_idle_due(demo_idle, clock_ns()) && abi_minor >= 1) demo_start(px, g);
         else audio_sleep_until(clock_ns() + 10000000ull);
       }
       continue;

@@ -239,16 +239,18 @@ static void footer(const struct gm_menu *m) {
   fill(0, FOOT_Y, GM_W, 1, C_LINE2);
   int32_t x = 16, y = FOOT_Y + 10;
   if (m->message[0]) text0(F8,x,y,m->message,C_GOLD);
-  else if (m->search_active) {
+  else if(m->options_active || m->open_keyboard) {
+    keycap(&x,y,"Arrows","choose");keycap(&x,y,"OK/Enter","select");keycap(&x,y,"Back/Esc","cancel");
+  } else if (m->search_active) {
     if(m->search_keyboard) {keycap(&x,y,"Arrows","choose a letter");keycap(&x,y,"OK/Enter","type / Done for results");}
     else {keycap(&x,y,"Type","title or company");keycap(&x,y,"Arrows","choose");keycap(&x,y,"OK/Enter","details");}
     keycap(&x,y,"Back/Esc","clear / leave");
   } else if (m->tabs_focus) {
-    keycap(&x,y,"Left/Right","category");keycap(&x,y,"OK/Down","open");keycap(&x,y,"Back/Esc","back");
+    keycap(&x,y,"Left/Right","category");keycap(&x,y,"OK/Down","open");keycap(&x,y,"Up","Options");keycap(&x,y,"Back/Esc","back");
   } else if (m->view==GM_DETAILS) {
     keycap(&x,y,"Arrows","choose button");keycap(&x,y,"OK/Enter","press");keycap(&x,y,"F","Favorite");keycap(&x,y,"Back/Esc","back");
   } else {
-    keycap(&x,y,"Arrows","choose / Up to tabs");keycap(&x,y,"OK/Enter","open");keycap(&x,y,"F","Favorite");keycap(&x,y,"Back/Esc","stay here");
+    keycap(&x,y,"Arrows","choose / Up to tabs");keycap(&x,y,"OK/Enter","open");keycap(&x,y,"F","Favorite");keycap(&x,y,"Back/Esc","Options");
   }
   x=16;y=FOOT_Y+30;
   keycap(&x,y,"Tab / [ ]","category");keycap(&x,y,"/","folder name");
@@ -260,12 +262,12 @@ static void footer(const struct gm_menu *m) {
 }
 static void search_keyboard(const struct gm_menu *m) {
   box(16,304,928,180,8,1,C_LINE,C_PANEL,1);
-  text0(F5,28,314,"Search: choose letters, then Done to browse results. You can also type on a keyboard.",C_MUTED);
-  for(unsigned k=0;k<40;k++) {
+  text0(F5,28,314,m->open_keyboard?"Choose the folder alias, then Done to open. Back cancels.":"Search: choose letters, then Done to browse results.",C_MUTED);
+  for(unsigned k=0;k<42;k++) {
     int32_t x,y,w;
     const char *label; char letter[2]={0,0};
     if(k<36) {x=28+(int32_t)(k%9)*101;y=330+(int32_t)(k/9)*29;w=94;letter[0]=GM_SEARCH_KEYS[k];label=letter;}
-    else {x=28+(int32_t)(k-36)*227;y=448;w=220;label=osk_label(k,letter);}
+    else {x=28+(int32_t)(k-36)*151;y=448;w=144;label=osk_label(k,letter);}
     int on=k==m->keyboard_pos;
     box(x,y,w,24,4,1,on?C_GOLD:C_LINE,on?C_BLUE:C_PILL,1);
     text0(F8,x+(w-width(F8,label,len(label),1))/2,y+8,label,C_TEXT);
@@ -371,6 +373,19 @@ void gm_draw(uint16_t *px, uint32_t stride, const struct gm_menu *m, const uint8
   header();
   if (m->view == GM_DETAILS) details(m, big, big_pal);
   else {tabs(m); grid(m);}
+  if(m->open_keyboard) {
+    box(16,85,928,28,5,1,C_GOLD,C_PANEL,1);
+    text0(F8,28,95,"Open folder (DOS alias):",C_TEXT);
+    text0(F8,270,95,m->open_dir,C_GOLD);
+    search_keyboard(m);
+  }
+  if(m->options_active) {
+    static const char *const labels[GM_OPTIONS]={"Back to library","Favorite / Unfavorite","High scores","Music","Open by folder name","Quit Game-Maker OS"};
+    box(240,100,480,360,12,2,C_GOLD,C_PANEL,1);
+    text0(F8,268,118,"Options",C_GOLD);
+    for(unsigned i=0;i<GM_OPTIONS;i++)
+      button(268,150+(int32_t)i*48,424,i==GM_OPT_MUSIC?(m->background_music?"Music: On":"Music: Off"):labels[i],0,m->option==i);
+  }
   footer(m);
 }
 void gm_picture_rect(uint32_t *x, uint32_t *y, uint32_t *w, uint32_t *h) {*x = PIC_X; *y = PIC_Y; *w = 640; *h = 400;}

@@ -230,10 +230,11 @@ setTimeout(() => {
   sys.exit(0);
 }, 750);
 ''', '100:108:1,110:108:0,200:108:1,210:108:0,300:105:1,310:105:0,'
-     '400:106:1,410:106:0,500:28:1,510:28:0,600:1:1,610:1:0,700:14:1,710:14:0', prepare)
+     '400:106:1,410:106:0,500:28:1,510:28:0,600:1:1,610:1:0,700:1:1,710:1:0', prepare)
         for expected in ['page=entry-5', 'empty=Empty folder. Esc: parent.',
-                         'restored=entry-6', 'root=Already at card root /sd.']:
+                         'restored=entry-6']:
             self.assertIn('JS FILES TEST ' + expected, out)
+        self.assertNotIn('JS FILES TEST root=', out)  # Back at root exits before the timer.
 
     def test_read_errors_other_files_and_long_paths(self):
         def prepare(root):
@@ -293,7 +294,7 @@ requestAnimationFrame(observe);
 
 
 class Settings(ExamplePage):
-    def test_keyboard_toggles_preview_and_reset(self):
+    def test_remote_toggles_preview_and_reset(self):
         out = self.probe('SETTINGS', '''
 function sample(label) {
   console.log('SETTINGS TEST ' + label + ' theme=' + document.getElementById('theme').textContent);
@@ -303,7 +304,7 @@ function sample(label) {
 }
 setTimeout(() => sample('changed'), 450);
 setTimeout(() => { sample('reset'); sys.exit(0); }, 750);
-''', '100:28:1,105:28:2,110:28:0,200:108:1,210:108:0,300:57:1,305:57:2,310:57:0,'
+''', '100:28:1,105:28:2,110:28:0,200:108:1,210:108:0,300:28:1,305:28:2,310:28:0,'
      '500:108:1,510:108:0,600:28:1,610:28:0')
         for expected in ['changed theme=Theme: Paper', 'changed hints=Hints: Off',
                          'changed preview=Paper theme / hints off', 'changed hint=Hints are off.',
