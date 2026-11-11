@@ -13,6 +13,7 @@
  * or Q on the grid quits. */
 #include <sandbox/syscall.h>
 #include "gam.h"
+#include "input.h"
 #include "hiscreen.h"
 #include "hisload.h"
 #include "menu.h"
@@ -34,6 +35,7 @@ static uint64_t log_fd, fb_fd, in_fd;
 static uint32_t generation, abi_minor;
 static uint64_t beat;
 static int have_input;
+static struct gi_keys list_keys;
 static struct gm_menu menu;
 /* Menu labels remain DOS-sized; exact UTF-8 locations are separate. Kind 0
  * is a loose folder, 1 a GMP volume set, 2 an in-place ZIP (including SFX). */
@@ -270,12 +272,14 @@ static void open_input(void) {
   sbx_input_info info; sbx_input_state st;
   if (sbx_open("/dev/input/event0", 17, SBX_O_RDONLY | SBX_O_NONBLOCK, &in_fd)) return;
   have_input = 1;
+  gi_reset(&list_keys); menu.shift = 0;
   char line[96], *p = put(line, "GMOS input event0");
   if (!sbx_input_query(in_fd, &info)) {
     p = put(p, info.flags & SBX_INPUT_SYNTHETIC ? " synthetic" : ""); p = put(p, ", queue "); p = num(p, (uint32_t)info.queue_records);
   }
   say(line);
-  sbx_input_state_get(in_fd, &st); /* start from the current state and an empty queue */
+  if (sbx_input_state_get(in_fd, &st)) {sbx_close(in_fd); have_input = 0;}
+  /* Start from an empty queue; keys held across attachment are not presses. */
 }
 static uint16_t *splash_px; static uint64_t splash_t0, splash_last, splash_call; static uint32_t splash_gap_ms; /* the loading bars (bootart.h) */
 /* Called between files and games (the heartbeat): the clock picks the highlight's place, so uneven calls skip shades
@@ -530,9 +534,9 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
   big_id = -1;
   int back = !gs_scores_picture(&game, open, read, user, gam, back_px, back_pal);
   if (screen_mode(PLAY_W, PLAY_H, SBX_FB_XRGB8888)) return;
-  static sbx_input_event ev[16]; uint64_t got;
+  sbx_input_event ev[GI_BATCH]; uint32_t count;
   sbx_input_state ist; int have_ist = have_input && !sbx_input_state_get(in_fd, &ist); /* also empties the queue */
-  while (have_input && !sbx_read(in_fd, ev, sizeof ev, &got)) {} /* keys left from the game are not an answer */
+  for (unsigned batch = 0; batch < GI_DRAIN && have_input && !gi_read(in_fd, ev, &count); batch++) {} /* keys left from the game are not an answer */
   hs_start(&hsc, &t, score, clock_ns());
   if (have_ist) hs_modifiers(&hsc, ist.keys); /* a Shift or Ctrl already down */
   p = put(line, "GMOS Top Ten "); p = put(p, stem); put(p, hsc.stage == HS_NAME ? ": name entry" : ": list"); say(line);
@@ -547,8 +551,8 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
     uint64_t now = clock_ns(), wake = hs_wake(&hsc, now); if (wake > now + (aud_on ? 10000000ull : 500000000ull)) wake = now + (aud_on ? 10000000ull : 500000000ull);
     audio_sleep_until(wake);
     int32_t s = -SBX_EAGAIN;
-    while (have_input && !(s = sbx_read(in_fd, ev, sizeof ev, &got))) {
-      for (uint32_t i = 0; i < got / sizeof ev[0] && !(r & HS_DONE); i++) {
+    for (unsigned batch = 0; batch < GI_DRAIN && have_input && !(s = gi_read(in_fd, ev, &count)); batch++) {
+      for (uint32_t i = 0; i < count && !(r & HS_DONE); i++) {
         int a = hs_event(&hsc, ev[i].type, ev[i].code, ev[i].value, clock_ns());
         if (a & HS_COMMIT) {
           int w = hl_save(&save_sbx_ops, key, stem, &hsc.t);
@@ -558,7 +562,7 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
       }
       if (r & HS_DONE) break;
     }
-    if (have_input && s != -SBX_EAGAIN) {sbx_close(in_fd); have_input = 0; say("GMOS input removed");}
+    if (have_input && s && s != -SBX_EAGAIN) {sbx_close(in_fd); have_input = 0; gi_reset(&list_keys); menu.shift = 0; say("GMOS input removed");}
     if (!have_input) open_input();
     r |= hs_step(&hsc, clock_ns());
   }
@@ -623,7 +627,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   if (!gamname[0] || !read || gs_launch(&game, read, user, gamname, clock_ns())) {bg_return("cannot play"); say("GMOS cannot play it"); return;}
   if (screen_mode(PLAY_W, PLAY_H, SBX_FB_XRGB8888)) {bg_return("no screen"); return;}
   ge_play(g->title);
-  static sbx_input_event ev[16]; uint64_t got;
+  sbx_input_event ev[GI_BATCH]; uint32_t count;
   uint32_t frames = 0, step_max = 0, draw_max = 0, late_max = 0, logged = 0, shown = 0;
   uint64_t since = clock_ns();
   struct play_perf perf[PF_COUNT] = {{0, 0, 0}};
@@ -684,8 +688,8 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     }
     audio_sleep_until(wake);
     int32_t s = -SBX_EAGAIN;
-    while (have_input && !(s = sbx_read(in_fd, ev, sizeof ev, &got))) {
-      for (uint32_t i = 0; i < got / sizeof ev[0]; i++) {
+    for (unsigned batch = 0; batch < GI_DRAIN && have_input && !(s = gi_read(in_fd, ev, &count)); batch++) {
+      for (uint32_t i = 0; i < count; i++) {
         if (ev[i].type == 0 && ev[i].code == 3) {sbx_input_state st; sbx_input_state_get(in_fd, &st); gp_release_all(); say("GMOS input resync after SYN_DROPPED"); break;}
         if (sp_on || (ev[i].type == 1 && ev[i].value == 1 && (ev[i].code == 63 || ev[i].code == 64) && sp_ok && game.phase == GS_PLAY && !game.demo)) {
           /* PLAYGAME's F5 (SaveGame) and F6 (LoadGame): the play waits while the screen is up (PLAYGAME.C 1609-1613) */
@@ -717,7 +721,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
       if (r & GS_EXIT) break;
     }
     if (r & GS_EXIT) break;
-    if (have_input && s != -SBX_EAGAIN) {sbx_close(in_fd); have_input = 0; gp_release_all(); say("GMOS input removed");}
+    if (have_input && s && s != -SBX_EAGAIN) {sbx_close(in_fd); have_input = 0; gp_release_all(); say("GMOS input removed");}
     if (!have_input) open_input();
     uint64_t t = clock_ns();
     if (game.phase == GS_PLAY) {uint64_t due = gs_wake(&game, t); if (t > due) {uint32_t l = (uint32_t)((t - due) / 1000u); if (l > late_max) late_max = l;}}
@@ -887,7 +891,7 @@ static int gmos_main(const sbx_startup *start) {
   cache_flush(); /* the scan cache, now that the list is up (the kernel queues key presses meanwhile) */
   open_input();
   if (!have_input) say("GMOS no input yet; trying again");
-  static sbx_input_event ev[16]; uint64_t got;
+  sbx_input_event ev[GI_BATCH]; uint32_t count;
   audio_open(); doing = "list"; uint64_t list_log = clock_ns();
   for (;;) {
     awake_set(demo_on);
@@ -900,7 +904,7 @@ static int gmos_main(const sbx_startup *start) {
     if (!have_input) {
       open_input();
     }
-    int32_t s = have_input ? sbx_read(in_fd, ev, sizeof ev, &got) : -SBX_EAGAIN;
+    int32_t s = have_input ? gi_read(in_fd, ev, &count) : -SBX_EAGAIN;
     if (s == -SBX_EAGAIN) { /* nothing pressed: draw the next card's title screen, or look again in 10 ms */
       if (demo_on) {
         if (demo_run(px)) show_list(px);
@@ -917,11 +921,12 @@ static int gmos_main(const sbx_startup *start) {
       }
       continue;
     }
-    if (s) {sbx_close(in_fd); have_input = 0; say(s == -SBX_ENODEV ? "GMOS input removed" : "GMOS input error"); continue;}
+    if (s) {sbx_close(in_fd); have_input = 0; gi_reset(&list_keys); menu.shift = 0; say(s == -SBX_ENODEV ? "GMOS input removed" : "GMOS input error"); continue;}
     demo_idle = clock_ns();
-    {int stopped = 0; for (uint32_t i = 0; i < got / sizeof ev[0]; i++) if (demo_on && gs_demo_stops(ev[i].type, ev[i].value)) {demo_stop("a key"); stopped = 1; break;} if (stopped) show_list(px);}
-    int redraw = 0;
-    for (uint32_t i = 0; i < got / sizeof ev[0]; i++) {
+    {int stopped = 0; for (uint32_t i = 0; i < count; i++) if (demo_on && gs_demo_stops(ev[i].type, ev[i].value)) {demo_stop("a key"); stopped = 1; break;} if (stopped) show_list(px);}
+    int redraw = 0, action = GM_NONE, save_favorite = 0, music_changed = 0;
+    for (uint32_t i = 0; i < count; i++) {
+      if (!gi_accept(&list_keys, &ev[i], clock_ns())) continue;
       int a = gm_event(&menu, ev[i].type, ev[i].code, ev[i].value);
       if (a == GM_OPEN_FOUND || a == GM_OPEN_MISSING || a == GM_OPEN_PLAY) {
         p = put(line, "GMOS open "); p = put(p, menu.open_dir);
@@ -930,12 +935,11 @@ static int gmos_main(const sbx_startup *start) {
         if (a == GM_OPEN_PLAY) a = GM_CHOSEN;
       }
       if (a == GM_MUSIC) {
-        if (aud_on && !menu.background_music) bg_leave();
-        if (aud_on && menu.background_music) bg_next = clock_ns();
+        music_changed = 1;
         redraw = 1;
       }
       if (a == GM_FAVORITE) {
-        if (abi_minor<7 || gm_list_save(&menu.favorites,&save_sbx_ops,0)) put(menu.message,"Changes not saved");
+        save_favorite = 1;
         redraw=1;
       }
       if (a == GM_SETTINGS) {
@@ -946,26 +950,29 @@ static int gmos_main(const sbx_startup *start) {
         redraw=1;
       }
       if (a == GM_MOVED) redraw = 1;
-      if (a == GM_RESYNC) {sbx_input_state st; sbx_input_state_get(in_fd, &st); menu.shift = 0; say("GMOS input resync after SYN_DROPPED"); break;}
-      if (a == GM_CHOSEN) {
-        const struct gm_game *g = gm_selected(&menu);
-        p = put(line, "GMOS chose "); p = put(p, g->dir); p = put(p, " \""); p = put(p, g->title); put(p, "\""); say(line);
-        play((uint32_t *)surface, g);
+      if (a == GM_RESYNC) {sbx_input_state st; sbx_input_state_get(in_fd, &st); menu.shift = 0; gi_reset(&list_keys); say("GMOS input resync after SYN_DROPPED"); break;}
+      if (a == GM_CHOSEN || a == GM_SCORES || a == GM_QUIT) {action = a; break;}
+    }
+    /* Finish the immutable input batch before any file IO, decode or nested
+     * screen loop. Those operations may outlive the device that supplied it. */
+    if (save_favorite && (abi_minor<7 || gm_list_save(&menu.favorites,&save_sbx_ops,0))) put(menu.message,"Changes not saved");
+    if (music_changed && aud_on) {
+      if (!menu.background_music) bg_leave();
+      else bg_next = clock_ns();
+    }
+    if (action == GM_QUIT) {say("GMOS quit"); return 0;}
+    if (action == GM_CHOSEN || action == GM_SCORES) {
+      const struct gm_game *g = gm_selected(&menu);
+      if (g) {
+        if (action == GM_CHOSEN) {
+          p = put(line, "GMOS chose "); p = put(p, g->dir); p = put(p, " \""); p = put(p, g->title); put(p, "\""); say(line);
+          play((uint32_t *)surface, g);
+        } else top_ten((uint32_t *)surface, g, -1, 1);
         if (screen_mode(GM_W, GM_H, SBX_FB_RGB565)) return 4;
-        menu.message[0] = 0; menu.shift = 0; redraw = 1;
-        big_id = -1; /* the game used the play core: read the title screen again */
-        if (have_input) {sbx_input_state st; sbx_input_state_get(in_fd, &st);} /* keys held in the game are not the list's */
-        break;
-      }
-      if (a == GM_SCORES) {
-        const struct gm_game *g = gm_selected(&menu);
-        top_ten((uint32_t *)surface, g, -1, 1);
-        if (screen_mode(GM_W, GM_H, SBX_FB_RGB565)) return 4;
-        menu.shift = 0; redraw = 1; big_id = -1;
+        menu.message[0] = 0; menu.shift = 0; redraw = 1; big_id = -1;
+        gi_reset(&list_keys);
         if (have_input) {sbx_input_state st; sbx_input_state_get(in_fd, &st);}
-        break;
       }
-      if (a == GM_QUIT) {say("GMOS quit"); return 0;}
     }
     if (redraw) {
       const struct gm_game *sel = gm_selected(&menu); /* which card, so a log tells where a crash happened */
