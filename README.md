@@ -14,7 +14,7 @@ The screen shows the castle badge splash (`docs/boot-art.md`) from the moment `/
 
 The Games page also has **Search**, **Favorites** and **Recent** tabs. Search opens an arrow/OK on-screen keyboard. Details exposes **Play**, **Back**, **Favorite**, **High scores** and **Music** buttons. Back/Esc stays in the top-level library; only keyboard **Q** quits GMOS. Search filters titles and companies live; **F** or the Details **Favorite** button toggles a yellow star. Recent keeps the last 20 games started. Up from the top row focuses tabs, then Left/Right and Enter choose one. Favorites and Recent persist under `/OS/SAVES/GMOS/`. The **/** + exact folder + Enter development command still works. See [library controls and storage](docs/library.md).
 
-Leave a game on its details view for 3 seconds and its demo plays in the picture (any key stops it; see [docs/demo.md](docs/demo.md)).
+Leave a game on its details view for 3 seconds and its demo plays in the picture (any key stops it; see [docs/demo.md](docs/demo.md)). On ABI 1.11+ kernels, gameplay, demos and timed cartoons/slides keep the TV awake and the ARM clock at full speed; menus and pages waiting for a key permit power saving. See [idle power behavior and Pi checks](docs/power.md).
 
 The game player shares the play core with [Game-Maker Pocket](https://github.com/lewismoten/gamemaker-pocket), the Pocket Player in Game-Maker: Sandbox Edition: `third_party/gmcore` is a copy pinned by commit (see [docs/play.md](docs/play.md)).
 
@@ -38,7 +38,7 @@ Play). See [open by folder name](docs/build.md#open-a-game-by-folder-name-over-u
 
 Desktop card copying now supports long-named loose game folders, stored/deflated
 ZIP games and plain-ZIP self-extracting EXEs (read as archives, never executed),
-alongside GMP packs. Kernel ABI 1.5+ is required for long names; the vendored SDK is ABI 1.10.
+alongside GMP packs. Kernel ABI 1.5+ is required for long names; the vendored SDK is ABI 1.11.
 See [copying games and verification limits](docs/drag-drop.md). This candidate
 is host-qualified; its new FAT-card/Pi workflow is **hardware-untested**.
 

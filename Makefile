@@ -45,8 +45,8 @@ build/sdk_mem.o: sdk/lib/mem.c Makefile | build
 	$(CC) $(VENDOR_PFLAGS) -c $< -o $@
 build/puff.o: third_party/puff/puff.c third_party/puff/puff.h Makefile | build
 	$(CC) $(VENDOR_PFLAGS) -c $< -o $@
-build/GMOS.ELF: src/main.c src/eink.c src/savefile_sbx.c src/sdpack.c src/sdzip.c build/game.o build/gmp.o $(CORE) $(wildcard src/*.h) $(SDK) $(VENDOR_OBJS) sdk/lib/sandbox.ld $(wildcard sdk/include/sandbox/*.h) Makefile | build
-	$(CC) $(PFLAGS) $(LFLAGS) $(SDK) $(VENDOR_OBJS) src/main.c src/eink.c src/savefile_sbx.c src/sdpack.c src/sdzip.c $(CORE) build/game.o build/gmp.o -lgcc -o $@
+build/GMOS.ELF: src/awake.c src/main.c src/eink.c src/savefile_sbx.c src/sdpack.c src/sdzip.c build/game.o build/gmp.o $(CORE) $(wildcard src/*.h) $(SDK) $(VENDOR_OBJS) sdk/lib/sandbox.ld $(wildcard sdk/include/sandbox/*.h) Makefile | build
+	$(CC) $(PFLAGS) $(LFLAGS) $(SDK) $(VENDOR_OBJS) src/awake.c src/main.c src/eink.c src/savefile_sbx.c src/sdpack.c src/sdzip.c $(CORE) build/game.o build/gmp.o -lgcc -o $@
 # The pure parts (title reader, list, drawing, game, session) as a host library
 # for tests/, and gmplay, which prints the Pocket Player host test's state lines.
 HOSTDIR ?= build/host
@@ -142,3 +142,8 @@ $(HOSTDIR)/frame_bench: tests/host/frame_bench.cpp tests/host/hostio.h $(HOSTDIR
 host: $(HOSTDIR)/timing_check
 $(HOSTDIR)/timing_check: tests/host/timing_check.c tests/host/hostio.h $(HOSTDIR)/libgmos.so Makefile
 	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -Isrc -Ithird_party/puff $< $(HOSTDIR)/libgmos.so -o $@
+
+# Production power client and SDK records through a fake raw syscall transport.
+host: $(HOSTDIR)/awake_check
+$(HOSTDIR)/awake_check: src/awake.c src/awake.h src/session.h tests/host/awake_check.c $(HOSTDIR)/libgmos.so $(wildcard sdk/include/sandbox/*.h) Makefile | $(HOSTDIR)
+	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -DHOST_TEST -Isdk/include -Isrc src/awake.c tests/host/awake_check.c $(HOSTDIR)/libgmos.so -o $@

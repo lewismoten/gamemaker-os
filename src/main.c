@@ -26,6 +26,7 @@
 #include "eink.h"
 #include "audio.h"
 #include "ostune.h"
+#include "awake.h"
 #ifndef GMOS_SCAN_VERBOSE
 #define GMOS_SCAN_VERBOSE 0
 #endif
@@ -634,6 +635,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   static struct sp_menu sp; char sp_stem[9], sp_key[9]; int sp_ok = !hl_stem(gamname, sp_stem);
   if (sp_ok) hl_key(sp_stem, where[g - menu.games].path, gamname, sp_key);
   for (;;) {
+    awake_session(&game, sp_on);
     uint64_t maintenance = clock_ns();
     heartbeat(); perf_add(&perf[PF_MAINT], clock_ns() - maintenance);
     maintenance = clock_ns(); ge_poll(); perf_add(&perf[PF_EINK], clock_ns() - maintenance);
@@ -750,6 +752,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
       frames = step_max = draw_max = late_max = 0; since = clock_ns();
     }
   }
+  awake_set(0);
   bg_return("game over");
   ge_saving(0);
   ge_library(menu.count);
@@ -765,6 +768,7 @@ static void demo_present(uint16_t *px) {
 }
 static void demo_stop(const char *why) {
   char line[64], *p = put(line, "GMOS demo stopped: "); put(p, why); say(line);
+  awake_set(0);
   gs_demo_stop(&game); demo_on = 0; big_id = -1; bg_return(why);
 }
 /* Starts the demo of the selected game on its details view; draws its first frame. */
@@ -775,6 +779,7 @@ static void demo_start(uint16_t *px, const struct gm_game *g) {
   game.say = say;
   audio_take(); /* the tune fades out first; the preview's own sound replaces it */
   if (gs_demo_start(&game, read, user, where[demo_none].gam, clock_ns())) {bg_return("no demo"); return;} /* no demo */
+  awake_set(1);
   demo_none = -1; demo_on = 1; doing = "demo";
   if (aud_on) au_music(&aud, gp_song(GP_SONG_TITLE, 0)); /* DOS: the menu song plays under the demo */
   p = put(line, "GMOS demo start "); p = put(p, g->dir); p = put(p, ", "); p = num(p, game.demo_n); put(p, " keys"); say(line);
@@ -839,7 +844,7 @@ static void show_list(uint16_t *px) {
   }
   if (!pending) {char line[48], *p = put(line, "GMOS list frame crc "); num(p, crc32(px, GM_W * GM_H * 2u)); say(line);}
 }
-int main(const sbx_startup *start) {
+static int gmos_main(const sbx_startup *start) {
   char line[128], *p;
   if(start->major!=SBX_ABI_MAJOR)return 4; /* never opt into a different major ABI */
   generation = start->generation; abi_minor = start->minor;
@@ -882,6 +887,7 @@ int main(const sbx_startup *start) {
   static sbx_input_event ev[16]; uint64_t got;
   audio_open(); doing = "list"; uint64_t list_log = clock_ns();
   for (;;) {
+    awake_set(demo_on);
     heartbeat();
     if (aud_on) {
       au_service(&aud, demo_on ? game.read : 0, game.user); if (!demo_on) bg_tick();
@@ -889,11 +895,9 @@ int main(const sbx_startup *start) {
     }
     ge_poll();
     if (!have_input) {
-      audio_sleep_until(clock_ns() + 100000000ull);
       open_input();
-      continue;
     }
-    int32_t s = sbx_read(in_fd, ev, sizeof ev, &got);
+    int32_t s = have_input ? sbx_read(in_fd, ev, sizeof ev, &got) : -SBX_EAGAIN;
     if (s == -SBX_EAGAIN) { /* nothing pressed: draw the next card's title screen, or look again in 10 ms */
       if (demo_on) {
         if (demo_run(px)) show_list(px);
@@ -910,9 +914,9 @@ int main(const sbx_startup *start) {
       }
       continue;
     }
+    if (s) {sbx_close(in_fd); have_input = 0; say(s == -SBX_ENODEV ? "GMOS input removed" : "GMOS input error"); continue;}
     demo_idle = clock_ns();
     {int stopped = 0; for (uint32_t i = 0; i < got / sizeof ev[0]; i++) if (demo_on && gs_demo_stops(ev[i].type, ev[i].value)) {demo_stop("a key"); stopped = 1; break;} if (stopped) show_list(px);}
-    if (s) {sbx_close(in_fd); have_input = 0; say(s == -SBX_ENODEV ? "GMOS input removed" : "GMOS input error"); continue;}
     int redraw = 0;
     for (uint32_t i = 0; i < got / sizeof ev[0]; i++) {
       int a = gm_event(&menu, ev[i].type, ev[i].code, ev[i].value);
@@ -959,4 +963,12 @@ int main(const sbx_startup *start) {
       show_list(px);
     }
   }
+}
+
+/* All returns, including failed mode changes and startup errors, drop our hold. */
+int main(const sbx_startup *start) {
+  awake_init(start->major, start->minor);
+  int status = gmos_main(start);
+  awake_shutdown();
+  return status;
 }
