@@ -44,6 +44,7 @@ static int big_id = -1, big_ok;
 static unsigned length(const char *s) {unsigned n = 0; while (s[n]) n++; return n;}
 static char *put(char *p, const char *s) {while (*s) *p++ = *s++; *p = 0; return p;}
 static char *num(char *p, uint32_t n) {char t[11]; int k = 0; do t[k++] = (char)('0' + n % 10); while (n /= 10); while (k) *p++ = t[--k]; *p = 0; return p;}
+static char *num64(char *p, uint64_t n) {char t[21]; int k = 0; do t[k++] = (char)('0' + n % 10); while (n /= 10); while (k) *p++ = t[--k]; *p = 0; return p;}
 static void say(const char *s) {sbx_log(log_fd, s, length(s));}
 /* Serial logs are synchronous. Keep entry-by-entry diagnostics opt-in, not
  * proportional to the card's folder/duplicate count during normal startup. */
@@ -402,6 +403,12 @@ static void au_event(void *u, int kind, const char *name, int n) {
   (void)u;
   if (kind == SND_EV_MUSIC) au_music(&aud, name); else if (kind == SND_EV_BEEP) au_beep(&aud, name, n); else if (kind == SND_EV_VOC) au_voc(&aud, name); else au_stop(&aud);
 }
+static void audio_wait_poll(void *user) {(void)user; audio_poll();}
+static void audio_wait_sleep(void *user, uint64_t wake) {(void)user; sbx_sleep_until(wake);}
+static void audio_sleep_until(uint64_t wake) {
+  if (aud_on) au_wait_until(&au_sink, wake, audio_wait_poll, audio_wait_sleep);
+  else sbx_sleep_until(wake);
+}
 static void audio_log(const char *what) { /* the kernel's counters, and what the synth cost since the last line */
   sbx_audio_info i; char line[320], *p = put(line, "GMOS audio "); p = put(p, what);
   uint64_t t = clock_ns();
@@ -446,7 +453,7 @@ static void bg_return(const char *why) {
 static void bg_leave(void) {
   if (bg_state && aud.cmf.playing) {
     au_volume(&aud, 0);
-    for (uint64_t end = clock_ns() + 1100000000ull; aud.vol && clock_ns() < end;) {heartbeat(); sbx_sleep_until(clock_ns() + 10000000ull);}
+    for (uint64_t end = clock_ns() + 1100000000ull; aud.vol && clock_ns() < end;) {heartbeat(); audio_sleep_until(clock_ns() + 10000000ull);}
   }
   au_silence(&aud); bg_state = 0;
 }
@@ -537,7 +544,7 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
     if (r & HS_DONE) break;
     r = 0;
     uint64_t now = clock_ns(), wake = hs_wake(&hsc, now); if (wake > now + (aud_on ? 10000000ull : 500000000ull)) wake = now + (aud_on ? 10000000ull : 500000000ull);
-    sbx_sleep_until(wake);
+    audio_sleep_until(wake);
     int32_t s = -SBX_EAGAIN;
     while (have_input && !(s = sbx_read(in_fd, ev, sizeof ev, &got))) {
       for (uint32_t i = 0; i < got / sizeof ev[0] && !(r & HS_DONE); i++) {
@@ -563,16 +570,42 @@ static void perf_add(struct play_perf *v, uint64_t ns) {
   v->ns += ns; v->calls++;
   uint32_t us = (uint32_t)(ns / 1000u); if (us > v->max_us) v->max_us = us;
 }
-static void perf_log(struct play_perf *v) {
-  static const char *const names[] = {"tick slice", "render", "scale/compare", "present", "audio service/pump", "heartbeat/audio", "eink", "diagnostics"};
-  for (unsigned i = 0; i < PF_COUNT; i++) {
-    char line[128], *p = put(line, "GMOS perf "); p = put(p, names[i]);
-    p = put(p, " calls "); p = num(p, v[i].calls);
-    p = put(p, " total us "); p = num(p, (uint32_t)(v[i].ns / 1000u));
-    p = put(p, " avg us "); p = num(p, v[i].calls ? (uint32_t)(v[i].ns / v[i].calls / 1000u) : 0);
-    p = put(p, " max us "); num(p, v[i].max_us); say(line);
-    v[i] = (struct play_perf){0, 0, 0};
-  }
+static const char *const perf_names[] = {"tick slice", "render", "scale/compare", "present", "audio service/pump", "heartbeat/audio", "eink", "diagnostics"};
+static void perf_line(const struct play_perf *v, unsigned i) {
+  char line[128], *p = put(line, "GMOS perf "); p = put(p, perf_names[i]);
+  p = put(p, " calls "); p = num(p, v[i].calls);
+  p = put(p, " total us "); p = num(p, (uint32_t)(v[i].ns / 1000u));
+  p = put(p, " avg us "); p = num(p, v[i].calls ? (uint32_t)(v[i].ns / v[i].calls / 1000u) : 0);
+  p = put(p, " max us "); num(p, v[i].max_us); say(line);
+}
+/* A pending snapshot owns its header, histogram and stage totals until drained.
+ * No queue: skip new five-second snapshots while busy, and expose a cumulative
+ * drop count in the next header. The live window still resets every interval. */
+struct play_report {
+  struct play_perf shot[PF_COUNT];
+  char header[320], steps[128];
+  unsigned left;
+  uint64_t dropped;
+};
+static void report_frame(struct play_report *q) {
+  if (!q->left) return;
+  unsigned row = --q->left;
+  if (row == PF_COUNT + 2) say(q->header);
+  else if (row == PF_COUNT + 1) say(q->steps);
+  else if (row == PF_COUNT) {if (aud_on) audio_log("game 5 s");}
+  else perf_line(q->shot, row);
+}
+static void report_snapshot(struct play_report *q, const struct play_perf *perf,
+                            uint32_t frames, uint32_t ticks, uint32_t step_max,
+                            uint32_t draw_max, uint32_t late_max, const uint32_t *per_step) {
+  if (q->left) {q->dropped++; return;}
+  char *p = put(q->header, "GMOS 5 s: "); p = num(p, frames); p = put(p, " frames, tick "); p = num(p, ticks);
+  p = put(p, ", step max "); p = num(p, step_max); p = put(p, " us, draw max "); p = num(p, draw_max);
+  p = put(p, " us, late max "); p = num(p, late_max); p = put(p, " us, reports dropped "); num64(p, q->dropped);
+  p = put(q->steps, "GMOS 5 s ticks per step: 1 x "); p = num(p, per_step[0]); p = put(p, ", 2 x "); p = num(p, per_step[1]);
+  p = put(p, ", 3 x "); p = num(p, per_step[2]); p = put(p, ", 4+ x "); num(p, per_step[3]);
+  for (unsigned i = 0; i < PF_COUNT; i++) q->shot[i] = perf[i];
+  q->left = PF_COUNT + 3; /* header and audio share the same frame budget as every other row */
 }
 /* Plays the chosen game until Esc or its end. Each tick logs its number and the
    view's hash (the Pocket Player host test's), each game key the tick it lands
@@ -594,6 +627,9 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   uint64_t since = clock_ns();
   struct play_perf perf[PF_COUNT] = {{0, 0, 0}};
   int force = 1;
+  /* The 5 s report goes out one line per frame: a burst of a dozen serial lines held the loop for ~100 ms (two ticks). */
+  struct play_report report = {0};
+  uint32_t per_step[4] = {0, 0, 0, 0}; /* steps that ran 1, 2, 3 or 4+ ticks: the device's own count, which serial log loss cannot touch */
   int r = GS_DRAW, started = 0, sp_on = 0, sp_draw = 0, noted_recent = 0;
   static struct sp_menu sp; char sp_stem[9], sp_key[9]; int sp_ok = !hl_stem(gamname, sp_stem);
   if (sp_ok) hl_key(sp_stem, where[g - menu.games].path, gamname, sp_key);
@@ -615,7 +651,13 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
       uint32_t first, height;
       gs_draw_changed(&game, px, PLAY_W, force, &first, &height); force = 0;
       uint64_t scaled = clock_ns(); perf_add(&perf[PF_SCALE], scaled - d0);
-      if (height) {sbx_fb_present(fb_fd, 0, first, PLAY_W, height); perf_add(&perf[PF_PRESENT], clock_ns() - scaled);}
+      if (height) {
+        int32_t presented = sbx_fb_present(fb_fd, 0, first, PLAY_W, height);
+        perf_add(&perf[PF_PRESENT], clock_ns() - scaled);
+        /* Only a successful present earns a line; idle draws/catch-up earn none.
+         * Drain here, before sleeping or stepping, so the budget cannot go stale. */
+        if (!presented) report_frame(&report);
+      }
       uint32_t dt = (uint32_t)((clock_ns() - d0) / 1000u); if (dt > draw_max) draw_max = dt;
       frames++;
       uint64_t diag = clock_ns();
@@ -638,7 +680,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
       uint64_t soon = clock_ns() + 10000000ull; /* wake every 10 ms to keep the ring fed */
       if (wake > soon) wake = soon;
     }
-    sbx_sleep_until(wake);
+    audio_sleep_until(wake);
     int32_t s = -SBX_EAGAIN;
     while (have_input && !(s = sbx_read(in_fd, ev, sizeof ev, &got))) {
       for (uint32_t i = 0; i < got / sizeof ev[0]; i++) {
@@ -696,16 +738,15 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
       p = put(line, "GMOS keys released before tick "); num(p, game.total_ticks + 1); say(line);
     }
     uint64_t diag = clock_ns();
+    if (game.total_ticks != before && was == GS_PLAY) {uint32_t n = game.total_ticks - before; per_step[n > 4 ? 3 : n - 1]++;}
     if (game.total_ticks != before && (r & GS_DRAW) && logged++ < 20000) { /* the view after the step's last tick (a late step runs up to 4) */
       p = put(line, "GMOS t "); p = num(p, game.total_ticks); p = put(p, " lv "); p = num(p, (uint32_t)gp_level() + 1); p = put(p, " h "); num(p, gp_pixels_hash(game.px)); say(line);
     }
     perf_add(&perf[PF_DIAG], clock_ns() - diag);
     if (clock_ns() - since >= 5000000000ull) {
-      p = put(line, "GMOS 5 s: "); p = num(p, frames); p = put(p, " frames, tick "); p = num(p, game.total_ticks);
-      p = put(p, ", step max "); p = num(p, step_max); p = put(p, " us, draw max "); p = num(p, draw_max);
-      p = put(p, " us, late max "); p = num(p, late_max); put(p, " us"); say(line);
-      if (aud_on) audio_log("game 5 s");
-      perf_log(perf);
+      report_snapshot(&report, perf, frames, game.total_ticks, step_max, draw_max, late_max, per_step);
+      per_step[0] = per_step[1] = per_step[2] = per_step[3] = 0;
+      for (unsigned i = 0; i < PF_COUNT; i++) perf[i] = (struct play_perf){0, 0, 0};
       frames = step_max = draw_max = late_max = 0; since = clock_ns();
     }
   }
@@ -785,7 +826,10 @@ static void show_list(uint16_t *px) {
     sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H); say("GMOS library diagnostics"); return;
   }
   const struct gm_game *g = gm_selected(&menu);
-  if (menu.view == GM_DETAILS && g && big_id != (int)(g - menu.games)) {big_id = (int)(g - menu.games); big_ok = !title_picture(g, big_px, big_pal);}
+  if (menu.view == GM_DETAILS && g && big_id != (int)(g - menu.games)) {
+    uint64_t t0 = clock_ns(); big_id = (int)(g - menu.games); big_ok = !title_picture(g, big_px, big_pal);
+    char bl[64], *q = put(bl, "GMOS details picture "); q = put(q, g->dir); q = put(q, " in "); q = num(q, (uint32_t)((clock_ns() - t0) / 1000000u)); put(q, " ms"); say(bl);
+  }
   gm_draw(px, GM_W, &menu, menu.view == GM_DETAILS && big_ok ? big_px : 0, big_pal);
   sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H);
   int pending = 0;
@@ -845,7 +889,7 @@ int main(const sbx_startup *start) {
     }
     ge_poll();
     if (!have_input) {
-      sbx_sleep_until(clock_ns() + 100000000ull);
+      audio_sleep_until(clock_ns() + 100000000ull);
       open_input();
       continue;
     }
@@ -853,7 +897,7 @@ int main(const sbx_startup *start) {
     if (s == -SBX_EAGAIN) { /* nothing pressed: draw the next card's title screen, or look again in 10 ms */
       if (demo_on) {
         if (demo_run(px)) show_list(px);
-        else {uint64_t w = gs_wake(&game, clock_ns()), n = clock_ns() + 10000000ull; sbx_sleep_until(w < n ? w : n);}
+        else {uint64_t w = gs_wake(&game, clock_ns()), n = clock_ns() + 10000000ull; audio_sleep_until(w < n ? w : n);}
         continue;
       }
       doing = "thumbnail";
@@ -862,7 +906,7 @@ int main(const sbx_startup *start) {
         doing = "list";
         const struct gm_game *g = gm_selected(&menu);
         if (!menu.open_active && menu.view == GM_DETAILS && g && demo_none != (int)(g - menu.games) && gs_demo_idle_due(demo_idle, clock_ns()) && abi_minor >= 1) demo_start(px, g);
-        else sbx_sleep_until(clock_ns() + 10000000ull);
+        else audio_sleep_until(clock_ns() + 10000000ull);
       }
       continue;
     }
@@ -909,6 +953,10 @@ int main(const sbx_startup *start) {
       }
       if (a == GM_QUIT) {say("GMOS quit"); return 0;}
     }
-    if (redraw) show_list(px);
+    if (redraw) {
+      const struct gm_game *sel = gm_selected(&menu); /* which card, so a log tells where a crash happened */
+      if (sel) {char sl[64], *q = put(sl, menu.view == GM_DETAILS ? "GMOS details " : "GMOS select "); put(q, sel->dir); say(sl);}
+      show_list(px);
+    }
   }
 }

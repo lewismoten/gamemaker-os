@@ -94,7 +94,8 @@ DYLD settings, commit, device install or hardware run was used.
   exactly the same FNV result and serial line format.
 * `heartbeat` can pump audio. The explicit audio block also services requested
   assets and feeds the ring, waking at most 10 ms later. The synth produces
-  48 kHz stereo; during play it keeps 50–65 ms queued. Asset I/O and synthesis
+  48 kHz stereo; the original play policy kept 50–65 ms queued (superseded by
+  [live 120 ms refills and sliced waits](audio-underrun.md)). Asset I/O and synthesis
   share the single CPU with play and presentation.
 * `ge_poll` checks the clock and sends only changed status, at least 2.1 s apart.
   A steady title does not trigger a physical e-ink refresh every frame.
@@ -172,3 +173,40 @@ slowing the game clock. Lower framebuffer traffic and removal of the redundant
 render should leave more of the tick budget available. Full-rate output still
 depends on the board fitting all work within that budget; this is not a measured
 Pi FPS claim. No hardware was flashed or started during this investigation.
+
+## Board result: the stalls were log loss and a report burst (2026-11-10)
+
+On PI-1 (Pi Zero W), holding Right, Left and Down in Year 2000 level 1:
+
+- The per-step `GMOS t N` lines showed tick gaps up to 11, but those gaps are serial
+  log lines the kernel dropped, not stalls: the 5 s lines counted 91 to 93 ticks and
+  91 to 92 frames per 5 s (18.2 Hz, every tick drawn). Do not read frame rate from the
+  `GMOS t` lines.
+- The device now counts it itself: `GMOS 5 s ticks per step: 1 x A, 2 x B, 3 x C, 4+ x D`.
+- A real stall remained: the 5 s report was a burst of about 12 serial lines in one
+  loop pass, holding the loop up to about 100 ms (late max 70 to 107 ms, one or two
+  2-tick steps per 5 s). The report now goes out one line per frame.
+- After: 91 to 92 steps of 1 tick per 5 s, none of 2 or more; late max 11 to 28 ms.
+
+## Review fixes (run624)
+
+The report header, histogram, audio row and stage rows now share one budget:
+at most one report line immediately after each successful framebuffer present.
+Catch-up iterations, unchanged draws and failed presents do not drain it. An
+unfinished snapshot is retained; later five-second snapshots are skipped while
+it is pending. The next accepted header includes the cumulative `reports dropped`
+count. Sampling windows still reset at each five-second check, so skipped windows
+are not silently merged into a later five-second report.
+
+Level ticks are now 64-bit. Due ticks and next deadlines split quotient and
+remainder before multiplication, avoiding the intermediate overflow at about
+58 years as well as the old 32-bit counter wrap at about 7.5 years. Total tick
+IDs remain modulo 2^32; histogram and sound-repeat logic use unsigned differences.
+
+`tests/test_play_report.py` compiles the production report helpers and present/
+snapshot call sites with fake clock, log and framebuffer I/O. It covers the
+zero-frame drain, delayed double-line/overwrite witnesses, retained 111 us versus
+new 222 us samples, drop reporting, and the audio row's frame budget.
+`tests/host/timing_check.c` runs the real host session/core across UINT32_MAX,
+checks bounded catch-up and resume, and compares late-session boundaries against
+128-bit host arithmetic. These are host regressions, without a new Pi result.

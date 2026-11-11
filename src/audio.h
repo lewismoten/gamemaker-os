@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: MIT; Copyright (c) 2026 Lewis Moten
  * A game's sound for /dev/audio (ABI 1.8): the CMF song on the OPL2 synth (cmf.h, opl.h) and the PC
  * speaker effects (pcspeaker.h), mixed to 16-bit stereo at 48 kHz and kept fed from the main loop.
- * Nothing here blocks: au_pump asks the ring's level and writes only when it is low, a little at a
- * time, so the 18.2 Hz tick and the heartbeat go on. The mix and gains are the web engine's (audio/engine.ts):
+ * The sink never blocks: au_pump tops up from live ring levels, with bounded synthesis work per
+ * call, so the 18.2 Hz tick and the heartbeat go on. The mix and gains are the web engine's (audio/engine.ts):
  * the music is 0.12 * 0.8, the speaker's square 0.12 * 0.8. A VOC clip (vocplay.h) is one more voice in the same sum: a new clip cuts the old one, the speaker and the song go on. */
 #pragma once
 #include "cmf.h"
@@ -12,9 +12,12 @@
 #define AU_FILL_FRAMES 15000u /* and top up to this many (312 ms; the kernel ring holds 16384, an older one 4096) */
 #define AU_VOL_MAX 65535u     /* full uint16 gain range, Q15; saturated after mixing */
 #define AU_VOL_ONE 32768u     /* master volume 1.0 (Q15); it ramps one step a sample: 0.68 s from silence to full */
-#define AU_PLAY_LOW_FRAMES 2400u  /* while a game plays: write when fewer than this are queued (50 ms) so a sound starts within a PLAYGAME tick */
-#define AU_PLAY_FILL_FRAMES 3120u /* and top up to this many (65 ms) */
-#define AU_CHUNK 480u        /* frames rendered per write (10 ms); pcspeaker.h's limit is 1920 */
+#define AU_PLAY_FILL_FRAMES 5760u /* gameplay headroom: 120 ms, clamped to the kernel ring */
+#define AU_PLAY_LOW_FRAMES AU_PLAY_FILL_FRAMES
+#define AU_CHUNK 480u        /* frames per synthesis slice (10 ms); pcspeaker.h's limit is 1920 */
+#define AU_BATCH (AU_CHUNK * 4u)
+#define AU_REFILL_MARGIN 48u
+#define AU_SLEEP_NS 10000000ull
 #define AU_NAME_MAX 16u
 struct au_sink {
   void *user;
@@ -31,7 +34,7 @@ struct au {
   char want_voc[AU_NAME_MAX + 1]; uint8_t voc_pending;
   uint32_t vol, vol_target;    /* master volume, Q15, ramped per sample so nothing clicks */
   uint32_t until_q16;          /* samples to the next sequencer tick, 16 fractional bits */
-  int16_t hold[AU_CHUNK * 2]; uint32_t hold_len, hold_off; /* a rendered chunk the ring has not taken yet */
+  int16_t hold[AU_BATCH * 2]; uint32_t hold_len, hold_off; /* rendered frames the ring has not taken yet */
   uint8_t *music; uint32_t music_cap; /* the caller's scratch for a song (the biggest in the games is 19.8 KB) */
   uint8_t snd[2430];
   char snd_name[AU_NAME_MAX + 1]; uint32_t snd_len;
@@ -65,5 +68,8 @@ void au_render(struct au *a, int16_t *out, unsigned n);
 /* The queue to keep: small while a game plays (a draining queue is simply not topped up; the samples stay continuous, so nothing clicks),
    long otherwise (the next pump refills it in one go). Call it with 0 before any slow read. */
 void au_set_playing(struct au *a, int playing);
-/* Feeds the ring if low, clamped to its reported capacity; frames written, or -1 on a fatal sink error. */
+/* Feeds the ring if low, rechecking after writes, with at most twice the target rendered per call;
+   clamped to capacity. Returns frames written, or -1 on a fatal sink error. */
 int au_pump(struct au *a, const struct au_sink *sink);
+void au_wait_until(const struct au_sink *sink, uint64_t deadline,
+                   void (*service)(void *), void (*sleep_until)(void *, uint64_t));

@@ -53,8 +53,8 @@ struct gs_session {
   int text, more;               /* a text page showing; more lines after it */
   uint32_t text_at, text_n; int32_t vertpos; uint8_t text_col, text_red;
   uint32_t shown;               /* counts pages fully shown (a picture faded in, an animation played, a text page written) */
-  uint64_t t0; uint32_t ticks;  /* play time base and ticks run since it */
-  uint32_t total_ticks;         /* ticks run since the game started */
+  uint64_t t0, ticks;  /* play time base and ticks run since it */
+  uint32_t total_ticks;         /* ticks since game start, modulo 2^32 (sound/log IDs; use unsigned deltas) */
   uint32_t ran;                 /* ticks run by the last gs_step */
   int showing_card;             /* the screen holds a page (else the play view) */
   uint8_t px[GP_W * GP_H], pal[768];

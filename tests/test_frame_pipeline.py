@@ -16,3 +16,12 @@ class FramePipeline(unittest.TestCase):
                                 check=True, capture_output=True, text=True)
         self.assertIn('dense vs sparse/catch-up identical', result.stdout)
         self.assertIn('unchanged rows PASS', result.stdout)
+
+    def test_displayed_scroll_follows_the_view_every_tick(self):
+        # Right held from tick 1: the picture gs_draw makes moves 4..5 px on every tick (PLAYGAME's
+        # 4 px plus the fine pan), not 16 px every fourth tick with stills between.
+        host = ROOT / os.environ.get('GMOS_HOST', 'build/host')
+        result = subprocess.run([str(host / 'scroll_check'), str(ROOT / 'tests/games/DICE'),
+                                 'DICE.GAM', '40', '120', '4', '5'],
+                                check=True, capture_output=True, text=True)
+        self.assertIn('PASS', result.stdout)

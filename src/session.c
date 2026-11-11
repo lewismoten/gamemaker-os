@@ -435,8 +435,16 @@ int gs_demo_start(struct gs_session *s, gp_read_fn read, void *user, const char 
   render_play(s); copy(s->pal, gp_palette(), 768);
   return 0;
 }
+/* Avoid intermediate overflow even after (UINT64_MAX / 10) ns (~58 years).
+ * The quotient/remainder products fit for every representable elapsed ns. */
+static uint64_t play_due(uint64_t elapsed) {
+  return elapsed / GS_TICK_NS10 * 10u + elapsed % GS_TICK_NS10 * 10u / GS_TICK_NS10;
+}
+static uint64_t play_deadline(uint64_t ticks) {
+  return ticks / 10u * GS_TICK_NS10 + (ticks % 10u * GS_TICK_NS10 + 9u) / 10u;
+}
 static int demo_step(struct gs_session *s, uint64_t now) {
-  uint64_t due = (now - s->t0) * 10u / GS_TICK_NS10;
+  uint64_t due = play_due(now - s->t0);
   while (s->ticks < due && s->ran < 4) {
     if (demo_feed(s)) {gs_demo_stop(s); return GS_EXIT;}
     char r = play_tick(s);
@@ -523,7 +531,7 @@ int gs_step(struct gs_session *s, uint64_t now) {
   if (s->phase == GS_CARDS) return run_cards(s, now);
   if (s->demo) return demo_step(s, now);
   s->t=now; /* latest play clock, including pause/resume in one input batch */
-  uint64_t due = (now - s->t0) * 10u / GS_TICK_NS10;
+  uint64_t due = play_due(now - s->t0);
   while (s->ticks < due && s->ran < 4) {
     char r = play_tick(s);
     s->ticks++; s->total_ticks++; s->ran++;
@@ -542,7 +550,7 @@ int gs_step(struct gs_session *s, uint64_t now) {
 }
 uint64_t gs_wake(const struct gs_session *s, uint64_t now) {
   if(s->phase==GS_PAUSED)return now+20000000ull;
-  if (s->phase == GS_PLAY) return s->t0 + ((uint64_t)(s->ticks + 1) * GS_TICK_NS10 + 9u) / 10u;
+  if (s->phase == GS_PLAY) return s->t0 + play_deadline(s->ticks + 1u);
   if (s->launcher && (s->phase==GS_MENU || s->phase==GS_SCORES)) return now+INPUT_POLL_NS;
   if (s->phase != GS_CARDS) return now;
   uint64_t poll = now + INPUT_POLL_NS, at = poll;

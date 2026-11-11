@@ -162,8 +162,8 @@ static void latency(void) {
       played += 480;
     }
     printf("%s queue: SFX start %.0f ms after the event on average, %.0f ms worst (%d beeps), dry pumps %u\n", mode ? "small" : "long", cnt ? sum / cnt : 0, worst, cnt, dry);
-    if (mode) CHECK(worst <= 80, "game-play SFX latency %.0f ms", worst);
-    CHECK(dry == 0 || mode == 0 ? 1 : dry <= 1, "small queue ran dry %u times", dry);
+    if (mode) CHECK(worst <= 130, "game-play SFX latency %.0f ms", worst);
+    CHECK(dry == 0, "queue ran dry %u times", dry);
   }
 }
 /* Current and documented older rings, including a last write smaller than AU_CHUNK. */
@@ -195,10 +195,10 @@ static void retries(void) {
   au_init(&a, music_buf, sizeof music_buf); au_beep(&a, "T.SND", 3); au_service(&a, reader, 0);
   au_init(&ref, other, sizeof other); au_beep(&ref, "T.SND", 3); au_service(&ref, reader, 0);
   retry_error = -11;
-  CHECK(au_pump(&a, &s) == 0 && a.hold_len == AU_CHUNK * 4 && a.eagain == 1, "EAGAIN lost chunk");
+  CHECK(au_pump(&a, &s) == 0 && a.hold_len == AU_BATCH * 4 && a.eagain == 1, "EAGAIN lost batch");
   r.queued = 4000; /* only 96 frames fit, less than the pending chunk */
   CHECK(au_pump(&a, &s) == 96 && r.queued == r.cap, "held chunk exceeded ring room");
-  CHECK(a.hold_len == (AU_CHUNK - 96) * 4, "held tail lost");
+  CHECK(a.hold_len == (AU_BATCH - 96) * 4, "held tail lost");
   r.queued = 0;
   CHECK(au_pump(&a, &s) == 4096 && !a.hold_len, "retry did not refill");
   render(&ref, want, r.gotn);
