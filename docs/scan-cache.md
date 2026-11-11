@@ -67,6 +67,8 @@ success is claimed when the writer fails.
 
 These are optional probes, not substitutes for the normal regression suites:
 
+Set these first: `G` is this checkout, `K` the paired sandbox-kernel checkout, `OUT` a new empty folder for results, and `CARD_COPY` a disposable copy of a card's folder layout. `G0` and `K0` are detached checkouts of the baseline commits of this repository and of sandbox-kernel.
+
 ```sh
 make test
 make test-asan

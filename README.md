@@ -2,7 +2,7 @@
 
 ![Game-Maker OS: a sandcastle badge, the name and the games list](docs/images/social-preview.png)
 
-Game-Maker OS turns a Raspberry Pi into a Game-Maker machine. It boots straight to a list of games you can play on a TV with a gamepad or remote. It is the Sandbox Edition of RSD Game-Maker 3.0, running as an operating system of its own.
+Game-Maker OS turns a Raspberry Pi into a Game-Maker machine. It boots straight to a list of games on HDMI that you play with the arrow keys, Space and Enter, sent from a computer over USB for now; a gamepad or remote is planned. It is the Sandbox Edition of RSD Game-Maker 3.0, running as an operating system of its own.
 
 It runs on [sandbox-kernel](https://github.com/lewismoten/sandbox-kernel), a small MIT-licensed bare-metal kernel for Raspberry Pi. The kernel owns the hardware and exposes it through a standard, POSIX-style interface. Game-Maker OS is a separate program the kernel loads from the SD card. If the OS fails, the kernel recovers instead of leaving a blank screen.
 
