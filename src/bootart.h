@@ -8,6 +8,8 @@ extern const uint16_t ba_pal[16];
 extern const uint16_t ba_rle_bytes;
 extern const uint8_t ba_rle[];
 void ba_splash(uint16_t *px, uint32_t stride);
+/* Fills the whole 960x540 frame black: presented before exit so the kernel's screen is not left showing the last menu. */
+void ba_blank(uint16_t *px, uint32_t stride);
 /* Diagnostics: lines are the OS's reasons (upper case, at most 59 characters; the framed area holds 12). */
 #define BA_DIAG_ROWS 12u
 void ba_diag(uint16_t *px, uint32_t stride, const char *const *lines, unsigned n);

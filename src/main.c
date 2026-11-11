@@ -1074,7 +1074,11 @@ static int gmos_main(const sbx_startup *start) {
       if (!menu.background_music) bg_leave();
       else bg_next = clock_ns();
     }
-    if (action == GM_QUIT) {say("GMOS quit"); return 0;}
+    if (action == GM_QUIT) {
+      /* The kernel does not repaint on exit: leave a black frame, not the Options menu. */
+      if (!screen_mode(GM_W, GM_H, SBX_FB_RGB565)) {ba_blank(px, GM_W); sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H);}
+      say("GMOS quit"); return 0;
+    }
     if (action == GM_CHOSEN || action == GM_SCORES) {
       const struct gm_game *g = gm_selected(&menu);
       if (g) {

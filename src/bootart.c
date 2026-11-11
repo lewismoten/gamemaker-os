@@ -70,6 +70,10 @@ static void bar(uint32_t ms, uint32_t segs) {
   }
 }
 void ba_bar(uint16_t *px, uint32_t stride, uint32_t ms, uint32_t segs) {P = px; S = stride; bar(ms, segs);}
+void ba_blank(uint16_t *px, uint32_t stride) {
+  for (uint32_t y = 0; y < 540; y++) for (uint32_t x = 0; x < 960; x++) px[y * stride + x] = 0;
+}
+
 void ba_splash(uint16_t *px, uint32_t stride) {
   P = px; S = stride;
   rect(0, 0, 960, 540, BG);
