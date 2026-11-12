@@ -28,6 +28,13 @@ class AudioTests(unittest.TestCase):
                                     capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_sleep_stops_the_synth(self):
+        with tempfile.TemporaryDirectory(prefix='audio-sleep-') as d:
+            exe = str(Path(d) / 'audio-sleep')
+            build(exe, 'tests/host/audio_sleep.c')
+            r = subprocess.run([exe], cwd=ROOT, check=False, capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
     def test_no_wait_holds_a_frame(self):
         with tempfile.TemporaryDirectory(prefix='audio-wait-') as d:
             exe = str(Path(d) / 'audio-wait')

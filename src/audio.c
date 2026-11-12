@@ -28,6 +28,12 @@ int au_play_loaded(struct au *a, uint32_t n) {
   if (cmf_load(&a->cmf, a->music, n)) {cmf_stop(&a->cmf); return -1;}
   a->until_q16 = 0; a->hush_left = 0; a->music_loads++; a->vol_target = AU_VOL_ONE; return 0;
 }
+void au_sleep(struct au *a, int asleep) {
+  if (asleep == a->asleep) return;
+  a->asleep = asleep != 0;
+  if (asleep) {a->vol = 0; a->hold_len = a->hold_off = 0; return;}
+  a->vol = 0; a->vol_target = AU_VOL_ONE; a->last_pump_ns = 0; a->pump_gap_ns = 0; /* the first pump after waking sees no gap */
+}
 void au_set_playing(struct au *a, int playing) {a->playing = playing != 0;}
 int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, uint32_t), void *user) {
   int started = 0;
@@ -107,6 +113,7 @@ int au_quiet(const struct au *a) {
          !a->pc.active && a->vp.state != VP_PLAYING && a->vp.state != VP_PENDING && a->vol == a->vol_target;
 }
 int au_pump(struct au *a, const struct au_sink *s) {
+  if (a->asleep) return 0;
   uint32_t queued = 0, cap = 0, sent = 0;
   if (s->query(s->user, &queued, &cap)) return -1;
   int quiet = au_quiet(a);

@@ -13,4 +13,4 @@ class Awake(unittest.TestCase):
         host = ROOT / os.environ.get('GMOS_HOST', 'build/host')
         result = subprocess.run([str(host / 'awake_check'), str(ROOT / 'tests/games/DICE')],
                                 capture_output=True, text=True, check=True)
-        self.assertEqual(result.stdout.count('PASS'), 5, result.stdout)
+        self.assertEqual(result.stdout.count('PASS'), 6, result.stdout)

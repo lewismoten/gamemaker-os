@@ -10,6 +10,7 @@
 static uint64_t held, next_token = 0x1234567800000000ull;
 static unsigned acquired, released, calls;
 static int32_t fail_next;
+static uint64_t fake_asleep; /* what operation 2 reports */
 static struct gs_session session;
 static uint64_t now;
 
@@ -20,6 +21,9 @@ int32_t sbx_syscall(uint32_t call, void *record, uint32_t bytes) {
   sbx_power_hold_rec *r = record;
   assert(r->h.size == bytes && !r->h.flags && !r->h.reserved0 && !r->h.reserved1);
   if (fail_next) {int32_t e = fail_next; fail_next = 0; return e;}
+  if (r->operation == 2) {
+    assert(!r->flags && !r->token); r->flags = fake_asleep; return 0;
+  }
   if (r->operation == 1) {
     assert(!held && !r->token);
     assert(r->flags == (SBX_POWER_NO_BLANK | SBX_POWER_NO_SLOWDOWN));
@@ -53,6 +57,7 @@ int main(int argc, char **argv) {
   for (unsigned major = 0; major < 3; major++) {
     for (unsigned minor = 0; minor < 11; minor++) {
       awake_init(major, minor); assert(!awake_set(1)); balanced();
+      fake_asleep = SBX_POWER_NO_BLANK; unsigned before = calls; assert(!awake_screen_dark()); assert(calls == before); fake_asleep = 0;
     }
   }
   awake_init(2, 11); assert(!awake_set(1)); balanced(); assert(!calls);
@@ -117,5 +122,17 @@ int main(int argc, char **argv) {
   assert(!awake_set(1)); held = 0; released++; fail_next = -SBX_EBADF;
   assert(awake_set(0) == -SBX_EBADF); balanced();
   puts("acquire/release failures, retries and exit cleanup PASS");
+  /* ABI 1.12: the screen-dark query; a 1.11 kernel is never asked, and a failure means awake. */
+  unsigned seen = calls;
+  awake_init(1, 11); fake_asleep = SBX_POWER_NO_BLANK; assert(!awake_screen_dark()); assert(calls == seen);
+  awake_init(2, 12); assert(!awake_screen_dark()); assert(calls == seen);
+  awake_init(1, 12);
+  fake_asleep = 0; assert(!awake_screen_dark());
+  fake_asleep = SBX_POWER_NO_SLOWDOWN; assert(!awake_screen_dark()); /* slowed, not blanked: the music goes on */
+  fake_asleep = SBX_POWER_NO_BLANK; assert(awake_screen_dark());
+  fake_asleep = SBX_POWER_NO_BLANK | SBX_POWER_NO_SLOWDOWN; assert(awake_screen_dark());
+  fail_next = -SBX_EINVAL; assert(!awake_screen_dark());
+  fake_asleep = 0; assert(!awake_screen_dark());
+  puts("screen dark query PASS");
   return 0;
 }

@@ -5,10 +5,11 @@
 #include <sandbox/syscall.h>
 static int supported;
 static uint64_t token;
+static int sleep_known;
 
 void awake_init(uint32_t major, uint32_t minor) {
   supported = major == 1 && minor >= 11;
-  token = 0;
+  token = 0; sleep_known = major == 1 && minor >= 12;
 }
 int32_t awake_configure(const struct gm_settings *settings) {
   if (!supported) return 0;
@@ -34,5 +35,10 @@ int32_t awake_session(const struct gs_session *s, int overlay) {
   int watching = !overlay && (s->phase == GS_PLAY ||
     (s->phase == GS_CARDS && !(s->stage == GS_PAUSE && s->pause == GS_KEY_WAIT)));
   return awake_set(watching);
+}
+int awake_screen_dark(void) {
+  uint32_t asleep = 0;
+  if (!sleep_known || sbx_power_asleep(&asleep)) asleep = 0; /* older kernel or a failed call: awake */
+  return (asleep & SBX_POWER_NO_BLANK) != 0;
 }
 int32_t awake_shutdown(void) {return awake_set(0);}
