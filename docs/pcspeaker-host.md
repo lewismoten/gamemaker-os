@@ -4,7 +4,7 @@
 library on this branch, mixed with CMF/OPL2 music and supported VOC clips.
 `JS.ELF` keeps remote `SND` events only; the remote grammar is unchanged.
 Local playback requires ABI 1.8 `/dev/audio` and falls back to silence when
-unavailable. Library music defaults off; **M** toggles it without changing
+unavailable. Library music defaults on; **M** toggles it without changing
 game/demo sound. HDMI playback remains **hardware-untested**.
 See [sound integration](build.md#sound-and-library-music).
 

@@ -1,7 +1,7 @@
 # M key and TV sound
 
 The M shortcut uses **Linux key code 50**, not ASCII `M` (77) or USB HID usage
-`0x10` (16). Library music starts off; game music starts on independently.
+`0x10` (16). Library music starts on; game music starts on independently.
 Each toggle logs exactly `GMOS music on` or `GMOS music off`. Game music
 muting leaves effects running and advances the song silently, so unmuting
 continues at its current position. Already queued PCM can remain audible for

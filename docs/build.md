@@ -6,7 +6,7 @@ kernel's published SDK.
 
 ## Sound and library music
 
-Library background music defaults to **off** on every boot. Press **M** in the
+Library background music defaults to **on** at every boot. Press **M** in the
 library grid, details or Options to enable or disable it for the current run; the footer
 shows the setting. Game and demo music and effects follow the DOS game's events
 regardless of this library setting. In games, **M** toggles music independently

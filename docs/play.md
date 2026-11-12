@@ -299,7 +299,7 @@ See the [M key and audio trace](music-key.md).
 - `src/vocplay.c`: streamed VOC clips mixed with the speaker and FM voices; unsupported clips are refused safely.
 - Every song change fades the old one out (0.68 s), resets the chip (all channels keyed off) and fades the new one in.
 - A game's own sound, or a preview's (its menu song and the game's effects, as PLAYGAME's demo plays them), replaces the
-  library's background tune when enabled. Library music defaults off at every boot; the owner can toggle
+  library's background tune when enabled. Library music defaults on at every boot; the owner can toggle
   it with **M** in the library grid, details or Options (the footer shows the setting).
   Game/demo sound follows the DOS game regardless of that setting. In a game,
   **M** toggles music independently (initially on), preserving effects and the song's

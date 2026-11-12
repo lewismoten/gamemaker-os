@@ -25,7 +25,7 @@ hash after every tick with the play core fed the same keys by hand).
 - A gap over 4096 ticks is a DOS demo's wait at a page the preview does not show; it counts as one tick.
 - On this branch, `GMOS.ELF` plays the menu CMF song and demo effects through
   optional ABI 1.8 `/dev/audio`, independently of the library **M** toggle
-  (library music defaults off). Missing or failed audio falls back to silence;
+  (library music defaults on). Missing or failed audio falls back to silence;
   HDMI playback is **hardware-untested**. The first level's pages (title, intro) are skipped.
 
 ## The screen

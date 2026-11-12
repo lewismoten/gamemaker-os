@@ -7,7 +7,7 @@ remote SND grammar, SDK/ABI and all boot paths are unchanged. This remains a bou
 host qualification component. This branch separately links `src/vocplay.c`
 into `GMOS.ELF`, mixing supported VOC clips with CMF/OPL2 music and PC-speaker
 effects through optional ABI 1.8 `/dev/audio`. Unavailable or failed devices
-fall back to silence. Library music defaults off; **M** toggles it independently
+fall back to silence. Library music defaults on; **M** toggles it independently
 of game/demo sound. Local HDMI playback remains **hardware-untested**.
 See [streamed VOC playback](voc.md) and [sound integration](build.md#sound-and-library-music).
 
