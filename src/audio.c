@@ -135,7 +135,11 @@ int au_pump(struct au *a, const struct au_sink *s) {
 }
 void au_wait_until(const struct au_sink *sink, uint64_t deadline,
                    void (*service)(void *), void (*sleep_until)(void *, uint64_t)) {
-  for (;;) {
+  /* Bounded and cooperative: one call waits at most AU_WAIT_MAX_NS (the caller loops, presents and reads input), and a sleep that
+     returns at once cannot spin it past AU_WAIT_SPINS rounds. */
+  uint64_t limit = sink->now(sink->user) + AU_WAIT_MAX_NS;
+  if (deadline > limit) deadline = limit;
+  for (unsigned i = 0; i < AU_WAIT_SPINS; i++) {
     service(sink->user);
     uint64_t now = sink->now(sink->user);
     if (now >= deadline) return;

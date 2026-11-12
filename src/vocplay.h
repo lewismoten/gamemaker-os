@@ -11,6 +11,7 @@
 #define VP_WIN 384u
 #define VP_MAX_SAMPLES 16000000u  /* the web engine's VOC_MAX_SAMPLES: more is refused */
 #define VP_MAX_VISITS 10000u      /* its guard on block visits (a repeat loop); more blocks end the sound */
+#define VP_MIX_VISITS 2000u       /* block visits one vp_mix call may spend; more cuts the clip (a slice never stalls on a file) */
 #define VP_GAP_VISITS 256u        /* more empty block visits in a row than this: refused (so a pump never stalls) */
 #define VP_RATE 48000u
 #define VP_OK 0

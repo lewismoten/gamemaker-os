@@ -18,6 +18,8 @@
 #define AU_BATCH (AU_CHUNK * 4u)
 #define AU_REFILL_MARGIN 48u
 #define AU_SLEEP_NS 10000000ull
+#define AU_WAIT_MAX_NS 20000000ull /* the longest one au_wait_until holds a caller */
+#define AU_WAIT_SPINS 64u
 #define AU_NAME_MAX 16u
 struct au_sink {
   void *user;

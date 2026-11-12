@@ -461,7 +461,7 @@ static void au_event(void *u, int kind, const char *name, int n) {
   (void)u;
   if (kind == SND_EV_MUSIC) au_music(&aud, name); else if (kind == SND_EV_BEEP) au_beep(&aud, name, n); else if (kind == SND_EV_VOC) au_voc(&aud, name); else au_stop(&aud);
 }
-static void audio_wait_poll(void *user) {(void)user; audio_poll();}
+static void audio_wait_poll(void *user) {(void)user; sbx_health(generation, ++beat); audio_poll();} /* the kernel's heartbeat, every round of a wait */
 static void audio_wait_sleep(void *user, uint64_t wake) {(void)user; sbx_sleep_until(wake);}
 static void audio_sleep_until(uint64_t wake) {
   if (aud_on) au_wait_until(&au_sink, wake, audio_wait_poll, audio_wait_sleep);
