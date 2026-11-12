@@ -164,12 +164,15 @@ static int begin_card(struct gs_session *s, const struct gs_card *c, uint64_t no
   }
   if (fli) {
     int32_t n = s->read(s->user, c->name, file, sizeof file);
+    if (s->beat) s->beat();
     if (n < 0 || gp_fli_open(&s->fli, file, (uint32_t)n)) {say2(s, "page not an animation: ", c->name); next_from(s, now); return r;}
     copy(canvas_pal, s->pal, 768);
     uint32_t k = s->fli.w * s->fli.h; copy(canvas, s->px, k < GP_W * GP_H ? k : GP_W * GP_H);
     char line[64], *q = put(line, c->name); q = put(q, ", "); q = num(q, (int32_t)s->fli.frames); q = put(q, " frames "); q = num(q, (int32_t)s->fli.speed); q = put(q, "/70 s apart, then ");
     if (pause == GS_KEY_WAIT) put(q, "a key"); else {q = num(q, (int32_t)pause); put(q, " s");}
     say2(s, "page ", line);
+    /* DOS starts the animation's retraces once the file is loaded: a slow read must not leave every frame owed at once. */
+    if (s->clock_ns) {uint64_t c0 = s->clock_ns(); if (c0 > now) now = c0;}
     s->stage = GS_FLI; s->t = now; s->fli_frame = 0; s->pause = pause; s->showing_card = 1;
     return r;
   }
@@ -242,9 +245,16 @@ static void level_change(struct gs_session *s, char r) {
   s->keys = 0; /* m.flushKeys() after the scene */
 }
 /* FLI::View: frame k shows k * speed retraces after the start; all at once at speed 0. */
+#define FLI_STEP_FRAMES 2u /* frames decoded in one step on the board (s->beat set): the heartbeat and audio run between steps */
 static int fli_step(struct gs_session *s, uint64_t now) {
   int r = 0;
-  while (s->fli_frame < s->fli.frames && now >= s->t + retrace((uint64_t)s->fli_frame * s->fli.speed)) {
+  for (unsigned n = 0; s->fli_frame < s->fli.frames && now >= s->t + retrace((uint64_t)s->fli_frame * s->fli.speed); n++) {
+    if (s->beat && n == FLI_STEP_FRAMES) { /* behind: play on from here at its own pace instead of owing the missed frames */
+      uint64_t next = now + retrace(s->fli.speed), back = retrace((uint64_t)s->fli_frame * s->fli.speed);
+      s->t = next > back ? next - back : 0;
+      break;
+    }
+    if (s->beat) s->beat();
     if (gp_fli_frame(&s->fli, canvas, canvas_pal)) copy(s->pal, canvas_pal, 768);
     uint32_t w = s->fli.w < GP_W ? s->fli.w : GP_W, h = s->fli.h < GP_H ? s->fli.h : GP_H;
     for (uint32_t y = 0; y < h; y++) copy(s->px + y * GP_W, canvas + y * s->fli.w, w);

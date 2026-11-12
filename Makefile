@@ -158,6 +158,11 @@ host: $(HOSTDIR)/uisound_check
 $(HOSTDIR)/uisound_check: tests/host/uisound_check.c $(HOSTDIR)/libgmos.so $(wildcard src/*.h) Makefile | $(HOSTDIR)
 	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -Isrc tests/host/uisound_check.c $(HOSTDIR)/libgmos.so -o $@
 
+# Pages and animations against the kernel's heartbeat (bounded steps, hook, wakes).
+host: $(HOSTDIR)/fli_pages_check
+$(HOSTDIR)/fli_pages_check: tests/host/fli_pages_check.c tests/host/hostio.h src/session.h $(HOSTDIR)/libgmos.so Makefile
+	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -Isrc tests/host/fli_pages_check.c $(HOSTDIR)/libgmos.so -o $@
+
 # Production input reader with a fake event device; no display or audio.
 host: $(HOSTDIR)/input_check
 $(HOSTDIR)/input_check: src/input.c src/input.h tests/host/input_check.c tests/host/hostio.h tests/host/input/sandbox/syscall.h $(wildcard sdk/include/sandbox/*.h) $(HOSTDIR)/libgmos.so Makefile

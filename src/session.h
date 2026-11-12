@@ -34,6 +34,7 @@ struct gs_session {
   uint64_t tick_ns, render_ns;
   gp_read_fn read; void *user;
   void (*say)(const char *line);
+  void (*beat)(void);           /* optional: the kernel's heartbeat, called between a page's slow steps (reads, decodes, frames) */
   int phase, stage, levels;
   int after;                    /* what follows the pages: GS_PLAY (begin or finish) or GS_DONE */
   int pause_choice;

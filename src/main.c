@@ -465,7 +465,7 @@ static void audio_wait_poll(void *user) {(void)user; sbx_health(generation, ++be
 static void audio_wait_sleep(void *user, uint64_t wake) {(void)user; sbx_sleep_until(wake);}
 static void audio_sleep_until(uint64_t wake) {
   if (aud_on) au_wait_until(&au_sink, wake, audio_wait_poll, audio_wait_sleep);
-  else sbx_sleep_until(wake);
+  else {uint64_t cap = clock_ns() + 100000000ull; sbx_sleep_until(wake < cap ? wake : cap);} /* never past 100 ms: the heartbeat is due */
 }
 static void audio_log(const char *what) { /* the kernel's counters, and what the synth cost since the last line */
   sbx_audio_info i; char line[512], *p = put(line, "GMOS audio "); p = put(p, what);
@@ -706,7 +706,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   void *user; gp_read_fn read = reader(g, &user);
 
   if (abi_minor < 1) {say("GMOS playing needs the kernel's clock (ABI 1.1)"); return;}
-  game.say = say; game.clock_ns = clock_ns;
+  game.say = say; game.clock_ns = clock_ns; game.beat = heartbeat;
   snd_dir(&game.sound, g->dir);
   p = put(line, "GMOS play ");p=put(p,g->dir);p=put(p,"/");put(p,gamname);say(line);
   audio_take(); doing = "game";
