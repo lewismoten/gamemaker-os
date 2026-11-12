@@ -137,6 +137,7 @@ static void cache_source_put(const char *path,const void *key,unsigned kn,const 
  cache_copy(cache_wire+13,s->title,GM_TITLE_MAX+1);cache_copy(cache_wire+34,s->gam,gn);
  gc_add(&scan_cache,path,key,kn,cache_wire,34+gn+s->record_bytes);
 }
+static uint32_t cache_misses_zip; /* ZIP reads already covered by a write */static uint64_t cache_ckpt_ns;
 static uint32_t cache_pending; /* bytes of the fresh cache still to persist: cache_flush writes them */
 /* The scan is done: close the fresh cache in memory. Writing it (an fsync and a rename can block for half a second)
    waits for cache_flush, which GMOS calls once the games list is on screen. */
@@ -170,11 +171,14 @@ static int cache_rebase(void) {
 }
 /* An Archive ZIP's record joins the cache only while it fits (one that overflows would drop the whole cache). */
 static int cache_room(unsigned path_bytes,unsigned value_bytes) {
- return !scan_cache.overflow&&(unsigned)(cache_new[8]|cache_new[9]<<8)<1000u&&scan_cache.used+8u+path_bytes+16u+value_bytes+64u<scan_cache.capacity;
+ return !scan_cache.overflow&&(unsigned)(cache_new[8]|cache_new[9]<<8)<GC_MAX_RECORDS-16u&&scan_cache.used+8u+path_bytes+16u+value_bytes+64u<scan_cache.capacity;
 }
 /* Persist the fresh cache: write temp file, fsync, rename (power-cut safe). Each step's time is logged once. */
+static uint64_t cache_try_ns; /* when the last write was tried (retries wait a minute) */
 static void cache_flush(void) {
  uint32_t n=cache_pending;cache_pending=0;if(!n)return;
+ n=gc_finish(&scan_cache);if(!n){say("GMOS cache capacity exceeded; live scan retained");return;} /* later adds and CRC patches: close it again */
+ sbx_clock_ns(&cache_try_ns);
  uint64_t t0=0,t1=0,fd,got,wmax=0,wsum=0;uint32_t chunks=0;
  sbx_clock_ns(&t0);
  int bad=sbx_open("/sd/OS/CACHE/GAMES.TMP",22,SBX_O_WRONLY|SBX_O_CREAT|SBX_O_TRUNC,&fd);
@@ -195,5 +199,23 @@ static void cache_flush(void) {
  }
  {char l[160],*p=put(l,"GMOS cache write ");p=num(p,n);p=put(p," bytes: open ");p=num(p,(uint32_t)open_ms);p=put(p," ms, ");p=num(p,chunks);p=put(p," writes ");p=num(p,(uint32_t)(wsum/1000000u));
   p=put(p," ms (worst ");p=num(p,(uint32_t)(wmax/1000000u));p=put(p,"), fsync ");p=num(p,(uint32_t)fs_ms);p=put(p," ms, close+rename ");p=num(p,(uint32_t)rn_ms);put(p," ms");say(l);}
- if(bad)say("GMOS cache write unavailable; live scan retained");
+ {unsigned m=0,a=0;uint32_t at=16;
+  while(at+8<=n){uint32_t pn=cache_new[at]|cache_new[at+1]<<8,kn=cache_new[at+2]|cache_new[at+3]<<8,vn=cache_new[at+4]|cache_new[at+5]<<8|(uint32_t)cache_new[at+6]<<16|(uint32_t)cache_new[at+7]<<24;
+   const uint8_t *path=cache_new+at+8;at+=8+pn+kn+vn;
+   if(pn>12&&cache_equal(path,"/sd/ARCHIVE/",12)){if(kn==16)a++;}else if(pn!=11||!cache_equal(path,"/sd/ARCHIVE",11))m++;}
+  char l[96],*p=put(l,"GMOS cache: ");p=num(p,m);p=put(p," main, ");p=num(p,a);p=put(p," archive, write ");put(p,bad?"failed":"ok");say(l);}
+ if(bad){cache_pending=n;say("GMOS cache write unavailable; live scan retained, will retry");}
+}
+/* While the Archive ZIPs are being read the cache is saved every 25 new ZIPs or 30 s (whichever is first), so a power cut or
+   reboot mid-scan keeps what was read. Returns 1 when a write was made (it takes up to half a second). */
+static int cache_checkpoint(uint64_t now,uint32_t reads) {
+ if(!cache_enabled||scan_cache.overflow||abi_minor<4)return 0;
+ if(!cache_ckpt_ns)cache_ckpt_ns=now;
+ if(cache_pending){if(now-cache_try_ns<60000000000ull)return 0;cache_flush();return 1;} /* a failed write is tried again after a minute */
+ uint32_t fresh=reads-cache_misses_zip;
+ if(!(fresh>=25||(fresh&&now-cache_ckpt_ns>=30000000000ull)))return 0;
+ cache_misses_zip=reads;cache_ckpt_ns=now;
+ uint32_t n=gc_finish(&scan_cache);if(!n)return 0;
+ if(scan_cache.valid&&n==scan_cache.oldbytes&&cache_equal(cache_new,cache_old,n))return 0;
+ cache_pending=n;cache_flush();return 1;
 }

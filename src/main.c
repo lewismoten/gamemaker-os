@@ -1281,6 +1281,7 @@ static int gmos_main(const sbx_startup *start) {
         menu.scan_left = arch_n - arch_next;
         /* The list redraws every few seconds while scanning, and once more when it ends (then with the final counts). */
         if (!menu.scan_left || now - arch_shown >= 3000000000ull) {arch_dirty = 0; arch_shown = now; doing = "list"; show_list(px);}
+        if (arch_next < arch_n) cache_checkpoint(now, arch_zip_reads);
         if (arch_next >= arch_n) {char l[64], *q = put(l, "GMOS archive tab: "); q = num(q, menu.archive_count); put(q, menu.archive_count == 1 ? " game" : " games"); say(l); cache_flush();}
       } else if (arch_bg(px)) {
         audio_sleep_until(clock_ns() + 10000000ull);

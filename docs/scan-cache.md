@@ -33,7 +33,7 @@ manifest or authoritative list**. Existing GMP seek/title loading is unchanged.
   the cache before mutation because their FAT timestamps are fixed, including
   same-name/same-size updates. This conservatively rebuilds all candidates after
   a USB install; ordinary directory changes reuse unaffected candidates.
-- The file is bounded to **256 KiB / 1024 records**. Each top-level metadata
+- The file is bounded to **384 KiB / 2048 records**. Each top-level metadata
   inventory holds at most 512 short-named files. Oversized inventories/cache,
   bad magic/version/count/checksum/lengths, missing cache or unavailable new ABI
   safely fall back to live parsing. Malformed library text keeps the old parser's
@@ -49,6 +49,8 @@ supported ARM32/host platforms. Bump the magic when scanner interpretation chang
 CRC32 detects accidental corruption, not malicious cache modification.
 
 ## Publication and failure
+
+While the Archive ZIPs are still being read (a cold card takes minutes), the cache is also written every 25 newly read ZIPs or 30 s, whichever comes first, so a reboot or power cut keeps what was read; the folder signature joins only the final write. Each write logs `GMOS cache: N main, M archive, write ok|failed`; a failed write is retried after a minute.
 
 Only publish a complete newly built cache. Write GAMES.TMP in bounded chunks,
 fsync, close, then cache-only rename-over GAMES.IDX. Kernel COW keeps old data

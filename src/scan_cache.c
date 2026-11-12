@@ -21,14 +21,14 @@ void gc_init(struct gc_cache *c,const void *old,uint32_t n,void *out,uint32_t ca
  if(!c->overflow){for(unsigned i=0;i<16;i++)c->out[i]=0;copy(c->out,(const uint8_t *)"GMI2",4);}
  if(!old||n<16||n>GC_CAPACITY)return;
  const uint8_t *p=old;
- if(!equal(p,(const uint8_t *)"GMI2",4)||u32(p+4)!=n||u32(p+8)>1024||u32(p+12)!=checksum(p,n))return;
+ if(!equal(p,(const uint8_t *)"GMI2",4)||u32(p+4)!=n||u32(p+8)>GC_MAX_RECORDS||u32(p+12)!=checksum(p,n))return;
  uint32_t at=16,count=0;
  while(at<n){
   if(n-at<8)return;
   uint32_t pn=u16(p+at),kn=u16(p+at+2),vn=u32(p+at+4);at+=8;
   if(!pn||pn>255||!kn||kn>256||pn>n-at)return;
   at+=pn;if(kn>n-at)return;at+=kn;if(vn>n-at)return;at+=vn;
-  if(++count>1024)return;
+  if(++count>GC_MAX_RECORDS)return;
  }
  if(count==u32(p+8))c->valid=1;
 }
@@ -45,7 +45,7 @@ const uint8_t *gc_get(const struct gc_cache *c,const char *path,const void *key,
 int gc_add(struct gc_cache *c,const char *path,const void *key,uint32_t kn,const void *value,uint32_t n) {
  uint32_t pn=pathlen(path);
  if(c->overflow)return 0;
- if(!pn||!kn||kn>256||!key||(!value&&n)||u32(c->out+8)>=1024||n>c->capacity-c->used||8+pn+kn>c->capacity-c->used-n){c->overflow=1;return 0;}
+ if(!pn||!kn||kn>256||!key||(!value&&n)||u32(c->out+8)>=GC_MAX_RECORDS||n>c->capacity-c->used||8+pn+kn>c->capacity-c->used-n){c->overflow=1;return 0;}
  uint8_t *p=c->out+c->used;w16(p,pn);w16(p+2,kn);w32(p+4,n);p+=8;
  copy(p,(const uint8_t *)path,pn);copy(p+pn,key,kn);copy(p+pn+kn,value,n);
  c->used+=8+pn+kn+n;w32(c->out+8,u32(c->out+8)+1);return 1;

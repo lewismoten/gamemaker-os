@@ -135,7 +135,7 @@ class Scan(unittest.TestCase):
         d = self.scan()
         self.assertEqual(d['games'], 1)
         self.assertEqual(d['crc_calls'], 21)  # duplicates still CRC checked
-        self.assertLessEqual(d['logs'], 3)
+        self.assertLessEqual(d['logs'], 4)
         self.assertLessEqual(d['log_bytes'], 256)
         self.assertGreaterEqual(d['healths'], 161)
 
@@ -262,6 +262,31 @@ class PersistentScan(Scan):
         part=run()
         self.assertEqual((part['crc_calls'],part['games']),(1,5));self.assertGreaterEqual(part['arch_left'],1) # prefill stops at the unknown ZIP
         self.assertEqual(run()['crc_calls'],0)
+
+    def _zips(self,count):
+        import io, zipfile
+        gam=bytearray((ROOT/'tests/games/DICE/DICE.GAM').read_bytes())
+        (self.card/'ARCHIVE').mkdir()
+        for k in range(count):
+            gam[-2]=k&255;gam[-1]=k>>8;b=io.BytesIO()
+            with zipfile.ZipFile(b,'w',zipfile.ZIP_DEFLATED) as z: z.writestr('DICE.GAM',bytes(gam))
+            (self.card/('ARCHIVE/Z%03d.ZIP'%k)).write_bytes(b.getvalue())
+
+    def test_interrupted_archive_scan_keeps_what_it_read(self):
+        self._zips(60)
+        env=dict(os.environ,GMOS_SCAN_CACHE='1',GMOS_SCAN_ARCH='1')
+        run=lambda **e:json.loads(subprocess.check_output([str(self.probe),str(self.card)],env=dict(env,**e)))
+        self.assertIn('stopped',run(GMOS_SCAN_ARCH_STOP='30')) # a power cut: checkpoint after 25 new ZIPs, nothing at exit
+        self.assertTrue((self.card/'OS/CACHE/GAMES.IDX').exists())
+        resumed=run();self.assertEqual(resumed['arch_zip_reads'],35) # the 25 checkpointed ZIPs are not read again
+        self.assertEqual(run()['arch_zip_reads'],0)
+
+    def test_full_card_of_archive_zips_fits_the_cache(self):
+        self._zips(500) # 1000 ZIP and CRC records: over the old 1000-record cap
+        env=dict(os.environ,GMOS_SCAN_CACHE='1',GMOS_SCAN_ARCH='1',GMOS_SCAN_CRC='100000')
+        run=lambda:json.loads(subprocess.check_output([str(self.probe),str(self.card)],env=env))
+        run();warm=run()
+        self.assertEqual((warm['arch_zip_reads'],warm['arch_left'],warm['games']),(0,0,500))
 
     def test_long_gam_cache_exact_paths_and_no_truncated_join(self):
         folder=self.dice('Long Game Folder')

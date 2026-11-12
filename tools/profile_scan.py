@@ -100,7 +100,8 @@ int32_t sbx_log(uint64_t h,const char*b,uint32_t n){(void)h;(void)b;logs++;log_b
 int32_t sbx_health(uint32_t g,uint64_t s){(void)g;(void)s;healths++;return 0;}
 static void jstr(const char*s){putchar('"');for(;*s;s++){unsigned char c=*s;if(c=='"'||c=='\\')printf("\\%c",c);else if(c<32||c>=127)printf("\\u%04x",c);else putchar(c);}putchar('"');}
 int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;i++)handles[i].f=-1;abi_minor=getenv("GMOS_SCAN_CACHE")?5:3;if(getenv("GMOS_SCAN_ABI"))abi_minor=(unsigned)atoi(getenv("GMOS_SCAN_ABI"));sp_set_abi(1,abi_minor);uint64_t t=ns();find_games();unsigned arch_left=arch_n-arch_next,left_shown=menu.scan_left,arch_steps=0;
- uint64_t t_find=ns()-t,t1=ns();while(getenv("GMOS_SCAN_ARCH")&&arch_next<arch_n){arch_step();arch_steps++;}
+ uint64_t t_find=ns()-t,t1=ns();unsigned stop_at=getenv("GMOS_SCAN_ARCH_STOP")?(unsigned)atoi(getenv("GMOS_SCAN_ARCH_STOP")):~0u;while(getenv("GMOS_SCAN_ARCH")&&arch_next<arch_n&&arch_steps<stop_at){arch_step();arch_steps++;if(arch_next<arch_n)cache_checkpoint(1000000000ull*arch_steps,arch_zip_reads);} /* GMOS_SCAN_ARCH_STOP=N: power cut after N steps, nothing is written at exit */
+ if(arch_next<arch_n&&getenv("GMOS_SCAN_ARCH_STOP")){printf("{\"stopped\":%u}\n",arch_steps);return 0;}
  uint64_t t_arch=ns()-t1;unsigned crc_done=0,crc_max_chunk=0,check_passes=0,check_changed=0,relisted=0;uint64_t t_crc=0,t_check=0,t_relist=0;
  if(getenv("GMOS_SCAN_HOOK")&&system(getenv("GMOS_SCAN_HOOK")))return 3; /* the card changes behind the board's back */
  if(getenv("GMOS_SCAN_CHECK")){t1=ns();uint64_t now=1000000000000ull;unsigned guard=0;

@@ -4,7 +4,8 @@
  * Caller-owned old/output buffers must be disjoint; no allocation or syscalls. */
 #pragma once
 #include <stdint.h>
-#define GC_CAPACITY (256u * 1024u)
+#define GC_CAPACITY (384u * 1024u)
+#define GC_MAX_RECORDS 2048u /* a full card: 256 games, 512 Archive ZIPs with their CRC records, signatures */
 struct gc_cache {
  const uint8_t *old; uint8_t *out;
  uint32_t oldbytes,used,capacity,valid,overflow;
