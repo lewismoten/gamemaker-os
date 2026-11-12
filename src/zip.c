@@ -102,9 +102,15 @@ int32_t gz_read(void *user,const char *name,uint8_t *buf,uint32_t cap) {
     if(rd(z,f->at,ga_packed,f->packed))return -1;
     if(f->method==0){for(unsigned k=0;k<f->raw;k++)ga_whole[k]=ga_packed[k];}
     else {unsigned long dn=f->raw,sn=f->packed;
-      if(puff(ga_whole,&dn,ga_packed,&sn)||dn!=f->raw||sn!=f->packed)return -1;
+      if(puff_yield(ga_whole,&dn,ga_packed,&sn,ga_yield)||dn!=f->raw||sn!=f->packed)return -1;
     }
-    if(gm_crc32(0,ga_whole,f->raw)!=f->crc)return -1;
+    uint32_t crc=0;
+    for(uint32_t at=0;at<f->raw;){
+      uint32_t take=f->raw-at<4096u?f->raw-at:4096u;
+      if(ga_yield)ga_yield();
+      crc=gm_crc32(crc,ga_whole+at,take);at+=take;
+    }
+    if(crc!=f->crc)return -1;
     uint32_t n=f->raw<cap?f->raw:cap;for(unsigned k=0;k<n;k++)buf[k]=ga_whole[k];return (int32_t)n;
   }
   return -1;

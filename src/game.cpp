@@ -223,6 +223,7 @@ extern "C" int gp_open(gp_read_fn read, void *user, const char *gam_name) {
   bblName[0] = cblName[0] = chrName[0] = monName[0] = mblName[0] = sndName[0] = palName[0] = 0;
   haveHero = false;
   int32_t n = read(user, gam_name, gam, GAM_CAP);
+  if (n < 0 || (uint32_t)n > GAM_CAP) return -1;
   if (n >= 2 && !(gam[0] == 'G' && gam[1] == 'M')) {  // an older file: GameClass::Load converts it
     uint32_t k = (uint32_t)n < sizeof oldGam ? (uint32_t)n : sizeof oldGam;
     for (uint32_t i = 0; i < k; i++) oldGam[i] = gam[i];
@@ -242,6 +243,11 @@ extern "C" int gp_open(gp_read_fn read, void *user, const char *gam_name) {
   w->hold = true;
   return nplay ? nplay : -1;
 }
+extern "C" const char *gp_title(void) {
+  static char title[21];
+  for (unsigned i = 0; i < 20; i++) title[i] = (char)gam[sceneAt(0) + 23 + i];
+  title[20] = 0; return title;
+}
 extern "C" const char *gp_graphic(int slot, int level) {
   switch (slot) {
     case GP_TITLE: return fileOf(0, 0);
@@ -249,6 +255,9 @@ extern "C" const char *gp_graphic(int slot, int level) {
     case GP_LOST: return fileOf(1, 2);
     case GP_INTRO: return level >= 0 && level < nplay ? fileOf(play[level], F_INTRO) : "";
     case GP_EXIT: return level >= 0 && level < nplay ? fileOf(play[level], F_EXIT) : "";
+    case GP_INSTRUCTIONS: return fileOf(0, 6);
+    case GP_STORY: return fileOf(0, 4);
+    case GP_CREDITS: return fileOf(0, 7);
     case GP_MENU: return fileOf(0, 2);
     case GP_SCORES: return fileOf(0, 8); // the high score screen's backdrop
     case GP_LOADPIC: return fileOf(0, F_INTRO); // Game.File(0,9): the Load Game picture
@@ -277,6 +286,8 @@ extern "C" const char *gp_voc_name(int n) {
 }
 extern "C" const char *gp_song(int slot, int level) {
   switch (slot) {
+    case GP_SONG_MENU: return fileOf(0, 3);
+    case GP_SONG_STORY: return fileOf(0, 5);
     case GP_SONG_TITLE: return fileOf(0, 1);
     case GP_SONG_WON: return fileOf(1, 1);
     case GP_SONG_LOST: return fileOf(1, 3);
@@ -320,6 +331,12 @@ extern "C" uint32_t gp_frame_hash(void) {
     w->renderRow((int)y, row);
     for (uint32_t x = 0; x < GP_VIEW_W; x++) h = (h ^ row[x]) * 16777619u;
   }
+  return h;
+}
+extern "C" uint32_t gp_pixels_hash(const uint8_t *px) {
+  uint32_t h = 2166136261u;
+  for (uint32_t y = 0; y < GP_VIEW_H; y++)
+    for (uint32_t x = 0; x < GP_VIEW_W; x++) h = (h ^ px[y * GP_W + x]) * 16777619u;
   return h;
 }
 // The world itself, for the host tests' state lines (game.h).

@@ -14,7 +14,7 @@ class VocPlayTests(unittest.TestCase):
             flags = ['-O1', '-g', '-fno-omit-frame-pointer', '-fsanitize=address,undefined',
                      '-fno-sanitize-recover=all'] if os.getenv('AUDIO_SANITIZE') else ['-O2']
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', *flags, '-Isrc',
-                            'src/vocplay.c', 'src/audio.c', 'src/opl.c', 'src/opl_tables.c', 'src/cmf.c', 'src/pcspeaker.c',
+                            'src/vocplay.c', 'src/audio.c', 'src/uisound.c', 'src/opl.c', 'src/opl_tables.c', 'src/cmf.c', 'src/pcspeaker.c',
                             'tests/host/vocplay_test.c', '-o', exe], cwd=ROOT, check=True)
             r = subprocess.run([exe], cwd=ROOT, timeout=60, capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)

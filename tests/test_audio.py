@@ -5,7 +5,7 @@ import array, math, os, subprocess, sys, tempfile, unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ['src/opl.c', 'src/opl_tables.c', 'src/cmf.c', 'src/audio.c', 'src/vocplay.c', 'src/pcspeaker.c']
+SRC = ['src/opl.c', 'src/opl_tables.c', 'src/cmf.c', 'src/audio.c', 'src/uisound.c', 'src/vocplay.c', 'src/pcspeaker.c']
 sys.path.insert(0, str(ROOT / 'tests'))
 from audio_cmf import make_cmf
 
@@ -20,6 +20,21 @@ def rms(v):
 
 
 class AudioTests(unittest.TestCase):
+    def test_realtime_ring(self):
+        with tempfile.TemporaryDirectory(prefix='audio-clock-') as directory:
+            executable = str(Path(directory) / 'audio-clock')
+            build(executable, 'tests/host/audio_clock.c')
+            result = subprocess.run([executable], cwd=ROOT, check=False,
+                                    capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_no_wait_holds_a_frame(self):
+        with tempfile.TemporaryDirectory(prefix='audio-wait-') as d:
+            exe = str(Path(d) / 'audio-wait')
+            build(exe, 'tests/host/audio_wait.c')
+            r = subprocess.run([exe], cwd=ROOT, check=False, capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
     def test_host_checks(self):
         with tempfile.TemporaryDirectory(prefix='audio-') as d:
             exe = str(Path(d) / 'audio')

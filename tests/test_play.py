@@ -40,6 +40,7 @@ def lib():
         c.gs_step.argtypes = [C.c_void_p, C.c_uint64]
         c.gs_wake.argtypes = [C.c_void_p, C.c_uint64]; c.gs_wake.restype = C.c_uint64
         c.gs_draw.argtypes = [C.c_void_p, C.c_void_p, C.c_uint32]
+        c.gs_resume.argtypes = [C.c_void_p, C.c_uint64]  # without this ctypes passes the session pointer as a 32-bit int (a Mac crash, 2026-11-10)
         c.gmos_session_new.restype = C.c_void_p
         for f in ('gmos_session_phase', 'gmos_session_stage', 'gmos_session_card', 'gmos_session_ticks', 'gmos_session_showing_card', 'gmos_session_shown', 'gmos_session_keys'): getattr(c, f).argtypes = [C.c_void_p]
         for f in ('gmos_session_px', 'gmos_session_pal'): getattr(c, f).argtypes = [C.c_void_p]; getattr(c, f).restype = C.c_void_p
@@ -158,8 +159,11 @@ class Play(unittest.TestCase):
         self.assertEqual(s.step(t0 + tick_ns(1)), GS_DRAW); self.assertEqual(s.ticks(), 1)
         self.assertEqual(lib().gs_wake(s.s, t0 + tick_ns(1)), t0 + tick_ns(2))
         s.step(t0 + 1_000_000_000); self.assertEqual(s.ticks(), 5)                  # 17 ticks behind: at most 4 at once ...
-        s.step(t0 + 1_000_000_001); self.assertEqual(s.ticks(), 5)                  # ... and the lost time is dropped
-        s.step(t0 + 1_000_000_000 + tick_ns(1)); self.assertEqual(s.ticks(), 6)
+        s.step(t0 + 1_000_000_001); self.assertEqual(s.ticks(), 9)                  # debt survives: each slice catches up four
+        while s.ticks() < 18: s.step(t0 + 1_000_000_001)
+        self.assertEqual(s.ticks(), 18)
+        self.assertEqual(s.step(t0 + 1_000_000_002), 0)                         # caught up, no extra tick/draw
+        s.step(t0 + tick_ns(19)); self.assertEqual(s.ticks(), 19)
         s2 = Session(); t0 = s2.to_play()
         for k in range(1, 183): s2.step(t0 + tick_ns(k))
         self.assertEqual(s2.ticks(), 182)                                           # 182 ticks in 9.996 s

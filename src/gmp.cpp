@@ -77,7 +77,7 @@ extern "C" int32_t gmp_read(void *user, const char *name, uint8_t *buf, uint32_t
   if (raw > sizeof whole) return -1;
   uint8_t *dest = cap >= raw ? buf : whole;
   unsigned long dn = raw, sn = len - 4;
-  if (len == 4 ? raw != 0 : puff(dest, &dn, packed + 4, &sn) || dn != raw) return -1;
+  if (len == 4 ? raw != 0 : puff_yield(dest, &dn, packed + 4, &sn, ga_yield) || dn != raw) return -1;
   uint32_t n = raw < cap ? raw : cap;
   if (dest == whole) for (uint32_t i = 0; i < n; i++) buf[i] = whole[i];
   return (int32_t)n;

@@ -1,8 +1,53 @@
 # Playing a game
 
-Enter opens details; Play starts the game from its DOS files in a loose folder,
+Enter opens details; Play opens the game from its DOS files in a loose folder,
 GMP or supported ZIP/SFX archive. See [copying games](drag-drop.md) for limits.
 A loose game needs no conversion or packing first.
+
+## The DOS menu
+
+Opening a game shows its title graphic or slide list, then PLAYGAME's main menu.
+Up/Down wraps through Play, Read Instructions, Read Storyline, See Credits,
+See Highest Scores and Quit; Enter selects. Esc at the menu or Quit returns to
+the GMOS library. Pages use the existing GIF/BKD, FLI, text and `.LST` reader;
+keys advance pauses and text pages, and Esc returns from a page to the menu.
+Missing instructions/story/credits show PLAYGAME's message for ten seconds or
+a key. Play starts a fresh game, with its first level's intro. F5/F6 during play
+keep their existing save/load behavior.
+
+A win, the last life lost, or Leave game from the Back/Esc pause menu checks
+the Top Ten. A qualifying score opens the shared on-screen name keyboard
+(22 characters, arrows/OK edit, Done or Back accepts; physical typing also works),
+then the score table, then the game's menu. Scores stay in the existing
+`/OS/SAVES` location; see [high scores](saves.md). The e-ink display continues to
+show the active game's title until returning to the library.
+
+`src/session.c` implements this as `gs_launch`; the direct-play `gs_start` API
+and demo preview remain available to existing callers, including JS apps.
+`src/dosmenu.c` reads the menu words, RGB targets/color selectors, title/row
+positions and marker geometry from a recognized XFERPLAY 3.00 build, looking
+for `<GAM stem>.EXE`, `XFERPLAY.EXE`, then `PLAYGAME.EXE`. Other executable builds
+use stock values. Executables are read as data, never executed.
+
+A game can also supply `PLAYER.JSON` (or `player.json`) with the web player's
+record format, for example:
+
+```json
+{"base":"xferplay-3.00","patches":{"str.menu.play":"GO","layout.menu.play.x":72,"color.rgb.blue":[10,20,63]}}
+```
+
+This overrides the executable's menu values. Put it beside the `.GAM`, in the
+same ZIP game folder, or in a GMP's compressed `dos/PLAYER.JSON` entry. GMOS can
+only read customization data included in the game; existing packs without it
+use the stock menu. Gameplay tuning and non-menu player patches are outside
+this reader's scope.
+
+Host coverage is in `tests/test_dosmenu.py` and `tests/host/dosmenu_end.cpp`:
+keys/screens, multi-page text and slides, missing pages, patched words/positions/
+colors, malformed records, win/loss through name entry and Top Ten, and restart.
+The complete launcher still needs a TV/USB-keyboard check: intro/menu pictures
+and colors, arrow repeat, all six choices, qualifying score/name persistence,
+F5/F6 after restarting, and e-ink transitions back to the library.
 
 ## One play core, shared
 
@@ -40,17 +85,16 @@ built without exceptions, RTTI or static constructors; `src/libc.c` supplies
 
 ## A game, start to end
 
-`src/session.c` runs a game as the Pocket Player does:
+`src/session.c` runs the DOS launcher around the shared play core:
 
-1. The title (scene 0's title graphic), then the first level's intro on a
-   cleared screen. PLAYGAME's menu between the two is left out, as the Pocket
-   Player leaves it out.
+1. The title (scene 0's title graphic), then the game's main menu. Choosing
+   Play shows the first level's intro on a cleared screen.
 2. The level, a tick every 1/18.2065 s (the PC timer's 1193182 / 65536 Hz). A
    slow step runs up to 4 ticks to catch up and drops time beyond that.
 3. On a link: the level's exit pages, the next level's intro, the next level.
    After a death: the level's intro again, unless no lives are left.
 4. Winning shows the level's exit and the won pages; losing the last life
-   shows the lost pages. Then the Top Ten flow, if the score places, and the details view.
+   shows the lost pages. Then the Top Ten flow (name entry if the score places), and the game’s menu.
 
 ## Pages between scenes
 
@@ -95,9 +139,10 @@ up: a page that ends on time begins the next at that moment.
 
 Keys arrive as Linux key codes and reach the game as DOS scan codes: the arrows,
 Home, End, Page Up and Page Down (the diagonals) as the number pad's, and the
-rest of the keyboard as it is (Space, Enter, letters). Esc leaves play for
-the details view (after any Top Ten entry). During a level, F5 opens Save Game
-and F6 opens Load Game; see [controls and limits](game-save.md). These native
+rest of the keyboard as it is (Space, Enter, letters). Back/Esc pauses native
+launcher play. Arrows and OK choose Resume, Save game, Load game or Leave game;
+Leave checks the Top Ten and returns to the DOS menu. F5 opens Save Game
+and F6 opens Load Game directly; see [controls and limits](game-save.md). These native
 save/load screens and real-card writes are **hardware-untested**.
 
 ## The screen
@@ -227,13 +272,25 @@ under 80 characters. `tests/test_sound.py` checks them.
 ## Sound on the board (ABI 1.8)
 
 Local HDMI playback remains **hardware-untested**. Missing, busy, incompatible
-or failed devices fall back to silent play, preserving remote `SND` events.
-With ABI major 1, minor >= 8 and a usable `/dev/audio`, GMOS opens it once and plays through HDMI, 16-bit stereo at 48 kHz.
+or failed devices preserve play and remote `SND` events. Failures show a brief
+**No sound device** note and log the failing operation and negative kernel status.
+Turning music on retries a closed device. With ABI major 1, minor >= 8 and a
+usable `/dev/audio`, GMOS queues 16-bit stereo at 48 kHz for the kernel's sink.
 The synth runs in the main loop, never blocking the 18.2 Hz tick or the heartbeat: `au_pump` (`src/audio.c`) asks the
 ring's level and writes only when under 250 ms is queued (the heartbeat pumps too, so long reads inside a step keep
 feeding). Queue targets are clamped to the reported capacity: kernel develop currently has 16,384 frames,
-while 4,096-frame rings also work with less protection against slow storage. Game play uses a shorter
-65 ms queue for effects. HDMI is used when available; otherwise the kernel's null backend drains silently.
+while 4,096-frame rings also work with less protection against slow storage. Gameplay and the
+library now share a 12,000-frame (250 ms) low-water floor and a 15,000-frame (312.5 ms) target.
+Observed worst pump gaps plus the worst synthesis slice and 20 ms margin can raise the low-water
+mark to the target. Each call renders at most 1,920 frames, writing 480-frame slices and rechecking
+live drainage after each write. Refills run around ticks, rendering, presentation, decoding and file
+reads, and between sleep slices of at most 10 ms. The latency tradeoff is up to 312.5 ms for effects;
+older 4,096-frame rings cap it at about 85 ms and cannot cover a single 150 ms stall.
+See [audio underruns](audio-underrun.md) for the diagnosis and host regression.
+HDMI is used when available; otherwise the kernel's null backend drains silently.
+ABI 1.8 cannot distinguish these sinks. A successful queue is not evidence of
+TV sound; check the kernel `AUDIO` diagnostic and HDMI startup logs.
+See the [M key and audio trace](music-key.md).
 
 - `src/opl.c`, `src/cmf.c`: an integer OPL2 and CMF player, a port of the web engine's `audio/opl.ts` and `audio/cmfPlayer.ts`
   (tables from `tools/make_opl_tables.py`, no floats in the sample loop). `tools/compare_opl.py` renders songs with both and
@@ -243,8 +300,10 @@ while 4,096-frame rings also work with less protection against slow storage. Gam
 - Every song change fades the old one out (0.68 s), resets the chip (all channels keyed off) and fades the new one in.
 - A game's own sound, or a preview's (its menu song and the game's effects, as PLAYGAME's demo plays them), replaces the
   library's background tune when enabled. Library music defaults off at every boot; the owner can toggle
-  it with **M** in the library (the footer shows the setting). Game/demo sound follows the DOS game regardless
-  of that setting. The background cycle (`bg_tick` in `src/main.c`): the OS's own tune (`tools/make_ostune.ts`,
+  it with **M** in the library grid, details or Options (the footer shows the setting).
+  Game/demo sound follows the DOS game regardless of that setting. In a game,
+  **M** toggles music independently (initially on), preserving effects and the song's
+  advancing position; presses log `GMOS music on/off`. Text entry retains M as a letter. The background cycle (`bg_tick` in `src/main.c`): the OS's own tune (`tools/make_ostune.ts`,
   composed in code) every third pick, otherwise a random library game's first-level song (its menu song if none), a
   short gap between tunes. Songs over 8 KB are skipped for the background.
 - The log has `GMOS audio ...` lines with the kernel's counters, the synth's CPU in per mille, and each underrun with

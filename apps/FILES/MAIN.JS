@@ -22,7 +22,7 @@ const pathLabel = box('text', 'path', 32, 80, 896, 27, '/sd');
 box('text', 'size-gap', 32, 116, 896, 27, 'File sizes unavailable: no stat API.');
 const content = box('div', 'content', 32, 160, 896, 280, '');
 const status = box('text', 'status', 32, 448, 896, 27, '');
-box('text', 'controls', 32, 494, 896, 27, 'Arrows: focus/page   Enter/Space: open   Esc/Backspace: up');
+box('text', 'controls', 32, 494, 896, 27, 'Arrows: focus/page   Enter/Space: open   Esc: up / exit at root');
 
 let folder = '/sd';
 let names = [];
@@ -132,7 +132,7 @@ function openEntry(i) {
 }
 function goBack() {
   if (textPath) { lines = []; showFolder(); return; }
-  if (!history.length) { status.textContent = 'Already at card root /sd.'; return; }
+  if (!history.length) { sys.exit(0); return; }
   const previous = history.pop();
   folder = previous.folder;
   names = previous.names;

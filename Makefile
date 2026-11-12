@@ -25,7 +25,7 @@ PFLAGS := $(ARCH) $(C_WARNINGS) -DGMOS_SCAN_VERBOSE=$(SCAN_VERBOSE) -std=c11 -Is
 # System includes keep vendor header diagnostics out of the project warning policy.
 PXXFLAGS := $(ARCH) $(CXX_WARNINGS) -std=c++17 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -Isrc -isystem third_party/gmcore
 LFLAGS := -nostdlib -Tsdk/lib/sandbox.ld -Wl,-z,noexecstack -Wl,--build-id=none -Wl,-z,max-page-size=4096
-CORE := src/eink_page.c src/einkart_data.c src/opl.c src/opl_tables.c src/cmf.c src/audio.c src/vocplay.c src/pcspeaker.c src/ostune_data.c src/asset_scratch.c src/zip.c src/gam.c src/menu.c src/library.c src/scan_cache.c src/thumb.c src/view.c src/font_data.c src/gif.c src/fli.c src/text.c src/font8_data.c src/session.c src/sound.c src/hiscore.c src/savefile.c src/hiscreen.c src/hisload.c src/saveplay.c src/bootart.c src/bootart_data.c src/headart_data.c
+CORE := src/eink_page.c src/einkart_data.c src/opl.c src/opl_tables.c src/cmf.c src/audio.c src/uisound.c src/vocplay.c src/pcspeaker.c src/ostune_data.c src/asset_scratch.c src/zip.c src/gam.c src/menu.c src/collections.c src/settings.c src/library.c src/scan_cache.c src/thumb.c src/view.c src/font_data.c src/gif.c src/fli.c src/text.c src/font8_data.c src/session.c src/dosmenu.c src/sound.c src/hiscore.c src/savefile.c src/gmoslog.c src/hiscreen.c src/hisload.c src/saveplay.c src/bootart.c src/bootart_data.c src/headart_data.c
 PLAYCORE := src/game.cpp
 GMPCORE := src/gmp.cpp src/asset_scratch.h third_party/gmcore/gmsmall.h third_party/puff/puff.h
 GMCORE := third_party/gmcore/gmcore.h third_party/gmcore/gmmon.h
@@ -45,15 +45,15 @@ build/sdk_mem.o: sdk/lib/mem.c Makefile | build
 	$(CC) $(VENDOR_PFLAGS) -c $< -o $@
 build/puff.o: third_party/puff/puff.c third_party/puff/puff.h Makefile | build
 	$(CC) $(VENDOR_PFLAGS) -c $< -o $@
-build/GMOS.ELF: src/main.c src/eink.c src/savefile_sbx.c src/sdpack.c src/sdzip.c build/game.o build/gmp.o $(CORE) $(wildcard src/*.h) $(SDK) $(VENDOR_OBJS) sdk/lib/sandbox.ld $(wildcard sdk/include/sandbox/*.h) Makefile | build
-	$(CC) $(PFLAGS) $(LFLAGS) $(SDK) $(VENDOR_OBJS) src/main.c src/eink.c src/savefile_sbx.c src/sdpack.c src/sdzip.c $(CORE) build/game.o build/gmp.o -lgcc -o $@
+build/GMOS.ELF: src/input.c src/awake.c src/main.c src/eink.c src/savefile_sbx.c src/sdpack.c src/sdzip.c build/game.o build/gmp.o $(CORE) $(wildcard src/*.h) $(SDK) $(VENDOR_OBJS) sdk/lib/sandbox.ld $(wildcard sdk/include/sandbox/*.h) Makefile | build
+	$(CC) $(PFLAGS) $(LFLAGS) $(SDK) $(VENDOR_OBJS) src/input.c src/awake.c src/main.c src/eink.c src/savefile_sbx.c src/sdpack.c src/sdzip.c $(CORE) build/game.o build/gmp.o -lgcc -o $@
 # The pure parts (title reader, list, drawing, game, session) as a host library
 # for tests/, and gmplay, which prints the Pocket Player host test's state lines.
 HOSTDIR ?= build/host
 HOSTFLAGS ?= -O1
 VENDOR_HOSTFLAGS = $(HOSTFLAGS) -std=c11 $(VENDOR_WARNINGS)
 VENDOR_QJS_HOSTFLAGS = $(HOSTFLAGS) -D_GNU_SOURCE -DNDEBUG -w
-host: $(HOSTDIR)/libeink.so $(HOSTDIR)/libgmos.so $(HOSTDIR)/libsdpack.so $(HOSTDIR)/gmplay $(HOSTDIR)/jsrun
+host: $(HOSTDIR)/scroll_check $(HOSTDIR)/frame_bench $(HOSTDIR)/libeink.so $(HOSTDIR)/libgmos.so $(HOSTDIR)/libsdpack.so $(HOSTDIR)/gmplay $(HOSTDIR)/jsrun
 $(HOSTDIR):
 	mkdir -p $@
 $(HOSTDIR)/puff.o: third_party/puff/puff.c third_party/puff/puff.h Makefile | $(HOSTDIR)
@@ -101,7 +101,7 @@ $(HOSTDIR)/fuzz: tests/host/fuzz.c tests/host/hostio.h $(HOSTDIR)/libgmos.so | $
 # core, newlib's libc and libm from the toolchain under a fixed heap (src/js/sys.c).
 QJS := quickjs libregexp libunicode dtoa
 QJSFLAGS := -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -Os -ffunction-sections -fdata-sections -D__DJGPP -DJS_HAVE_THREADS=0 -DNDEBUG -Wno-implicit-function-declaration -w
-JSC := src/js/jsrt.c src/js/dom.c src/session.c src/sound.c src/gif.c src/fli.c src/text.c src/thumb.c src/font_data.c src/font8_data.c
+JSC := src/js/jsrt.c src/js/dom.c src/session.c src/dosmenu.c src/sound.c src/gif.c src/fli.c src/text.c src/thumb.c src/font_data.c src/font8_data.c
 JSFLAGS := -mcpu=arm1176jzf-s -marm -mfloat-abi=soft -Os -ffunction-sections -fdata-sections -std=gnu11 $(C_WARNINGS) -Wno-main -Isdk/include -Isrc -isystem third_party/quickjs-ng
 js: build/JS.ELF
 build/js:
@@ -131,3 +131,39 @@ $(HOSTDIR)/jsrun: tests/host/jsrun.c $(JSC) $(HOSTDIR)/js_prelude.c $(HOSTDIR)/j
 	$(HOSTCC) $(HOSTFLAGS) -std=gnu11 $(C_WARNINGS) -Isrc -isystem third_party/quickjs-ng tests/host/jsrun.c $(JSC) $(HOSTDIR)/js_prelude.c $(HOSTDIR)/js_picker.c $(QJS:%=$(HOSTDIR)/q_%.o) $(HOSTDIR)/js_game.o $(HOSTCXXLIB) -lm -o $@
 clean:
 	rm -rf build
+
+$(HOSTDIR)/scroll_check: tests/host/scroll_check.cpp tests/host/hostio.h $(HOSTDIR)/libgmos.so Makefile
+	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) $(CXX_WARNINGS) -Isrc -isystem third_party/gmcore $< $(HOSTDIR)/libgmos.so -o $@
+# Reproducible frame pipeline benchmark (first scene, scripted left/right input).
+$(HOSTDIR)/frame_bench: tests/host/frame_bench.cpp tests/host/hostio.h $(HOSTDIR)/libgmos.so Makefile
+	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) $(CXX_WARNINGS) -Isrc -isystem third_party/gmcore $< $(HOSTDIR)/libgmos.so -o $@
+
+# Long-session timing regression using production session/core, without ctypes.
+host: $(HOSTDIR)/timing_check
+$(HOSTDIR)/timing_check: tests/host/timing_check.c tests/host/hostio.h $(HOSTDIR)/libgmos.so Makefile
+	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -Isrc -Ithird_party/puff $< $(HOSTDIR)/libgmos.so -o $@
+
+# Production power client and SDK records through a fake raw syscall transport.
+host: $(HOSTDIR)/awake_check
+$(HOSTDIR)/awake_check: src/awake.c src/awake.h src/session.h tests/host/awake_check.c $(HOSTDIR)/libgmos.so $(wildcard sdk/include/sandbox/*.h) Makefile | $(HOSTDIR)
+	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -DHOST_TEST -Isdk/include -Isrc src/awake.c tests/host/awake_check.c $(HOSTDIR)/libgmos.so -o $@
+
+# Native remote settings, persistence and ABI 1.11 timeout records.
+host: $(HOSTDIR)/settings_check
+$(HOSTDIR)/settings_check: src/awake.c tests/host/settings_check.c $(HOSTDIR)/libgmos.so $(wildcard src/*.h) $(wildcard sdk/include/sandbox/*.h) Makefile | $(HOSTDIR)
+	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -DHOST_TEST -Isdk/include -Isrc src/awake.c tests/host/settings_check.c $(HOSTDIR)/libgmos.so -o $@
+
+# Menu UI sounds: cues per action, the off switch, burst bounds.
+host: $(HOSTDIR)/uisound_check
+$(HOSTDIR)/uisound_check: tests/host/uisound_check.c $(HOSTDIR)/libgmos.so $(wildcard src/*.h) Makefile | $(HOSTDIR)
+	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -Isrc tests/host/uisound_check.c $(HOSTDIR)/libgmos.so -o $@
+
+# Pages and animations against the kernel's heartbeat (bounded steps, hook, wakes).
+host: $(HOSTDIR)/fli_pages_check
+$(HOSTDIR)/fli_pages_check: tests/host/fli_pages_check.c tests/host/hostio.h src/session.h $(HOSTDIR)/libgmos.so Makefile
+	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -Isrc tests/host/fli_pages_check.c $(HOSTDIR)/libgmos.so -o $@
+
+# Production input reader with a fake event device; no display or audio.
+host: $(HOSTDIR)/input_check
+$(HOSTDIR)/input_check: src/input.c src/input.h tests/host/input_check.c tests/host/hostio.h tests/host/input/sandbox/syscall.h $(wildcard sdk/include/sandbox/*.h) $(HOSTDIR)/libgmos.so Makefile
+	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -Itests/host/input -Isdk/include -Isrc src/input.c tests/host/input_check.c $(HOSTDIR)/libgmos.so -o $@

@@ -107,7 +107,10 @@ int vp_prepare(struct vp *v, unsigned budget) {
   if (v->state != VP_PENDING) return v->state == VP_PLAYING ? VP_OK : v->state;
   struct vp_seg seg;
   for (;;) {
+    uint32_t before = v->scan.visits;
     int r = next(v, &v->scan, &seg, budget);
+    uint32_t used = v->scan.visits - before;
+    budget = used < budget ? budget - used : 0;
     if (r == 2) return VP_PENDING;
     if (r < 0) {vp_stop(v); v->state = VP_LIMIT; return VP_LIMIT;}
     if (!r) break;
@@ -161,8 +164,9 @@ void vp_mix(struct vp *v, int32_t *acc, unsigned n) {
     if (!pull(v, &v->s0)) {v->s0 = 0; v->ended = 1;}
     if (v->ended || !pull(v, &v->s1)) {v->s1 = v->s0; v->ended = 1;}
   }
+  uint32_t visits0 = v->play.visits;
   for (unsigned i = 0; i < n; i++) {
-    if (v->frame >= v->frames) {vp_stop(v); return;}
+    if (v->frame >= v->frames || v->play.visits - visits0 > VP_MIX_VISITS) {vp_stop(v); return;} /* a clip that needs too many block reads for one slice is cut */
     int32_t f = (int32_t)v->phase;
     int64_t w = ((int64_t)v->s0 * (int32_t)(VP_RATE - (uint32_t)f) + (int64_t)v->s1 * f) * 4; /* the level 0.8 = 4/5 */
     int64_t q = (int64_t)VP_RATE * 5, y = (w >= 0 ? w + q / 2 : w - q / 2) / q;

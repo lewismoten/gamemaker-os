@@ -2,6 +2,7 @@
  * hiscreen.h. Texts and positions are HISCOREL.C's. Claude Sonnet 5.5 wrote this file. */
 #include "hiscreen.h"
 #include "text.h"
+#include "osk.h"
 #define K_ESC 1
 #define K_BACK 14
 #define K_ENTER 28
@@ -40,6 +41,7 @@ void hs_modifiers(struct hs_screen *h, const uint64_t *keys) {
 void hs_start(struct hs_screen *h, const struct his_table *t, int32_t score, uint64_t now) {
   h->t = *t; h->score = score; h->place = score > 0 ? his_place(t, score) + 1 : 0; h->shift = 0; h->ctrl = 0; h->cur_on = 1;
   for (unsigned i = 0; i <= HIS_NAME_MAX; i++) h->name[i] = 0;
+  h->keyboard=1; h->keyboard_pos=0;
   h->len = 0; h->t0 = h->blink = now;
   h->stage = h->place ? HS_NAME : HS_TABLE;
 }
@@ -55,8 +57,17 @@ int hs_event(struct hs_screen *h, uint16_t type, uint16_t code, int32_t value, u
   if (value == 0) return 0;
   if (h->stage == HS_TABLE) return value == 1 ? HS_DONE : 0; /* "Hit any key" */
   h->blink = now; h->cur_on = 1;
+  if(!h->keyboard && (code==103 || code==108)) {h->keyboard=1;return HS_DRAW;}
+  if(h->keyboard && (code==103 || code==108 || code==105 || code==106 || code==28)) {
+    int ch=osk_press(&h->keyboard_pos,code,value);
+    if(ch==13)return accept(h,now);
+    if(ch)osk_edit(h->name,HIS_NAME_MAX,ch);
+    h->len=0;while(h->name[h->len])h->len++;
+    return HS_DRAW;
+  }
   int c = h->ctrl ? ctrl_byte(code) : hs_ascii(code, h->shift);
-  if (code == K_ESC || code == K_ENTER || c == 27 || c == 13) return value == 1 ? accept(h, now) : 0; /* 27, 13 */
+  if(c || code==K_BACK)h->keyboard=0;
+  if (code == K_ESC || code == K_ENTER || code == 96 || c == 27 || c == 13) return value == 1 ? accept(h, now) : 0; /* 27, 13 */
   if (code == K_BACK || code == K_LEFT || c == 8) {if (h->len) h->name[--h->len] = 0; return HS_DRAW;} /* 8; Left: DOS erases too */
   /* Right (RIGHTKEY) is "if (ans[ctr] != 0) ctr++", and ans[ctr] is always 0 here because Left and
      Backspace truncate the answer and a new entry's starts empty: it never moves, so it is ignored.
@@ -91,10 +102,13 @@ static void box(uint8_t *px, int x0, int y0, int x1, int y1, uint8_t c) { /* Box
   for (int y = y0; y <= y1; y++) if (x1 < (int)HS_W) {px[y * HS_W + x0] = c; px[y * HS_W + x1] = c;}
 }
 void hs_draw(const struct hs_screen *h, uint8_t *px, uint8_t *pal, const uint8_t *back, const uint8_t *back_pal) {
+  hs_draw_colors(h, px, pal, back, back_pal, 0);
+}
+void hs_draw_colors(const struct hs_screen *h, uint8_t *px, uint8_t *pal, const uint8_t *back, const uint8_t *back_pal, const uint8_t *colors) {
   int pic = back && h->stage == HS_TABLE;
-  for (unsigned i = 0; i < 768; i++) pal[i] = pic ? back_pal[i] : 0;
+  for (unsigned i = 0; i < 768; i++) pal[i] = pic ? back_pal[i] : colors ? colors[i] : 0;
   for (unsigned i = 0; i < HS_W * HS_H; i++) px[i] = pic ? back[i] : 0;
-  if (!pic) { /* the DOS palette is the game's colors; here black with the two colors it matches */
+  if (!pic && !colors) { /* the DOS palette is the game's colors; here black with the two colors it matches */
     pal[3] = 63; pal[4] = 10; pal[5] = 10; pal[6] = 10; pal[7] = 10; pal[8] = 63;
   }
   uint8_t red = gp_match(pal, 63, 10, 10), blue = gp_match(pal, 10, 10, 63);
@@ -102,7 +116,8 @@ void hs_draw(const struct hs_screen *h, uint8_t *px, uint8_t *pal, const uint8_t
   if (h->stage == HS_NAME) {
     write(px, 96, 40, red, "Congratulations!");
     p = dec(cat(s, "You scored number "), h->place, 2); p = cat(p, " on the Top Ten!"); *p = 0;
-    write(px, 0, 100, blue, s);
+    write(px, 0, h->keyboard?64:100, blue, s);
+    if(h->keyboard) {osk_draw(px,h->keyboard_pos,h->name,blue,0);return;}
     write(px, 0, 120, red, "Enter Your Name:");
     write(px, 136, 120, blue, h->name);
     if (h->cur_on) {

@@ -19,6 +19,7 @@ uint8_t gp_file_buf[1024 * 1024]; /* also thumb.c's read buffer: thumbs load in 
 #define file gp_file_buf
 static uint8_t text[64 * 1024] __attribute__((aligned(8)));
 static uint8_t saved[GP_W * GP_H], canvas[GP_FLI_PIXELS], canvas_pal[768];
+static uint8_t menu_back[GP_W * GP_H], menu_pal[768];
 static uint8_t listnext;
 static const uint8_t black[768];
 static char *put(char *p, const char *s) {while (*s) *p++ = *s++; *p = 0; return p;}
@@ -79,7 +80,21 @@ static void queue(struct gs_session *s, const char *slot) {
     at = end + 1;
   }
 }
-static void render_play(struct gs_session *s) {gp_render(s->px); s->showing_card = 0;}
+static void render_play(struct gs_session *s) {
+  gp_decode_checkpoint();
+  uint64_t t = s->clock_ns ? s->clock_ns() : 0;
+  gp_render(s->px); s->showing_card = 0;
+  if (s->clock_ns) s->render_ns += s->clock_ns() - t;
+  gp_decode_checkpoint();
+}
+static char play_tick(struct gs_session *s) {
+  gp_decode_checkpoint();
+  uint64_t t = s->clock_ns ? s->clock_ns() : 0;
+  char r = gp_tick();
+  if (s->clock_ns) s->tick_ns += s->clock_ns() - t;
+  gp_decode_checkpoint();
+  return r;
+}
 void gs_fade_palette(const uint8_t *from, const uint8_t *to, uint32_t step, uint32_t steps, uint8_t *out) {
   for (unsigned i = 0; i < 768; i++) out[i] = (uint8_t)(from[i] + ((int)to[i] - (int)from[i]) * (int)step / (int)steps);
 }
@@ -149,12 +164,15 @@ static int begin_card(struct gs_session *s, const struct gs_card *c, uint64_t no
   }
   if (fli) {
     int32_t n = s->read(s->user, c->name, file, sizeof file);
+    if (s->beat) s->beat();
     if (n < 0 || gp_fli_open(&s->fli, file, (uint32_t)n)) {say2(s, "page not an animation: ", c->name); next_from(s, now); return r;}
     copy(canvas_pal, s->pal, 768);
     uint32_t k = s->fli.w * s->fli.h; copy(canvas, s->px, k < GP_W * GP_H ? k : GP_W * GP_H);
     char line[64], *q = put(line, c->name); q = put(q, ", "); q = num(q, (int32_t)s->fli.frames); q = put(q, " frames "); q = num(q, (int32_t)s->fli.speed); q = put(q, "/70 s apart, then ");
     if (pause == GS_KEY_WAIT) put(q, "a key"); else {q = num(q, (int32_t)pause); put(q, " s");}
     say2(s, "page ", line);
+    /* DOS starts the animation's retraces once the file is loaded: a slow read must not leave every frame owed at once. */
+    if (s->clock_ns) {uint64_t c0 = s->clock_ns(); if (c0 > now) now = c0;}
     s->stage = GS_FLI; s->t = now; s->fli_frame = 0; s->pause = pause; s->showing_card = 1;
     return r;
   }
@@ -185,7 +203,13 @@ static int begin_card(struct gs_session *s, const struct gs_card *c, uint64_t no
   next_from(s, now);
   return r;
 }
+static int menu_show(struct gs_session *s, uint64_t now);
 static int cards_done(struct gs_session *s, uint64_t now) {
+  if (s->launcher && s->after == GS_MENU) return menu_show(s, now);
+  if (s->launcher && s->after == GS_DONE) {
+    gp_release_all(); s->phase = GS_SCORES; s->score_check = 1; s->keys = 0;
+    return 0;
+  }
   s->now_card = 0;
   if (s->after == GS_DONE) {snd_end(&s->sound); s->phase = GS_DONE; return GS_EXIT;}
   int ok = s->begun ? gp_finish() : gp_begin();
@@ -221,9 +245,16 @@ static void level_change(struct gs_session *s, char r) {
   s->keys = 0; /* m.flushKeys() after the scene */
 }
 /* FLI::View: frame k shows k * speed retraces after the start; all at once at speed 0. */
+#define FLI_STEP_FRAMES 2u /* frames decoded in one step on the board (s->beat set): the heartbeat and audio run between steps */
 static int fli_step(struct gs_session *s, uint64_t now) {
   int r = 0;
-  while (s->fli_frame < s->fli.frames && now >= s->t + retrace((uint64_t)s->fli_frame * s->fli.speed)) {
+  for (unsigned n = 0; s->fli_frame < s->fli.frames && now >= s->t + retrace((uint64_t)s->fli_frame * s->fli.speed); n++) {
+    if (s->beat && n == FLI_STEP_FRAMES) { /* behind: play on from here at its own pace instead of owing the missed frames */
+      uint64_t next = now + retrace(s->fli.speed), back = retrace((uint64_t)s->fli_frame * s->fli.speed);
+      s->t = next > back ? next - back : 0;
+      break;
+    }
+    if (s->beat) s->beat();
     if (gp_fli_frame(&s->fli, canvas, canvas_pal)) copy(s->pal, canvas_pal, 768);
     uint32_t w = s->fli.w < GP_W ? s->fli.w : GP_W, h = s->fli.h < GP_H ? s->fli.h : GP_H;
     for (uint32_t y = 0; y < h; y++) copy(s->px + y * GP_W, canvas + y * s->fli.w, w);
@@ -246,7 +277,7 @@ static int run_cards(struct gs_session *s, uint64_t now) {
         uint64_t at = s->t < now ? s->t : now;
         if (s->card < s->ncards) {r |= begin_card(s, &s->cards[s->card++], at); continue;}
         r |= cards_done(s, at);
-        if (r & GS_EXIT) return r;
+        if ((r & GS_EXIT) || s->phase != GS_CARDS) return r;
         continue;
       }
       case GS_FADE: case GS_LEVEL_IN: case GS_LEVEL_OUT: {
@@ -285,6 +316,7 @@ static int run_cards(struct gs_session *s, uint64_t now) {
   return r;
 }
 int gs_start(struct gs_session *s, gp_read_fn read, void *user, const char *gam_name, uint64_t now_ns) {
+  s->launcher = 0; s->demo = 0;
   s->read = read; s->user = user; s->begun = 0; s->total_ticks = 0; s->ran = 0; s->showing_card = 0;
   s->keys = 0; s->shown = 0; s->listid = 0; s->text = 0; s->now_card = 0;
   zero(s->px, sizeof s->px); zero(s->pal, 768); zero(s->colors, 768); zero(s->listpal, 768);
@@ -307,6 +339,82 @@ int gs_start(struct gs_session *s, gp_read_fn read, void *user, const char *gam_
   if (s->phase == GS_DONE) {snd_end(&s->sound); return -1;}
   return 0;
 }
+/* DoGame/GVertMenu: keep the picture without words in saved while waiting
+ * for a choice. Text pages already share saved, so reload it on each return. */
+static unsigned slen(const char *v) {unsigned n=0;while(v[n])n++;return n;}
+static void fill(uint8_t *px,int x0,int y0,int x1,int y1,uint8_t col) {
+  for(int y=y0;y<=y1;y++)for(int x=x0;x<=x1;x++)if(x>=0&&x<320&&y>=0&&y<200)px[y*320+x]=col;
+}
+static void menu_draw(struct gs_session *s) {
+  copy(s->px,saved,sizeof saved);
+  const struct dm_look *d=&s->look;const uint8_t *rgb=d->rgb[d->color];
+  uint8_t col=gp_match(s->pal,rgb[0],rgb[1],rgb[2]);
+  gp_write(s->px,d->num[DM_TITLEX],d->num[DM_TITLEY],col,gp_title(),slen(gp_title()));
+  for(unsigned i=0;i<6;i++)gp_write(s->px,d->num[DM_PLAY_X+2*i],d->num[DM_PLAY_Y+2*i],col,d->words[i],slen(d->words[i]));
+  int x=d->num[DM_MARKERX],y=d->num[DM_FIRSTY]-8+(s->choice+1)*d->num[DM_SPACING];
+  fill(s->px,x,y,x+d->num[DM_MARKER_WIDTH],y+4,col);
+}
+static int menu_show(struct gs_session *s,uint64_t now) {
+  if (s->menu_valid) {
+    copy(s->px,menu_back,sizeof menu_back);copy(s->pal,menu_pal,768);
+  } else if (!s->menu_loading) {
+    snd_music(&s->sound,gp_song(GP_SONG_MENU,0));
+    zero(s->px,sizeof s->px);zero(s->pal,768);
+    s->ncards=s->card=0;queue(s,gp_graphic(GP_MENU,0));
+    if (s->ncards) {
+      for(unsigned i=0;i<s->ncards;i++)s->cards[i].pause=0;
+      s->menu_loading=1;s->phase=GS_CARDS;s->after=GS_MENU;next_from(s,now);return GS_DRAW;
+    }
+    /* DrawDefaultScrn/RandCols: smooth VGA ramps and the 101 frames.
+     * A fixed seed keeps the fallback reproducible on host and board. */
+    uint32_t seed=1;int rgb[3]={0},dir[3]={0};
+    for(int i=0;i<256;i++){
+      if(i%32==0){do{for(int k=0;k<3;k++)if(!dir[k]){seed=seed*1664525u+1013904223u;dir[k]=(int)(seed>>31);}}while(!dir[0]&&!dir[1]&&!dir[2]);}
+      for(int k=0;k<3;k++){rgb[k]+=dir[k]==1?2:dir[k]==2?-2:0;if(rgb[k]>=63){rgb[k]=63;dir[k]=2;}if(rgb[k]<0){rgb[k]=0;dir[k]=0;}s->pal[i*3+k]=(uint8_t)rgb[k];}
+    }
+    for(int i=0;i<=100;i++){int a=40-i*4/10,b=100-i,c=280+i*4/10,d=180+i*2/10;fill(s->px,a,b,c,b,(uint8_t)i);fill(s->px,a,d,c,d,(uint8_t)i);fill(s->px,a,b,a,d,(uint8_t)i);fill(s->px,c,b,c,d,(uint8_t)i);}
+  }
+  s->menu_loading=0;s->menu_valid=1;
+  copy(menu_back,s->px,sizeof menu_back);copy(menu_pal,s->pal,768);
+  copy(saved,s->px,sizeof saved);copy(s->colors,s->pal,768);
+  s->phase=GS_MENU;s->keys=0;s->showing_card=1;s->now_card=0;s->t=now;
+  menu_draw(s);return GS_DRAW;
+}
+int gs_menu_return(struct gs_session *s,uint64_t now) {
+  s->score_check=0;s->begun=0;gp_release_all();
+  snd_music(&s->sound,gp_song(GP_SONG_MENU,0));
+  return menu_show(s,now);
+}
+int gs_launch(struct gs_session *s,gp_read_fn read,void *user,const char *gam,uint64_t now) {
+  /* Open without starting a level: title pages must end at the menu. */
+  s->launcher=1;s->demo=0;s->menu_valid=s->menu_loading=0;s->read=read;s->user=user;s->begun=0;s->choice=0;s->score_check=0;
+  s->keys=s->shown=s->listid=0;s->text=0;s->now_card=0;s->total_ticks=s->ran=0;
+  zero(s->px,sizeof s->px);zero(s->pal,768);zero(s->colors,768);zero(s->listpal,768);
+  s->levels=gp_open(read,user,gam);if(s->levels<0)return -1;
+  dm_load(&s->look,read,user,gam,file,sizeof file);
+  s->sound.say=s->say;snd_game(&s->sound,gam);snd_music(&s->sound,gp_song(GP_SONG_TITLE,0));
+  s->ncards=s->card=0;queue(s,gp_graphic(GP_TITLE,0));s->after=GS_MENU;s->phase=GS_CARDS;next_from(s,now);
+  return 0;
+}
+static int menu_event(struct gs_session *s,uint16_t code,int32_t value) {
+  if(value==0)return 0;
+  if(code==103||code==108){s->choice=(s->choice+(code==103?5:1))%6;menu_draw(s);return GS_DRAW;}
+  if(value!=1|| (code!=28&&code!=96))return 0;
+  if(s->choice==5){snd_end(&s->sound);s->phase=GS_DONE;return GS_EXIT;}
+  copy(s->px,saved,sizeof saved);s->ncards=s->card=0;s->keys=0;s->listid=0;
+  if(s->choice==4){s->score_check=0;s->phase=GS_SCORES;return 0;}
+  if(s->choice==0){
+    snd_music(&s->sound,"");s->menu_valid=0;s->begun=0;s->total_ticks=0;queue(s,gp_graphic(GP_INTRO,0));
+    if(s->ncards)s->cards[0].clear=1;
+    s->after=GS_PLAY;
+  } else {
+    static const int slots[]={GP_INSTRUCTIONS,GP_STORY,GP_CREDITS};
+    if(s->choice==2)snd_music(&s->sound,gp_song(GP_SONG_STORY,0));
+    queue(s,gp_graphic(slots[s->choice-1],0));s->after=GS_MENU;
+    if(!s->ncards){const uint8_t *rgb=s->look.rgb[s->look.message];uint8_t col=gp_match(s->pal,rgb[0],rgb[1],rgb[2]);const char *v=s->look.words[s->choice+5];gp_write(s->px,s->look.num[DM_NOFILE_X],s->look.num[DM_NOFILE_Y],col,v,slen(v));s->phase=GS_CARDS;pause_from(s,10,s->t);return GS_DRAW;}
+  }
+  s->phase=GS_CARDS;next_from(s,s->t);return GS_DRAW;
+}
 /* PLAYGAME's Recording::DoPlayBack, once a game tick before the tick: the timer counts up and each
    recorded key whose time has come is pressed (a scan code, bit 7 set: released). The web engine's
    recorder does the same per tick. A gap over 4096 ticks is a DOS demo's wait at a page (the preview
@@ -328,6 +436,7 @@ void gs_demo_stop(struct gs_session *s) {
   if (s->demo) {gp_release_all(); s->demo = 0; s->phase = GS_DONE;}
 }
 int gs_demo_start(struct gs_session *s, gp_read_fn read, void *user, const char *gam_name, uint64_t now_ns) {
+  s->launcher = 0; s->demo = 0;
   s->read = read; s->user = user; s->begun = 0; s->total_ticks = 0; s->ran = 0; s->showing_card = 0; s->demo = 0;
   s->keys = 0; s->text = 0; s->now_card = 0;
   zero(s->px, sizeof s->px); zero(s->pal, 768);
@@ -340,11 +449,22 @@ int gs_demo_start(struct gs_session *s, gp_read_fn read, void *user, const char 
   render_play(s); copy(s->pal, gp_palette(), 768);
   return 0;
 }
+/* Avoid intermediate overflow even after (UINT64_MAX / 10) ns (~58 years).
+ * The quotient/remainder products fit for every representable elapsed ns. */
+static uint64_t play_due(uint64_t elapsed) {
+  return elapsed / GS_TICK_NS10 * 10u + elapsed % GS_TICK_NS10 * 10u / GS_TICK_NS10;
+}
+static uint64_t play_deadline(uint64_t ticks) {
+  return ticks / 10u * GS_TICK_NS10 + (ticks % 10u * GS_TICK_NS10 + 9u) / 10u;
+}
+/* A preview slice is bounded in ticks and in time: a slow tick (a busy frame) ends the slice at
+   DEMO_SLICE_NS, so the caller feeds audio and presents at least that often. */
+#define DEMO_SLICE_NS 40000000ull
 static int demo_step(struct gs_session *s, uint64_t now) {
-  uint64_t due = (now - s->t0) * 10u / GS_TICK_NS10;
+  uint64_t due = play_due(now - s->t0), began = s->clock_ns ? s->clock_ns() : 0;
   while (s->ticks < due && s->ran < 4) {
     if (demo_feed(s)) {gs_demo_stop(s); return GS_EXIT;}
-    char r = gp_tick();
+    char r = play_tick(s);
     s->ticks++; s->total_ticks++; s->ran++;
     {int n = gp_take_sound(); /* the preview plays the game's effects, as PLAYGAME's demo does (its play loop is the real one) */
      if (n >= 0 && s->sound.event) {
@@ -354,9 +474,13 @@ static int demo_step(struct gs_session *s, uint64_t now) {
      }}
     if (r == 'W' || (r == 'D' && gp_lives() <= 0) || ((r == 'L' || r == 'D') && gp_finish())) {gs_demo_stop(s); return GS_EXIT;}
     if (r) gp_release_all(); /* a link or a lost life: the next level or try starts at once, keys let go */
+    if (s->clock_ns && s->clock_ns() - began >= DEMO_SLICE_NS) break;
   }
-  if (s->ticks + 4 < due) {s->t0 = now; s->ticks = 0;}
   if (!s->ran) return 0;
+  /* A preview is not real time: when the board falls behind (slow frames, a stall) it plays on from
+     here in slow motion rather than owing the missed ticks, and it draws after every slice. Keeping the
+     debt froze the picture until it was paid, and slow ticks never paid it. */
+  if (s->ticks < due) s->t0 = now - play_deadline(s->ticks);
   render_play(s); copy(s->pal, gp_palette(), 768);
   return GS_DRAW;
 }
@@ -378,25 +502,59 @@ int gs_scan(uint16_t code) {
   }
   return code >= 2 && code <= 88 ? code : 0; /* the rest of the PC keyboard: Linux codes are its scan codes */
 }
+static void pause_draw(struct gs_session *s) {
+  static const char *const labels[]={"Resume","Save game","Load game","Leave game"};
+  zero(s->px,sizeof s->px);s->showing_card=1;
+  uint8_t fg=gp_match(s->pal,63,63,63);
+  gp_write(s->px,96,24,fg,"Game paused",11);
+  for(unsigned i=0;i<4;i++) {
+    gp_write(s->px,80,60+(int)i*24,fg,i==(unsigned)s->pause_choice?">":" ",1);
+    gp_write(s->px,96,60+(int)i*24,fg,labels[i],slen(labels[i]));
+  }
+  gp_write(s->px,8,184,fg,"Arrows choose  OK select  Back resume",36);
+}
 int gs_event(struct gs_session *s, uint16_t type, uint16_t code, int32_t value) {
   if (type != 1 || s->phase == GS_DONE) return 0;
+  if (s->launcher && s->phase == GS_SCORES) return 0;
+  if(s->phase==GS_PAUSED) {
+    if(!value)return 0;
+    if(code==103 || code==108) {s->pause_choice=(s->pause_choice+(code==103?3:1))%4;pause_draw(s);return GS_DRAW;}
+    if(value!=1)return 0;
+    if(code==1 || (code==28 && s->pause_choice==0)) {s->phase=GS_PLAY;gs_resume(s,s->t);return GS_DRAW;}
+    if(code==28) {
+      if(s->pause_choice==3) {s->phase=GS_SCORES;s->score_check=1;return 0;}
+      s->phase=GS_PLAY;return s->pause_choice==1?GS_SAVE:GS_LOAD;
+    }
+    return 0;
+  }
+  if(s->launcher && s->phase==GS_PLAY && code==1 && value==1) {
+    gp_release_all();s->phase=GS_PAUSED;s->pause_choice=0;pause_draw(s);return GS_DRAW;
+  }
+  if (s->launcher && code == 1 && value == 1 && s->phase != GS_MENU) {
+    gp_release_all();s->keys=0;
+    if(s->begun){s->phase=GS_SCORES;s->score_check=1;return 0;}
+    return gs_menu_return(s,s->t);
+  }
   if (code == 1) {
     if (value == 1) {gp_release_all(); say2(s, "back to the list (Esc)", ""); snd_end(&s->sound); s->phase = GS_DONE; return GS_EXIT;}
     return 0;
   }
+  if (s->launcher && s->phase == GS_MENU) return menu_event(s,code,value);
   if (s->phase == GS_CARDS) {if (value == 1 && s->stage != GS_LEVEL_IN && s->keys < KEY_BUFFER) s->keys++; return 0;}
   int scan = gs_scan(code);
   if (scan && value != 2) gp_key(scan, value != 0);
   return 0;
 }
 int gs_step(struct gs_session *s, uint64_t now) {
-  s->ran = 0;
+  s->ran = 0; s->tick_ns = s->render_ns = 0;
   if (s->phase == GS_DONE) return GS_EXIT;
+  if (s->launcher && (s->phase == GS_MENU || s->phase == GS_SCORES || s->phase == GS_PAUSED)) {s->t=now;return 0;}
   if (s->phase == GS_CARDS) return run_cards(s, now);
   if (s->demo) return demo_step(s, now);
-  uint64_t due = (now - s->t0) * 10u / GS_TICK_NS10;
+  s->t=now; /* latest play clock, including pause/resume in one input batch */
+  uint64_t due = play_due(now - s->t0);
   while (s->ticks < due && s->ran < 4) {
-    char r = gp_tick();
+    char r = play_tick(s);
     s->ticks++; s->total_ticks++; s->ran++;
     snd_effect(&s->sound, s->total_ticks);
     if (r) { /* the level fades out from the frame of this tick */
@@ -406,13 +564,15 @@ int gs_step(struct gs_session *s, uint64_t now) {
       return GS_DRAW;
     }
   }
-  if (s->ticks + 4 < due) {s->t0 = now; s->ticks = 0;} /* far behind: drop the lost time */
-  if (!s->ran) return 0;
+  /* Keep the time debt. Four ticks bound each slice so input/audio can run. */
+  if (!s->ran || s->ticks < due) return 0; /* catch up before drawing */
   render_play(s);
   return GS_DRAW;
 }
 uint64_t gs_wake(const struct gs_session *s, uint64_t now) {
-  if (s->phase == GS_PLAY) return s->t0 + ((uint64_t)(s->ticks + 1) * GS_TICK_NS10 + 9u) / 10u;
+  if(s->phase==GS_PAUSED)return now+20000000ull;
+  if (s->phase == GS_PLAY) return s->t0 + play_deadline(s->ticks + 1u);
+  if (s->launcher && (s->phase==GS_MENU || s->phase==GS_SCORES)) return now+INPUT_POLL_NS;
   if (s->phase != GS_CARDS) return now;
   uint64_t poll = now + INPUT_POLL_NS, at = poll;
   switch (s->stage) {
@@ -456,17 +616,45 @@ void gs_show(const uint8_t *px, const uint8_t *pal, uint32_t *fb, uint32_t strid
     for (uint32_t x = 0; x < GP_W; x++) {uint32_t c = lut[src[x]]; row[2 * x] = c; row[2 * x + 1] = c;}
   }
 }
-void gs_draw(const struct gs_session *s, uint32_t *fb, uint32_t stride) {
-  uint32_t lut[256];
+/* Word copies: the freestanding SDK memcpy is a byte loop. Both buffers here
+ * are uint32_t arrays; stride is in pixels and padding is never touched. */
+static void row_copy(uint32_t *dst, const uint32_t *src) {
+  for (unsigned x = 0; x < 640; x++) dst[x] = src[x];
+}
+static int row_diff(const uint32_t *a, const uint32_t *b) {
+  for (unsigned x = 0; x < 640; x++) if (a[x] != b[x]) return 1;
+  return 0;
+}
+static void draw_rows(const struct gs_session *s, uint32_t *fb, uint32_t stride,
+                      int changed, int force, uint32_t *first, uint32_t *height) {
+  uint32_t lut[256], row[640] = {0};
   for (unsigned i = 0; i < 256; i++) lut[i] = rgb(s->pal, (uint8_t)i);
   uint32_t x0 = s->showing_card ? 0 : GS_VIEW_X, y0 = s->showing_card ? GS_CARD_Y : GS_VIEW_Y;
   uint32_t w = s->showing_card ? GP_W : GP_VIEW_W, h = s->showing_card ? GP_H : GP_VIEW_H;
-  for (uint32_t y = 0; y < 480; y++) {
-    uint32_t *row = fb + y * stride;
-    if (y < y0 || y >= y0 + 2 * h) {for (uint32_t x = 0; x < 640; x++) row[x] = 0; continue;}
-    const uint8_t *src = s->px + ((y - y0) >> 1) * GP_W;
-    for (uint32_t x = 0; x < x0; x++) row[x] = 0;
-    for (uint32_t x = 0; x < w; x++) {uint32_t c = lut[src[x]]; row[x0 + 2 * x] = c; row[x0 + 2 * x + 1] = c;}
-    for (uint32_t x = x0 + 2 * w; x < 640; x++) row[x] = 0;
+  uint32_t lo = 480, hi = 0;
+  for (uint32_t y = 0; y < 480; y += 2) {
+    if (y >= y0 && y < y0 + 2 * h) {
+      const uint8_t *src = s->px + ((y - y0) >> 1) * GP_W;
+      for (uint32_t x = 0; x < w; x++) {uint32_t c = lut[src[x]]; row[x0 + 2*x] = c; row[x0 + 2*x + 1] = c;}
+    } else if (y == y0 + 2 * h) {
+      for (unsigned x = 0; x < 640; x++) row[x] = 0;
+    }
+    for (unsigned j = 0; j < 2; j++) {
+      uint32_t *dst = fb + (y + j) * stride;
+      if (!changed || force || row_diff(dst, row)) {
+        row_copy(dst, row);
+        if (y + j < lo) lo = y + j;
+        hi = y + j + 1;
+      }
+    }
   }
+  *first = hi ? lo : 0; *height = hi ? hi - lo : 0;
+}
+void gs_draw(const struct gs_session *s, uint32_t *fb, uint32_t stride) {
+  uint32_t y, h;
+  draw_rows(s, fb, stride, 0, 0, &y, &h);
+}
+void gs_draw_changed(const struct gs_session *s, uint32_t *fb, uint32_t stride,
+                     int force, uint32_t *y, uint32_t *h) {
+  draw_rows(s, fb, stride, 1, force, y, h);
 }

@@ -45,8 +45,9 @@ python3 tools/jsshot.py a.shot a.png 2      # 2x, nearest neighbor, as a 1080p s
 
 Call `sys.exit(status = 0)` and return from the current callback, or press
 **F10**. JS.ELF releases the app and returns to its built-in app picker;
-Up/Down and Enter launch another app, F10 in the picker quits to the kernel.
-CLOCK, FILES and SETTINGS also bind Q to `sys.exit(0)`. Esc remains navigation.
+Up/Down and Enter launch another app; Back/Esc or F10 in the picker quits to the kernel.
+CLOCK and SETTINGS use Back/Esc or Q to return to the picker. FILES uses Back
+to leave text, ascend folders, then return to the picker at card root; Q also exits.
 For the precise cooperative-exit semantics, ABI boundary, blocked-script
 limitations and Pi smoke procedure, see [app-exit.md](app-exit.md).
 

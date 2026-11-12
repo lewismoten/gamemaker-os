@@ -61,4 +61,16 @@ class BootArt(unittest.TestCase):
             ims = [Image.frombytes('RGB', (W, H), b''.join(bytes(((rgb(p) >> 16) & 255, (rgb(p) >> 8) & 255, rgb(p) & 255)) for p in f)) for f in frames]
             ims[0].save(d / f'boot-splash-loading-{segs}seg-mode{mode}.gif', save_all=True, append_images=ims[1:], duration=100, loop=0)
             if (segs, mode) == (8, 0): ims[0].crop((380, 360, 580, 510)).save(d / 'boot-splash-loading-frame.png')
+    def test_exit_blanks_the_screen(self):
+        """Quit to the kernel presents ba_blank's frame: the Options menu is not left on HDMI."""
+        c = lib(); c.ba_blank.argtypes = [C.c_void_p, C.c_uint32]
+        for stride in (W, W + 16):
+            buf = (C.c_uint16 * (stride * H))(*([0xFFFF] * (stride * H)))  # last menu: not black
+            c.ba_blank(buf, stride)
+            self.assertTrue(all(buf[y * stride + x] == 0 for y in range(H) for x in range(W)))
+            self.assertTrue(all(buf[y * stride + x] == 0xFFFF for y in range(H) for x in range(W, stride)))  # pitch padding untouched
+        self.shot('exit-blank-960x540.png', [0] * (W * H))
+        src = (ROOT / 'src/main.c').read_text(); i = src.index('if (action == GM_QUIT) {')
+        b = src.index('ba_blank(px', i); self.assertLess(b, src.index('say("GMOS quit")', i))
+        self.assertLess(src.index('sbx_fb_present', b), src.index('say("GMOS quit")', i))
 if __name__ == '__main__': unittest.main()

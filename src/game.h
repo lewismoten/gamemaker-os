@@ -18,7 +18,7 @@ extern "C" {
 typedef int32_t (*gp_read_fn)(void *user, const char *name, uint8_t *buf, uint32_t cap);
 /* Scene 0's title graphic and scene 1's won and lost graphics, a level's
    intro and exit graphics (ShowGraphic's file slots), and scene 0's menu picture. */
-enum {GP_TITLE, GP_WON, GP_LOST, GP_INTRO, GP_EXIT, GP_MENU, GP_SCORES, GP_LOADPIC, GP_SAVEPIC};
+enum {GP_TITLE, GP_WON, GP_LOST, GP_INTRO, GP_EXIT, GP_MENU, GP_SCORES, GP_LOADPIC, GP_SAVEPIC, GP_INSTRUCTIONS, GP_STORY, GP_CREDITS};
 /* Reads the .GAM (version 3.00, or an older one converted as GameClass::Load
    converts it); returns the number of levels (scenes of type 10), or -1. */
 int gp_open(gp_read_fn read, void *user, const char *gam_name);
@@ -27,6 +27,7 @@ int gp_open(gp_read_fn read, void *user, const char *gam_name);
 const uint8_t *gp_gam_bytes(uint32_t *n);
 /* The file name in a graphic slot ("" when empty); level is for GP_INTRO/GP_EXIT. */
 const char *gp_graphic(int slot, int level);
+const char *gp_title(void); /* scene 0 description */
 int gp_begin(void); /* the first level, from the start of the game: 0, or -1 if its files are missing */
 void gp_key(int scan, int down); /* a DOS scan code (1..127) */
 void gp_release_all(void);
@@ -56,10 +57,12 @@ const char *gp_voc_name(int n);
 const char *gp_demo(void);
 /* The .CMF song slots PLAYGAME plays: the title's, the won and lost pages',
    and a level's (level is for GP_SONG_LEVEL); "" when empty. */
-enum {GP_SONG_TITLE, GP_SONG_WON, GP_SONG_LOST, GP_SONG_LEVEL};
+enum {GP_SONG_TITLE, GP_SONG_WON, GP_SONG_LOST, GP_SONG_LEVEL, GP_SONG_MENU, GP_SONG_STORY};
 const char *gp_song(int slot, int level);
 /* FNV-1a of the 312 x 196 view, row by row: the Pocket Player host test's frameHash. */
 uint32_t gp_frame_hash(void);
+/* Same hash from gp_render's existing pixels, without rendering a second time. */
+uint32_t gp_pixels_hash(const uint8_t *px);
 /* Save and load a game as PLAYGAME does (SaveGame and LoadGame, PLAYGAME.C 1836-1892, 1737-1834),
    through the DOS wire records of savefile.h. gp_state_save fills g from the play in progress (0, or -1
    with no game running). gp_state_load checks g first and changes nothing when it refuses (-1); when

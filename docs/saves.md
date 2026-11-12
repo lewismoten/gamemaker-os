@@ -46,13 +46,13 @@ rewrites the file when nothing placed; the Pi doesn't, to spare the card.
 
 ## The Top Ten on the Pi
 
-- **At game end** (a win, a loss or Esc, as in PLAYGAME, once the first level began): a score above 0 that
+- **At game end** (a win, a loss or Leave game from the Back/Esc pause menu, once the first level began): a score above 0 that
   beats a row gets `hiscreen.c`'s name entry ("Congratulations!", "You scored number N on the Top
-  Ten!", "Enter Your Name:", 22 characters, Enter or Esc accepts, Backspace or Left erases, a blinking
-  box cursor), then the Top Ten with "Your Latest Score" and "Hit any key" (30 s or any key). A score
-  that doesn't place returns to the details view.
-- **From the list**: `H` (high scores) on the grid or the details view shows the selected game's Top Ten
-  alone; the key-help line says so.
+  Ten!", 22 characters, shared [on-screen keyboard](library.md): arrows/OK type, Done or Back accepts;
+  physical typing hides it, Backspace/Left erases, Enter accepts, Up/Down restores it), then the Top Ten with "Your Latest Score" and "Hit any key" (30 s or any key). A score
+  that doesn't place still shows the Top Ten. Both paths return to the game's DOS menu.
+- **From the game menu**: See Highest Scores shows the table without name entry, then returns to the menu.
+- **From the list**: the Details **High scores** button or `H` on the grid/details shows the selected game's Top Ten alone.
 - **Where it lives**: `hisload.c` reads `/OS/SAVES/<KEY>/<STEM>.HIS`; with none yet it seeds from the
   older `/OS/SAVES/<STEM>/<STEM>.HIS`, then the game's own `<STEM>.HIS` (read only), so DOS scores carry over. A new name is written back to
   `/OS/SAVES` only. On a kernel older than ABI 1.7 the entry is skipped (it could not be saved).
@@ -66,5 +66,5 @@ rewrites the file when nothing placed; the Pi doesn't, to spare the card.
 - Save/load menu behavior on the board, including failed reads and writes.
 - New demo recording; existing `.REC` preview playback is separate.
 
-The SDK already includes save storage (ABI 1.7) and is pinned at ABI 1.10;
+The SDK already includes save storage (ABI 1.7) and is pinned at ABI 1.11;
 no SDK refresh is needed to expose the current calls.

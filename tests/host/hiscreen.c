@@ -68,6 +68,21 @@ int main(int argc, char **argv) {
   const char *out = argc > 1 ? argv[1] : 0;
   static uint8_t px[HS_W * HS_H], pal[768], back[HS_W * HS_H], bpal[768];
   struct hs_screen h; struct his_table t;
+  /* Remote-only entry: DICE, delete E and re-enter, then Done commits. */
+  table(&t);hs_start(&h,&t,5000,now);
+  for(int i=0;i<3;i++)key(&h,106);
+  key(&h,28);for(int i=0;i<5;i++)key(&h,106);
+  key(&h,28);for(int i=0;i<6;i++)key(&h,105);
+  key(&h,28);key(&h,106);key(&h,106);key(&h,28);
+  assert(!strcmp(h.name,"DICE"));
+  hs_draw(&h,px,pal,0,0);ppm(out,"remote-name-keyboard",px,pal);
+  for(int i=0;i<4;i++)key(&h,108);
+  key(&h,28);assert(!strcmp(h.name,"DIC"));
+  key(&h,103);key(&h,103);key(&h,103);key(&h,103);key(&h,106);key(&h,28);
+  assert(!strcmp(h.name,"DICE"));
+  for(int i=0;i<4;i++)key(&h,108);
+  key(&h,106);key(&h,106);key(&h,28);
+  assert(h.stage==HS_TABLE && !strcmp((char *)h.t.row[2].name,"DICE"));
   /* keys */
   assert(hs_ascii(30, 0) == 'a' && hs_ascii(30, 1) == 'A' && hs_ascii(57, 0) == ' ' && hs_ascii(2, 1) == '!' && hs_ascii(1, 0) == 0);
   /* a score that places: name entry like GGet, then the list */
@@ -90,7 +105,7 @@ int main(int argc, char **argv) {
   /* Esc accepts the name as typed; an empty name is allowed (GGet returns on either) */
   table(&t); hs_start(&h, &t, 100, now); type(&h, "Kit"); a = key(&h, 1);
   assert((a & HS_COMMIT) && !strcmp((char *)h.t.row[4].name, "Kit") && h.t.row[4].score == 100);
-  table(&t); hs_start(&h, &t, 10000, now); a = key(&h, 28);
+  table(&t); hs_start(&h, &t, 10000, now); a = key(&h, 1);
   assert((a & HS_COMMIT) && h.t.row[0].name[0] == 0 && h.t.row[0].score == 10000 && h.t.row[1].score == 9000);
   /* 22 characters and no more; a tie sits below the equal score */
   table(&t); hs_start(&h, &t, 9000, now); assert(h.place == 2);
@@ -107,7 +122,7 @@ int main(int argc, char **argv) {
   for (unsigned i = 0; i < HS_W * HS_H; i++) back[i] = (uint8_t)(16 + (i / HS_W) / 8);
   for (unsigned i = 0; i < 256; i++) {bpal[3 * i] = (uint8_t)(i / 6); bpal[3 * i + 1] = (uint8_t)(i / 8); bpal[3 * i + 2] = (uint8_t)(20 + i / 8);}
   bpal[3 * 1] = 63; bpal[3 * 1 + 1] = 10; bpal[3 * 1 + 2] = 10; bpal[3 * 2] = 10; bpal[3 * 2 + 1] = 10; bpal[3 * 2 + 2] = 63;
-  table(&t); hs_start(&h, &t, 5000, now); key(&h, 28); hs_draw(&h, px, pal, back, bpal); ppm(out, "top-ten-picture", px, pal);
+  table(&t); hs_start(&h, &t, 5000, now); key(&h, 1); hs_draw(&h, px, pal, back, bpal); ppm(out, "top-ten-picture", px, pal);
   /* GGet's cursor keys: Right never moves (ans[ctr] is always 0), Left erases, extra Rights change nothing */
   table(&t); hs_start(&h, &t, 5000, now); key(&h, 106); assert(h.len == 0); type(&h, "ab");
   key(&h, 106); key(&h, 106); assert(!strcmp(h.name, "ab") && h.len == 2); key(&h, 105); key(&h, 106); type(&h, "c");

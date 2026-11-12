@@ -7,9 +7,11 @@ kernel's published SDK.
 ## Sound and library music
 
 Library background music defaults to **off** on every boot. Press **M** in the
-library grid or details to enable or disable it for the current run; the footer
+library grid, details or Options to enable or disable it for the current run; the footer
 shows the setting. Game and demo music and effects follow the DOS game's events
-regardless of this library setting. Entering a game restores unity gain even
+regardless of this library setting. In games, **M** toggles music independently
+(default on when entering a game), while effects keep playing. Search, folder
+and high-score name entry retain M as text. Entering a game restores unity gain even
 when there was no background song to fade out. `GMOS.ELF` links CMF/OPL2 music,
 PC-speaker effects and supported streamed VOC clips; `JS.ELF` keeps remote `SND`
 events only. Local HDMI playback remains **hardware-untested**.
@@ -22,14 +24,24 @@ The vendored SDK's `sbx_audio_query` initializes all output fields to zero
 before the ioctl. `sbx_write` returns status separately from the transferred
 byte count: writes contain whole 4-byte stereo frames, short writes preserve
 the remaining samples, and `EAGAIN` retries on a later pump without blocking.
-Fatal errors close the device; close drops queued audio.
+Fatal errors close the device; close drops queued audio. Every toggle logs
+`GMOS music on` or `GMOS music off`. Open/query/write failures show a brief
+**No sound device** overlay and log the operation and exact negative kernel
+status, including failures reported while pumping. Turning music on retries a
+closed device; game sound requests remain connected for recovery.
+
+A successful open/query does **not** establish that the TV can play sound.
+The pinned kernel accepts `/dev/audio` with a null backend if HDMI startup
+fails; ABI 1.8 exposes no backend or TV-presence field. Check the kernel's
+`AUDIO` diagnostic for `backend=hdmi`, its `AUDIO hdmi: unavailable ...` boot
+reason, and the card's `hdmi_drive=2` setting. See the full
+[M key and audio trace](music-key.md).
 
 Queue thresholds are bounded by the queried capacity. At the pinned kernel
-commit `a6044c2c28091035b922941b8f402841d49defc4`, `include/audio_ring.h`
-uses 16,384 frames, although `docs/audio-device.md` still describes 4,096;
-both sizes are tested. Games target 3,120 queued frames (65 ms) with a 2,400
-frame refill threshold; the library targets 15,000 with a 12,000 threshold,
-clamped for smaller rings. A new silent library does not write until a sound
+commit `32fd0d26005b147d79da787d120976e79399eeea`, `include/audio_ring.h`
+uses 16,384 frames; older 4,096-frame rings are also tested. Games and the
+library target 15,000 queued frames (312.5 ms), with a 12,000-frame refill
+threshold, clamped for smaller rings. A new silent library does not write until a sound
 starts. After the first write, gaps count as underruns and the kernel outputs
 zeros, never stale samples; the OS keeps pumping, including silence, between
 sounds. Slow storage may still underrun; counters report the gaps. HDMI drains
@@ -44,8 +56,8 @@ header or kernel-internal function is imported into the app.
 ## The SDK
 
 `sdk/` is a copy of the kernel repository's `sdk/` folder. `sdk/PINNED` names the
-kernel commit it came from: `a6044c2c28091035b922941b8f402841d49defc4`, ABI 1.10
-(`/dev/serial0`; local sound uses the ABI 1.8 audio interface). To move to a newer SDK, run
+kernel commit it came from: `32fd0d26005b147d79da787d120976e79399eeea`, ABI 1.11
+(power holds/timeouts; local sound uses the ABI 1.8 audio interface). To move to a newer SDK, run
 `scripts/vendor_sdk.sh <kernel checkout> [commit]`, then build and test. Nothing
 else from the kernel is used, and the kernel knows nothing about Game-Maker
 files: to it, `/sd/GAMES` is an ordinary folder.
@@ -53,8 +65,8 @@ files: to it, `/sd/GAMES` is an ordinary folder.
 GMOS requires major ABI 1 and minor 2 or newer for screen modes, input,
 `getdents`, the heartbeat, clock and sleep. Older minors exit with
 `GMOS needs screen modes (ABI 1.2)`. Later features are optional: ABI 1.3 seek,
-1.4 scan-cache metadata/writes, 1.5 long names, 1.7 save storage, 1.8 local audio
-and 1.9 e-ink. Audio is optional and falls back to silence when unavailable.
+1.4 scan-cache metadata/writes, 1.5 long names, 1.7 save storage, 1.8 local audio,
+1.9 e-ink and 1.11 [power holds/settings](power.md). Audio is optional and falls back to silence when unavailable.
 
 `third_party/gmcore/` is the Game-Maker play core from `gamemaker-pocket`,
 pinned at `1476df1e159c798633910e76f898d8347e12c3ee`.
@@ -106,17 +118,41 @@ number the board logs as `GMOS list frame crc` for the same frame. The font is e
 
 ## Install and run
 
-With the board on USB (the kernel's `scripts/usb_kernel.py`, from a kernel
-checkout; replace `<port>` with the board's serial port):
+Use a Pi with the sandbox-kernel boot files on its FAT32 card. With the board
+on USB, use the integration kernel's `scripts/usb_kernel.py` (below,
+`usb_kernel.py` means `python3 /path/to/kernel/scripts/usb_kernel.py`; replace
+`<port>` with the board's serial port). Install while the kernel is idle; quit
+GMOS or use `stop` before replacing files. `info` checks the connection:
 
 ```
+usb_kernel.py <port> info
 usb_kernel.py <port> put build/GMOS.ELF                 # /OS/GMOS.ELF
 usb_kernel.py <port> putgame <game folder> DICE         # every file, as /GAMES/DICE/...
 usb_kernel.py <port> put LIBRARY.JSL                    # the library index, as /OS/LIBRARY.JSL
 usb_kernel.py <port> run GMOS.ELF                       # start it and show the log
 usb_kernel.py <port> key down down enter                # press keys
-usb_kernel.py <port> key esc                            # quit
+usb_kernel.py <port> key esc                            # cards: open Options
+usb_kernel.py <port> key q                              # library: quit to kernel
 ```
+
+Capture the live GMOS log with
+`usb_kernel.py <port> run GMOS.ELF --seconds 60 > gmos-run.log`;
+the capture duration is not a request to stop GMOS. On the integration kernel,
+inspect existing card logs (card paths omit `/sd`):
+
+```sh
+usb_kernel.py <port> ls /OS/SAVES/KERNEL
+usb_kernel.py <port> get /OS/SAVES/KERNEL/BOOT.TXT
+usb_kernel.py <port> get /OS/SAVES/KERNEL/USB.TXT usb-log.txt
+usb_kernel.py <port> get /OS/SAVES/KERNEL/CEC.TXT cec-log.txt
+usb_kernel.py <port> fault --elf build/GMOS.ELF
+```
+
+`get PATH [local-file]` reads an existing file; `ls` lists short aliases.
+`fault` explains the saved FAULT.TXT, including the last OS log lines; optional
+`--elf` resolves addresses when a local symbolizer is available. Keep the ELF
+from the failing run. Missing logs are normal before that subsystem records one.
+Older kernel tools may lack get/ls/fault; use the paired integration revision.
 
 A packed game is one file: `put DICE.GMP --name POCKET/DICE.GMP` (or
 `GAMES/DICE.GMP`), up to 1 MiB; see [gmp.md](gmp.md).
@@ -156,17 +192,13 @@ See [drag-drop.md](drag-drop.md) for layouts, bounds and qualification status.
    title graphic (the picture a `.LST` holds longest, an animation's last
    frame, a backdrop's window), else its menu picture. Once every card on the
    page is drawn it logs `GMOS list frame crc <n>`.
-5. Reads `/dev/input/event0` without blocking. On the grid the arrows move
-   (repeats too), PgUp and PgDn turn the page, Home and End go to the first and
-   last card, Tab and Shift+Tab (or `]` and `[`) change the tab, and Enter opens
-   the details view: the title screen at twice its size (640 by 400), the category, title,
-   company and year, the blurb, and Play and Back buttons (Left, Right or Tab
-   pick one; Enter or Space presses it; Esc goes back). Play logs
-   `GMOS chose <DIR> "<title>"` and plays the game ([play.md](play.md)); the
-   game's end or Esc comes back to the details view. Esc or Q on the grid logs
-   `GMOS quit` and exits 0, leaving the last frame on the screen. After
-   `SYN_DROPPED` it reads the current state and goes on. If the device goes away
-   it logs `GMOS input removed` and opens it again once it is back.
+5. Reads `/dev/input/event0` without blocking. Arrows move cards and cross
+   pages; Up from the top row focuses tabs. OK opens details with Play, Back,
+   Favorite, High scores and Music buttons. Back on cards opens Options,
+   including Quit and saved power settings; Q also quits. Play enters the DOS
+   title/menu flow; Back at that menu returns to details. See the
+   [remote-only controls table](remote-only.md), [input/details limits](library.md#input-and-details-limits)
+   and [power behavior](power.md). Keyboard paging and tab shortcuts remain.
 
 During a level, F5 and F6 open the native save/load screens; see
 [game-save.md](game-save.md). H on the grid or details opens
@@ -206,3 +238,40 @@ kernels and failed opens leave play available without e-ink.
 `tests/test_eink.py` runs the production client with a host fake for the
 write-only device and monotonic clock. The SDK remains an unmodified copy
 from the commit in `sdk/PINNED`; the host transport lives under `tests/host/`.
+
+## Open a game by folder name over USB
+
+With GMOS on the games grid or details view (also after returning from a game),
+run this from the GMOS checkout on the Mac, replacing the port and `DICE`:
+
+```sh
+python3 tools/open_game.py /dev/cu.usbmodemXXXX DICE
+python3 tools/open_game.py /dev/cu.usbmodemXXXX DICE --play
+```
+
+The helper calls the sibling kernel checkout's `scripts/usb_kernel.py key`.
+Use `--usb-kernel /path/to/sandbox-kernel/scripts/usb_kernel.py` for another
+checkout. The exact equivalent for opening DICE's details is:
+
+```sh
+python3 /Users/lewismoten/dev/sandbox-kernel/scripts/usb_kernel.py /dev/cu.usbmodemXXXX key 53 32 23 46 18 enter --gap 0.1 --seconds 2
+```
+
+Slash (Linux code 53) starts or resets the request; type the folder alias and
+press Enter. Matching ignores case and switches to the correct category and
+page, opens details, and focuses Play. Shift+Enter (`--play`) also presses Play,
+entering the game's usual title/menu flow. A miss preserves the current card
+and never presses Play. The log reports `GMOS open DICE: found` or
+`GMOS open DICE: not found`. Backspace edits; Esc cancels. While entering a name,
+letters such as Q, H and M are text rather than menu shortcuts. Folder aliases
+are 1–8 letters, digits, `_` or `-`; this shortcut uses the list's DOS alias
+(the `GMOS game <alias>` startup log), not a long folder path or display title.
+For duplicate aliases the first match in category/list order wins.
+
+Requests are handled only in the library, not queued during gameplay or Top
+Ten. Wait until the library returns before sending one. This uses the existing
+synthetic `/dev/input/event0` and requires no kernel or SDK changes. An
+`OPEN.TXT` mailbox was not used: USB `put --name OPEN.TXT` does target
+`/OS/OPEN.TXT`, but this kernel's `file_command` rejects PUTF while an OS is
+running, and the vendored SDK has no unlink call. Hardware USB behavior still
+needs a Pi check; host tests cover the real menu event path and helper encoding.

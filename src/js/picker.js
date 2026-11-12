@@ -20,7 +20,7 @@
   }
   document.body.style.padding = 20;
   row('JS apps');
-  row('Up/Down: choose   Enter: launch   F10: quit');
+  row('Up/Down: choose   Enter: launch   Esc: quit');
   const slots = Array.from({length: 8}, () => row(''));
   function draw() {
     const first = Math.floor(selected / 8) * 8;
@@ -31,7 +31,9 @@
     if (!names.length) slots[0].textContent = 'No MAIN.JS apps in /OS/APPS';
   }
   document.addEventListener('keydown', e => {
-    if (e.repeat || !names.length) return;
+    if (e.repeat) return;
+    if (e.key === 'Escape') { sys.exit(0); return; }
+    if (!names.length) return;
     if (e.key === 'ArrowDown') selected = (selected + 1) % names.length;
     else if (e.key === 'ArrowUp') selected = (selected + names.length - 1) % names.length;
     else if (e.key === 'Enter') { sys.launch(names[selected]); return; }

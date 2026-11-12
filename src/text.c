@@ -3,15 +3,15 @@
  * textLines and formats/palette.ts matchColor (MIT). */
 #include "text.h"
 void gp_write(uint8_t *px, int32_t x, int32_t y, uint8_t col, const char *s, uint32_t n) {
-  int32_t cx = x;
+  int64_t cx = x, cy = y;
   for (uint32_t i = 0; i < n; i++) {
     uint8_t c = (uint8_t)s[i];
-    if (c == 10) {y += 8; cx = x; continue;}
+    if (c == 10) {cy += 8; cx = x; continue;}
     if (c < 128)
       for (int32_t row = 0; row < 8; row++) {
         uint8_t bits = gp_font8[c * 8u + (uint32_t)row];
         for (int32_t b = 0; b < 8; b++) {
-          int32_t px_x = cx + b, px_y = y + row;
+          int64_t px_x = cx + b, px_y = cy + row;
           if ((bits >> b & 1) && px_x >= 0 && px_y >= 0 && px_x < 320 && px_y < 200) px[px_y * 320 + px_x] = col;
         }
       }

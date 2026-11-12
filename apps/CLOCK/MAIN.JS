@@ -36,7 +36,7 @@ const date = box('text', 'date-gap', 72, 304, 816, 27, 'Date: unavailable (no ci
 const note = box('text', 'clock-note', 72, 340, 816, 27, 'Elapsed time only; hours do not wrap at 24.', 18);
 const themeButton = box('button', 'theme', 48, 424, 360, 48, '', 18);
 themeButton.style.outlineColor = '#d39400';
-const controls = box('text', 'controls', 432, 436, 480, 27, 'T / Enter / Space: switch theme', 18);
+const controls = box('text', 'controls', 432, 436, 480, 27, 'Enter: theme   Esc: back', 18);
 const footer = box('text', 'footer', 48, 496, 864, 27, 'Edit MAIN.JS to make it yours. No browser required.', 18);
 
 function applyTheme() {
@@ -71,7 +71,7 @@ function switchTheme() {
 }
 themeButton.addEventListener('click', switchTheme);
 document.addEventListener('keydown', (event) => {
-  if (event.code === 'KeyQ' && !event.repeat) { sys.exit(0); return; }
+  if ((event.code === 'KeyQ' || event.key === 'Escape') && !event.repeat) { sys.exit(0); return; }
   if (event.code === 'KeyT') {
     event.preventDefault();
     if (!event.repeat) switchTheme();

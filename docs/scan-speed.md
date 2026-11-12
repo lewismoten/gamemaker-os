@@ -56,7 +56,7 @@ these POSIX times. See private task handoff for raw evidence and Pi instructions
 
 `src/scan_store.h` and `src/scan_cache.c` now implement the on-card cache,
 using live metadata, candidate records, fresh library enrichment and staged
-write/fsync/rename. ABI 1.4 adds the cache calls; the vendored SDK is ABI 1.10.
+write/fsync/rename. ABI 1.4 adds the cache calls; the vendored SDK is ABI 1.11.
 See [scan-cache.md](scan-cache.md) for trust and failure limits, and
 [drag-drop.md](drag-drop.md) for the current GMI2 format and discovery behavior.
 Physical-card power-cut safety and full-library Pi timing still need acceptance.

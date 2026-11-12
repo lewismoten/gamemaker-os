@@ -9,6 +9,7 @@
 #include "fli.h"
 #include "game.h"
 #include "sound.h"
+#include "dosmenu.h"
 #define GS_MAX_CARDS 32u
 #define GS_CARD_Y 40u   /* a 320 x 200 page at x2 fills 640 x 400 from here */
 #define GS_VIEW_X 8u    /* the 312 x 196 play view at x2 is 624 x 392, centered */
@@ -17,8 +18,8 @@
 #define GS_TICK_NS10 549254157ull
 #define GS_FADE_STEPS 65u /* FadeTo: 65 steps, one a vertical retrace (70 Hz) */
 #define GS_KEY_WAIT 65535u
-enum {GS_DRAW = 1, GS_EXIT = 2};
-enum {GS_CARDS, GS_PLAY, GS_DONE};
+enum {GS_DRAW = 1, GS_EXIT = 2, GS_SAVE = 4, GS_LOAD = 8};
+enum {GS_CARDS, GS_PLAY, GS_DONE, GS_MENU, GS_SCORES, GS_PAUSED};
 /* What the pages phase is doing. */
 enum {GS_NEXT, GS_FADE, GS_FLI, GS_PAUSE, GS_LEVEL_IN, GS_LEVEL_OUT};
 struct gs_card {
@@ -28,10 +29,17 @@ struct gs_card {
   uint8_t clear;    /* clear the screen first (the first level's intro, after the title) */
 };
 struct gs_session {
+  /* Optional monotonic profiler, zero-initialize when unused. Totals for last step. */
+  uint64_t (*clock_ns)(void);
+  uint64_t tick_ns, render_ns;
   gp_read_fn read; void *user;
   void (*say)(const char *line);
+  void (*beat)(void);           /* optional: the kernel's heartbeat, called between a page's slow steps (reads, decodes, frames) */
   int phase, stage, levels;
   int after;                    /* what follows the pages: GS_PLAY (begin or finish) or GS_DONE */
+  int pause_choice;
+  int launcher, choice, score_check, menu_valid, menu_loading; /* DOS launcher, selected row, finished play */
+  struct dm_look look;
   int begun;                    /* the first level has started */
   char change;                  /* the 'D', 'L' or 'W' the level ended with, while it fades out */
   struct gs_card cards[GS_MAX_CARDS];
@@ -46,8 +54,8 @@ struct gs_session {
   int text, more;               /* a text page showing; more lines after it */
   uint32_t text_at, text_n; int32_t vertpos; uint8_t text_col, text_red;
   uint32_t shown;               /* counts pages fully shown (a picture faded in, an animation played, a text page written) */
-  uint64_t t0; uint32_t ticks;  /* play time base and ticks run since it */
-  uint32_t total_ticks;         /* ticks run since the game started */
+  uint64_t t0, ticks;  /* play time base and ticks run since it */
+  uint32_t total_ticks;         /* ticks since game start, modulo 2^32 (sound/log IDs; use unsigned deltas) */
   uint32_t ran;                 /* ticks run by the last gs_step */
   int showing_card;             /* the screen holds a page (else the play view) */
   uint8_t px[GP_W * GP_H], pal[768];
@@ -62,6 +70,11 @@ struct gs_session {
 /* Opens the game (its .GAM in the folder the reader reads) and queues the
    title pages; 0, or -1 if it cannot be played. */
 int gs_start(struct gs_session *s, gp_read_fn read, void *user, const char *gam_name, uint64_t now_ns);
+/* DOS launcher: title -> main menu -> pages/play -> scores -> menu. The board
+ * handles GS_SCORES with its existing persistent Top Ten screen, then calls
+ * gs_menu_return. gs_start remains the direct-play session API. */
+int gs_launch(struct gs_session *s, gp_read_fn read, void *user, const char *gam, uint64_t now);
+int gs_menu_return(struct gs_session *s, uint64_t now);
 /* The demo preview (docs/demo.md): plays the game's demo .REC (the .GAM's scene 0 file slot 11, as
    PLAYGAME's Rec->InitPlayback(Game.File(0,11)) does) from the start of level one, with no pages and
    optional local sound (no SND log lines), drawn into px and pal like a play. The .REC is read into session.c's text buffer (3000
@@ -74,7 +87,9 @@ void gs_demo_stop(struct gs_session *s);
 #define GS_DEMO_IDLE_NS 3000000000ull
 int gs_demo_idle_due(uint64_t last_input_ns, uint64_t now_ns);
 int gs_demo_stops(uint16_t type, int32_t value);
-/* One input event (Linux codes). Esc leaves the game (returns GS_EXIT). */
+/* One input event (Linux codes). Launcher play: Esc opens the pause menu;
+ * Save/Load choices return GS_SAVE/GS_LOAD for the board to open sp_menu.
+ * Direct sessions retain Esc to leave (GS_EXIT). */
 int gs_event(struct gs_session *s, uint16_t type, uint16_t code, int32_t value);
 /* Moves time on to now: fades, animation frames, pauses and pages, or the game
    ticks due (at most 4 at once). GS_DRAW when the picture changed, GS_EXIT
@@ -87,6 +102,11 @@ uint64_t gs_wake(const struct gs_session *s, uint64_t now_ns);
 void gs_show(const uint8_t *px, const uint8_t *pal, uint32_t *fb, uint32_t stride);
 /* The screen: a page or the play view at x2, black around it. */
 void gs_draw(const struct gs_session *s, uint32_t *fb, uint32_t stride);
+/* Compare against the mapped staging surface, update changed rows, return their
+ * bounding span for one present. Force after a mode set (HDMI was cleared).
+ * No retained cache: palette changes, cards, saves and other writers are safe. */
+void gs_draw_changed(const struct gs_session *s, uint32_t *fb, uint32_t stride,
+                     int force, uint32_t *y, uint32_t *h);
 /* The game's high score picture (File(0,8): a GIF or BKD) into px (320 x 200 indexes) and pal,
    as the Top Ten screen's backdrop; 0, or -1 if it has none. open is 1 when no game is open
    yet (the list's own Top Ten): it opens gam first. */

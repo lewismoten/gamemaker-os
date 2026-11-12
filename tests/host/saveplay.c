@@ -58,6 +58,21 @@ int main(int argc, char **argv) {
   memcpy(original, names, sizeof names);
   sp_start(&menu, SP_SAVE, &ops, "DICE1234", &session, 0);
   sp_event(&menu, 1, 28, 1, 0);
+  if(scenario==7) {
+    /* Remote-only: Clear old name, enter A, Done saves. */
+    for(unsigned i=0;i<4;i++)sp_event(&menu,1,108,1,0);
+    sp_event(&menu,1,106,1,0);sp_event(&menu,1,106,1,0);sp_event(&menu,1,28,1,0);
+    for(unsigned i=0;i<4;i++)sp_event(&menu,1,103,1,0);
+    for(unsigned i=0;i<6;i++)sp_event(&menu,1,105,1,0);
+    sp_event(&menu,1,28,1,0);
+    assert(!strcmp(menu.names[0],"A"));
+    for(unsigned i=0;i<4;i++)sp_event(&menu,1,108,1,0);
+    for(unsigned i=0;i<3;i++)sp_event(&menu,1,106,1,0);
+    sp_event(&menu,1,28,1,0);
+    assert(menu.stage==SP_MSG && slot_writes==1 && !strcmp((char *)names,"A"));
+    for(unsigned i=1;i<10;i++)assert(!memcmp(names+i*21,original+i*21,21));
+    puts("ALL PASS");return 0;
+  }
   /* Replace the first slot name with 'a' through the production menu. */
   for (unsigned i = 0; i < 20; i++) sp_event(&menu, 1, 14, 1, 0);
   sp_event(&menu, 1, 30, 1, 0);

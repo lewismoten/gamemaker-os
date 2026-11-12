@@ -120,6 +120,7 @@ commands=[]
 units=[('probe','probe.c','cc'),('sdpack',str(repo/'src/sdpack.c'),'cc'),('menu',str(repo/'src/menu.c'),'cc'),('library',str(repo/'src/library.c'),'cc'),('gam',str(repo/'src/gam.c'),'cc'),('gmp',str(repo/'src/gmp.cpp'),'c++'),('puff',str(repo/'third_party/puff/puff.c'),'cc')]
 units += [('zip',str(repo/'src/zip.c'),'cc'),('sdzip',str(repo/'src/sdzip.c'),'cc'),('asset_scratch',str(repo/'src/asset_scratch.c'),'cc')]
 if (repo/'src/scan_cache.c').exists(): units.append(('scan_cache',str(repo/'src/scan_cache.c'),'cc'))
+if (repo/'src/settings.c').exists(): units.append(('settings',str(repo/'src/settings.c'),'cc'))
 for name,src,compiler in units:
  wrap={'probe':['-Dgm_crc32=__wrap_gm_crc32','-Dgm_library_line=__wrap_gm_library_line'],
        'library':['-Dgm_crc32=__real_gm_crc32'],'zip':['-Dgm_crc32=__real_gm_crc32'],'menu':['-Dgm_library_line=__real_gm_library_line']}.get(name,[])

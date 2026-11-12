@@ -9,6 +9,16 @@ import subprocess
 
 
 class Launcher(unittest.TestCase):
+    def test_remote_back_exits_empty_picker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (pathlib.Path(tmp) / 'OS' / 'APPS').mkdir(parents=True)
+            p = subprocess.run([str(JSRUN), tmp, '--picker', '--launcher',
+                '--vclock', '--ms', '1000', '--keys', '100:1:1,110:1:0'],
+                capture_output=True, text=True, timeout=20)
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+            self.assertIn('JS app picker', p.stdout)
+
+
     def test_f10_is_host_owned_during_focused_game(self):
         with tempfile.TemporaryDirectory() as t:
             app = pathlib.Path(t)
@@ -93,6 +103,30 @@ setTimeout(() => sys.exit(7), 50);
 
 
 class ExampleExit(unittest.TestCase):
+    def test_remote_settings_and_back_through_picker(self):
+        sd = card({name: ROOT / 'apps' / name for name in ('CLOCK', 'FILES', 'SETTINGS')})
+        try:
+            # Settings: change theme and hints, reset, then Back. Clock and Files
+            # also return on Back; finally Back in the picker exits the runtime.
+            keys = ('100:108:1,110:108:0,150:108:1,160:108:0,200:28:1,210:28:0,'
+                    '300:28:1,310:28:0,350:108:1,360:108:0,400:28:1,410:28:0,'
+                    '450:108:1,460:108:0,500:28:1,510:28:0,550:1:1,560:1:0,'
+                    '650:28:1,660:28:0,750:1:1,760:1:0,'
+                    '850:108:1,860:108:0,900:28:1,910:28:0,1000:1:1,1010:1:0,'
+                    '1100:1:1,1110:1:0')
+            p = subprocess.run([str(JSRUN), str(sd), '--picker', '--launcher',
+                '--vclock', '--ms', '2000', '--keys', keys],
+                capture_output=True, text=True, timeout=20)
+            out = p.stdout + p.stderr
+            self.assertEqual(p.returncode, 0, out)
+            for name in ('SETTINGS', 'CLOCK', 'FILES'):
+                self.assertIn('JS ' + name + ' ready', out)
+            self.assertEqual(out.count('JS app picker CLOCK,FILES,SETTINGS'), 4, out)
+            self.assertEqual(out.count('JS app returned status 0'), 3, out)
+            self.assertNotIn('Uncaught', out)
+        finally:
+            shutil.rmtree(sd)
+
     def test_switch_clock_files_settings_in_one_host_process(self):
         sd = card({name: ROOT / 'apps' / name for name in ('CLOCK', 'FILES', 'SETTINGS')})
         try:

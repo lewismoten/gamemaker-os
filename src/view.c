@@ -40,15 +40,17 @@
 #define SIDE_X 700 /* the details view's column beside it */
 #define SIDE_W 232
 static uint16_t *P; static uint32_t S; /* the surface being drawn */
+static int picture_loading; /* the details picture is still being read: say so, not "No title screen" */
 static int measuring; /* count_lines: nothing is drawn */
+static uint32_t work_stores, work_divs; /* gm_view_work: pixels stored and software divisions, for the host frame-cost tests */
 static int on_page(int32_t x, int32_t y) {return !measuring && x >= 0 && y >= 0 && x < (int32_t)GM_W && y < (int32_t)GM_H;}
-static void dot16(int32_t x, int32_t y, uint16_t c) {if (on_page(x, y)) P[(uint32_t)y * S + (uint32_t)x] = c;}
-static void dot_dither(int32_t x, int32_t y, uint32_t c) {if (on_page(x, y)) P[(uint32_t)y * S + (uint32_t)x] = gm_565_dither(c, (uint32_t)x, (uint32_t)y);}
+static void dot16(int32_t x, int32_t y, uint16_t c) {if (on_page(x, y)) {work_stores++; P[(uint32_t)y * S + (uint32_t)x] = c;}}
+static void dot_dither(int32_t x, int32_t y, uint32_t c) {if (on_page(x, y)) {work_stores++; P[(uint32_t)y * S + (uint32_t)x] = gm_565_dither(c, (uint32_t)x, (uint32_t)y);}}
 static void fill(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t c) {
   if (measuring) return;
   uint16_t v = gm_565(c);
   for (int32_t j = y < 0 ? 0 : y; j < y + h && j < (int32_t)GM_H; j++)
-    for (int32_t i = x < 0 ? 0 : x; i < x + w && i < (int32_t)GM_W; i++) P[(uint32_t)j * S + (uint32_t)i] = v;
+    for (int32_t i = x < 0 ? 0 : x; i < x + w && i < (int32_t)GM_W; i++) {P[(uint32_t)j * S + (uint32_t)i] = v; work_stores++;}
 }
 /* How far row j (0 at the top edge) of a corner of radius r is cut in. */
 static int32_t inset(int32_t r, int32_t j) {
@@ -150,7 +152,7 @@ static unsigned count_lines(int f, int32_t w, const char *s, unsigned max, int32
 }
 static char *put(char *p, const char *s) {while (*s) *p++ = *s++; *p = 0; return p;}
 static char *num(char *p, uint32_t n) {char t[11]; int k = 0; do t[k++] = (char)('0' + n % 10); while (n /= 10); while (k) *p++ = t[--k]; *p = 0; return p;}
-static const char *const TAB_NAME[GM_CATS] = {"Starters", "Sandbox", "Bizarre", "CD", "Other"};
+static const char *const TAB_NAME[GM_CATS] = {"Starters", "Sandbox", "Bizarre", "CD", "Other", "Search", "Favorites", "Recent"};
 static const char *const BADGE[GM_CATS] = {"STARTER", "SANDBOX", "BIZARRE", "CD", "ON THIS CARD"};
 static const char *const TAB_LINE[GM_CATS] = {
   "Small games that each show one Game-Maker idea.",
@@ -158,6 +160,7 @@ static const char *const TAB_LINE[GM_CATS] = {
   "Heartfelt songs about all the wrong things, made into games.",
   "The Game-Maker CD: free gameware, then other people's shareware.",
   "Games in /sd/GAMES that the library index does not list.",
+  "", "Starred games, newest first.", "Recently played, newest first.",
 };
 extern const uint16_t ha_pal[4];
 extern const uint8_t ha_bits[256];
@@ -178,16 +181,17 @@ static void header(void) {
 static void tabs(const struct gm_menu *m) {
   box(16, TABS_Y, GM_W - 32, TABS_H, 8, 1, C_LINE2, C_PANEL, 1);
   unsigned n = 0;
-  for (unsigned t = 0; t < GM_CATS; t++) if (m->tab_count[t]) n++;
+  for (unsigned t = 0; t < GM_CATS; t++) if (m->tab_count[t] || (m->count && t>=GM_CAT_SEARCH)) n++;
   if (!n) return;
   int32_t slot = (int32_t)(GM_W - 40) / (int32_t)n, k = 0;
   for (unsigned t = 0; t < GM_CATS; t++) {
-    if (!m->tab_count[t]) continue;
+    if (!m->tab_count[t] && !(m->count && t>=GM_CAT_SEARCH)) continue;
     char count[8]; num(count, m->tab_count[t]);
     int32_t lw = width(F8, TAB_NAME[t], len(TAB_NAME[t]), 1), cw = width(F5, count, len(count), 1) + 10;
     int32_t cx = 20 + slot * k++ + slot / 2, x = cx - (lw + 6 + cw) / 2;
     int on = t == m->tab;
-    if (on) round_rect(x - 12, TABS_Y + 4, lw + 6 + cw + 24, TABS_H - 8, 6, C_BLUE);
+    if (on) round_rect(x - 5, TABS_Y + 4, lw + 6 + cw + 10, TABS_H - 8, 6, C_BLUE);
+    if (on && m->tabs_focus) box(21+slot*(k-1),TABS_Y+2,slot-2,TABS_H-4,6,1,C_GOLD,0,0);
     text0(F8, x, TABS_Y + 12, TAB_NAME[t], on ? 0xffffffu : C_TEXT);
     round_rect(x + lw + 6, TABS_Y + 9, cw, 14, 7, on ? C_PANEL : C_PILL);
     text0(F5, x + lw + 11, TABS_Y + 12, count, on ? 0xffffffu : C_MUTED);
@@ -202,6 +206,12 @@ static void picture(int32_t x, int32_t y, const uint16_t *pic, int32_t w, int32_
     for (int32_t i = k; i < w - k; i++) dot16(x + i, y + j, pic[j * w + i]);
   }
 }
+/* Yellow five-pointed mark, above the title art as in Pocket Player. */
+static void star(int32_t x, int32_t y) {
+  static const uint16_t bits[]={0x40,0x40,0xe0,0xe0,0x1f0,0x1fff,0xffe,0x7fc,0x3f8,0x3f8,0x7fc,0x71c,0x606};
+  round_rect(x-3,y-3,19,19,5,C_FOOT);
+  for(unsigned j=0;j<13;j++)for(unsigned i=0;i<13;i++)if(bits[j]>>i&1)fill(x+(int32_t)i,y+(int32_t)j,1,1,C_GOLD);
+}
 static void card(const struct gm_menu *m, const struct gm_game *g, unsigned i, int on) {
   uint32_t ux, uy, uw, uh; gm_card_rect(i, &ux, &uy, &uw, &uh);
   int32_t x = (int32_t)ux, y = (int32_t)uy, w = (int32_t)uw, h = (int32_t)uh;
@@ -214,6 +224,7 @@ static void card(const struct gm_menu *m, const struct gm_game *g, unsigned i, i
     const char *say = g->pic < 0 ? "No title screen" : "Loading...";
     text0(F5, x + 1 + ((int32_t)GM_THUMB_W - width(F5, say, len(say), 1)) / 2, y + 1 + (int32_t)GM_THUMB_H / 2 - 4, say, C_DIM);
   }
+  if (gm_is_favorite(m,g)) star(x+w-23,y+10);
   fill(x + 1, y + 1 + (int32_t)GM_THUMB_H, (int32_t)GM_THUMB_W, 1, C_LINE2);
   int32_t ty = y + 1 + (int32_t)GM_THUMB_H + 9;
   unsigned lines = wrap(F8, x + 9, ty, w - 18, g->title, 2, 11, 0xffffffu, 1);
@@ -228,12 +239,41 @@ static void keycap(int32_t *x, int32_t y, const char *key, const char *label) {
 static void footer(const struct gm_menu *m) {
   fill(0, FOOT_Y, GM_W, GM_H - FOOT_Y, C_FOOT);
   fill(0, FOOT_Y, GM_W, 1, C_LINE2);
-  int32_t x = 16, y = FOOT_Y + 18;
-  keycap(&x, y, "M", m->background_music ? "music on" : "music off");
-  if (m->message[0]) {text0(F8, x, y, m->message, C_GOLD); return;}
-  if (m->view == GM_DETAILS) {keycap(&x, y, "Left/Right", "choose"); keycap(&x, y, "Enter", "press"); keycap(&x, y, "H", "high scores"); keycap(&x, y, "Esc", "back to the games"); return;}
-  keycap(&x, y, "Arrows", "choose"); keycap(&x, y, "Enter", "open");
-  keycap(&x, y, "Tab", "category"); keycap(&x, y, "PgUp/PgDn", "page"); keycap(&x, y, "H", "high scores"); keycap(&x, y, "Esc", "quit");
+  int32_t x = 16, y = FOOT_Y + 10;
+  if (m->message[0]) text0(F8,x,y,m->message,C_GOLD);
+  else if(m->options_active || m->open_keyboard) {
+    keycap(&x,y,"Arrows","choose");keycap(&x,y,"OK/Enter","select");keycap(&x,y,"Back/Esc","cancel");
+  } else if (m->search_active) {
+    if(m->search_keyboard) {keycap(&x,y,"Arrows","choose a letter");keycap(&x,y,"OK/Enter","type / Done for results");}
+    else {keycap(&x,y,"Type","title or company");keycap(&x,y,"Arrows","choose");keycap(&x,y,"OK/Enter","details");}
+    keycap(&x,y,"Back/Esc","clear / leave");
+  } else if (m->tabs_focus) {
+    keycap(&x,y,"Left/Right","category");keycap(&x,y,"OK/Down","open");keycap(&x,y,"Up","Options");keycap(&x,y,"Back/Esc","back");
+  } else if (m->view==GM_DETAILS) {
+    keycap(&x,y,"Arrows","choose button");keycap(&x,y,"OK/Enter","press");keycap(&x,y,"F","Favorite");keycap(&x,y,"Back/Esc","back");
+  } else {
+    keycap(&x,y,"Arrows","choose / Up to tabs");keycap(&x,y,"OK/Enter","open");keycap(&x,y,"F","Favorite");keycap(&x,y,"Back/Esc","Options");
+  }
+  x=16;y=FOOT_Y+30;
+  keycap(&x,y,"Tab / [ ]","category");keycap(&x,y,"/","folder name");
+  if(m->search_active) {keycap(&x,y,"Keyboard","type title / company");keycap(&x,y,"Backspace","edit");}
+  else {
+    keycap(&x,y,"H","high scores");keycap(&x,y,"M",m->background_music?"music on":"music off");
+    keycap(&x,y,"PgUp/PgDn","page");if(m->view==GM_GRID)keycap(&x,y,"Q","quit");
+  }
+}
+static void search_keyboard(const struct gm_menu *m) {
+  box(16,304,928,180,8,1,C_LINE,C_PANEL,1);
+  text0(F5,28,314,m->open_keyboard?"Choose the folder alias, then Done to open. Back cancels.":"Search: choose letters, then Done to browse results.",C_MUTED);
+  for(unsigned k=0;k<42;k++) {
+    int32_t x,y,w;
+    const char *label; char letter[2]={0,0};
+    if(k<36) {x=28+(int32_t)(k%9)*101;y=330+(int32_t)(k/9)*29;w=94;letter[0]=GM_SEARCH_KEYS[k];label=letter;}
+    else {x=28+(int32_t)(k-36)*151;y=448;w=144;label=osk_label(k,letter);}
+    int on=k==m->keyboard_pos;
+    box(x,y,w,24,4,1,on?C_GOLD:C_LINE,on?C_BLUE:C_PILL,1);
+    text0(F8,x+(w-width(F8,label,len(label),1))/2,y+8,label,C_TEXT);
+  }
 }
 static void grid(const struct gm_menu *m) {
   unsigned t = m->tab, n = m->tab_count[t], p = m->pos[t], first = p / GM_PAGE * GM_PAGE;
@@ -243,17 +283,32 @@ static void grid(const struct gm_menu *m) {
     text0(F5, ((int32_t)GM_W - width(F5, b, len(b), 1)) / 2, 272, b, C_MUTED);
     return;
   }
-  int32_t x = text0(F8, 16, HEAD_Y, TAB_NAME[t], 0xffffffu);
-  text0(F5, x + 10, HEAD_Y, TAB_LINE[t], C_MUTED);
+  if (t==GM_CAT_SEARCH) {
+    box(16,85,650,23,5,1,m->search_active?C_GOLD:C_LINE,C_PANEL,1);
+    int32_t sx=text0(F5,24,92,"Search: All games",C_MUTED);
+    text0(F8,sx+14,92,m->query[0]?m->query:"Type a title or company",m->query[0]?C_TEXT:C_DIM);
+  } else {
+    int32_t x = text0(F8, 16, HEAD_Y, t==GM_CAT_RECENT?"Recently played":TAB_NAME[t], 0xffffffu);
+    text0(F5, x + 10, HEAD_Y, TAB_LINE[t], C_MUTED);
+  }
+  if (!n) {
+    const char *empty=t==GM_CAT_SEARCH?"No matching titles":t==GM_CAT_FAVORITES?"No favorites yet.":"No recently played games yet.";
+    text0(F8,32,220,empty,C_TEXT);
+    if(t==GM_CAT_FAVORITES)text0(F5,32,244,"Choose a game and press F, or open Details and choose Favorite.",C_MUTED);
+  }
   if (n > GM_PAGE) {
     char line[24], *q = put(line, "Page "); q = num(q, p / GM_PAGE + 1); q = put(q, " of "); num(q, (n + GM_PAGE - 1) / GM_PAGE);
     text0(F5, (int32_t)GM_W - 16 - width(F5, line, len(line), 1), HEAD_Y, line, C_MUTED);
   }
-  for (unsigned i = 0; i < GM_PAGE && first + i < n; i++) card(m, gm_tab_game(m, t, first + i), i, first + i == p);
+  for (unsigned i = 0; i < (m->search_active && m->search_keyboard?GM_COLS:GM_PAGE) && first + i < n; i++) card(m, gm_tab_game(m, t, first + i), i, first + i == p);
+  if(m->search_active && m->search_keyboard) search_keyboard(m);
 }
+uint32_t gm_view_work(uint32_t *divisions) {if (divisions) *divisions = work_divs; return work_stores;}
+void gm_view_picture_loading(int on) {picture_loading = on;}
+void gm_view_work_reset(void) {work_stores = work_divs = 0;}
 static uint32_t mix(uint32_t a, uint32_t b, uint32_t k, uint32_t of) {
   uint32_t out = 0;
-  for (int s = 16; s >= 0; s -= 8) {uint32_t x = a >> s & 255u, y = b >> s & 255u; out = out << 8 | (x * (of - k) + y * k) / of;}
+  for (int s = 16; s >= 0; s -= 8) {uint32_t x = a >> s & 255u, y = b >> s & 255u; work_divs++; out = out << 8 | (x * (of - k) + y * k) / of;}
   return out;
 }
 static void button(int32_t x, int32_t y, int32_t w, const char *label, int primary, int focus) {
@@ -274,16 +329,27 @@ static void picture_area(const uint8_t *big, const uint8_t *big_pal) {
     for (int32_t j = 0; j < 400; j++) for (int32_t i = 0; i < 640; i++) dot16(PIC_X + i, PIC_Y + j, c16[big[(j >> 1) * 320 + (i >> 1)]]);
   } else {
     fill(PIC_X, PIC_Y, 640, 400, C_EMPTY);
-    const char *say = "No title screen";
+    const char *say = picture_loading ? "Loading..." : "No title screen";
     text(F8, PIC_X + (640 - width(F8, say, len(say), 2)) / 2, PIC_Y + 192, say, len(say), C_DIM, 2);
   }
 }
 static void details(const struct gm_menu *m, const uint8_t *big, const uint8_t *big_pal) {
   const struct gm_game *g = gm_selected(m);
   int32_t px = 16, py = TABS_Y, pw = GM_W - 32, ph = FOOT_Y - 8 - TABS_Y;
+  /* The panel's gradient: left to right once per column, then top to bottom per row. The blend is
+     (x * (of - k) + y * k) / of, exact, with one reciprocal for the whole panel: a division per pixel
+     was software (ARM1176 has none) and ran for over a second a frame (the 2 s heartbeat fault). */
+  static uint32_t col[GM_W];
+  const uint32_t of = (uint32_t)ph * 2u, bottom = 0x370d4eu;
+  const uint64_t inv = (1ull << 40) / of + 1u;
+  for (int32_t i = 0; i < pw && i < (int32_t)GM_W; i++) col[i] = mix(0x150e4cu, 0x3b2272u, (uint32_t)i, (uint32_t)pw);
   for (int32_t j = 0; j < ph; j++) {
     int32_t k = inset(12, j < ph - 1 - j ? j : ph - 1 - j);
-    for (int32_t i = k; i < pw - k; i++) dot_dither(px + i, py + j, mix(mix(0x150e4cu, 0x3b2272u, (uint32_t)i, (uint32_t)pw), 0x370d4eu, (uint32_t)j, (uint32_t)ph * 2));
+    for (int32_t i = k; i < pw - k && i < (int32_t)GM_W; i++) {
+      uint32_t c = 0, a = col[i];
+      for (int s = 16; s >= 0; s -= 8) {uint32_t n = (a >> s & 255u) * (of - (uint32_t)j) + (bottom >> s & 255u) * (uint32_t)j; c = c << 8 | (uint32_t)((n * inv) >> 40);}
+      dot_dither(px + i, py + j, c);
+    }
   }
   if (!g) return;
   round_rect(PIC_X - 8, PIC_Y - 8, 656, 416, 10, C_FRAME);
@@ -308,7 +374,11 @@ static void details(const struct gm_menu *m, const uint8_t *big, const uint8_t *
   button(x, y, 112, "Play", 1, m->button == GM_BTN_PLAY);
   button(x + 124, y, 88, "Back", 0, m->button == GM_BTN_BACK);
   const char *blurb = g->blurb[0] ? g->blurb : "This game has no entry in the library index, so there is no description to show.";
-  y += 50;
+  button(x,y+40,212,gm_is_favorite(m,g)?"In Favorites":"Favorite",0,m->button==GM_BTN_FAVORITE);
+  if(gm_is_favorite(m,g))star(x+12,y+49);
+  button(x,y+80,212,"High scores",0,m->button==GM_BTN_SCORES);
+  button(x,y+120,212,m->background_music?"Music: On":"Music: Off",0,m->button==GM_BTN_MUSIC);
+  y += 162;
   wrap(F5, x, y, w, blurb, (unsigned)((440 - y) / 13), 13, C_TEXT, 1);
   char where[40], *q = put(where, "/sd/GAMES/"); q = put(q, g->dir); q = put(q, "/"); put(q, g->gam);
   text0(F5, x, 464, where, 0xb0a8d0u);
@@ -319,6 +389,25 @@ void gm_draw(uint16_t *px, uint32_t stride, const struct gm_menu *m, const uint8
   header();
   if (m->view == GM_DETAILS) details(m, big, big_pal);
   else {tabs(m); grid(m);}
+  if(m->open_keyboard) {
+    box(16,85,928,28,5,1,C_GOLD,C_PANEL,1);
+    text0(F8,28,95,"Open folder (DOS alias):",C_TEXT);
+    text0(F8,270,95,m->open_dir,C_GOLD);
+    search_keyboard(m);
+  }
+  if(m->options_active) {
+    static const char *const labels[GM_OPTIONS]={"Back to library","Favorite / Unfavorite","High scores","Music","Open by folder name","Quit Game-Maker OS","UI sounds","Screen off after","Power saving"};
+    box(240,64,480,404,12,2,C_GOLD,C_PANEL,1);
+    text0(F8,268,82,"Options",C_GOLD);
+    for(unsigned i=0;i<GM_OPTIONS;i++) {
+      const char *label=labels[i];
+      if(i==GM_OPT_MUSIC) label=m->background_music?"Music: On":"Music: Off";
+      if(i==GM_OPT_SOUNDS) label=m->settings.ui_sounds?"UI sounds: On":"UI sounds: Off";
+      if(i==GM_OPT_SCREEN) label=gm_settings_screen_label(&m->settings);
+      if(i==GM_OPT_POWER) label=m->settings.power_saving?"Power saving: On":"Power saving: Off";
+      button(268,120+(int32_t)i*38,424,label,0,m->option==i);
+    }
+  }
   footer(m);
 }
 void gm_picture_rect(uint32_t *x, uint32_t *y, uint32_t *w, uint32_t *h) {*x = PIC_X; *y = PIC_Y; *w = 640; *h = 400;}

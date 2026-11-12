@@ -1,0 +1,85 @@
+/* SPDX-License-Identifier: MIT; main.c report and present-site source fixture.
+ * Clock, framebuffer syscall and log are fake; no whole-loop/hardware claim.
+ * All scheduling/formatting code under test is inserted from production. */
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+static uint64_t now;
+static unsigned lines, presents;
+static int present_error, aud_on;
+static char output[64][320];
+static uint64_t clock_ns(void) {return now;}
+static uint32_t abi_minor = 0; /* the card log is off in this fixture */
+static void gl_add(const char *l, uint64_t t) {(void)l; (void)t;}
+static int gl_flush(const void *o, uint64_t t, int f) {(void)o; (void)t; (void)f; return 0;}
+static const int save_sbx_ops = 0;
+static void say(const char *s) {assert(lines < 64); snprintf(output[lines++], 320, "%s", s);}
+static void audio_poll(void) {}
+static void audio_log(const char *s) {(void)s; say("audio");}
+static int32_t sbx_fb_present(int fd, unsigned x, unsigned y, unsigned w, unsigned h) {
+  (void)fd; (void)x; (void)y; (void)w; (void)h;
+  if (!present_error) presents++;
+  return present_error;
+}
+@FORMAT@
+@PERF@
+static struct play_report report;
+static struct play_perf perf[PF_COUNT];
+static uint32_t frames, step_max, draw_max, late_max, per_step[4];
+static struct {uint32_t total_ticks;} game;
+static uint64_t since;
+static void iteration(int draw, uint32_t height) {
+  if (draw) {
+    int fb_fd = 0;
+    uint32_t first = 0;
+    uint64_t scaled = clock_ns();
+    #define PLAY_W 640u
+@PRESENT@
+  }
+@SNAPSHOT@
+}
+int main(void) {
+  /* Early/exact threshold, then witness 1: repeated zero-render iterations
+   * cannot consume even the header. Unchanged/failed presents earn no line. */
+  perf_add(&perf[PF_TICK], 111000);
+  now = 4999999999ull; iteration(0, 0); assert(!report.left && !lines);
+  now++; iteration(0, 0); assert(report.left == PF_COUNT + 3 && !lines);
+  for (unsigned i = 0; i < 20; i++) iteration(0, 0);
+  iteration(1, 0);
+  present_error = -1; iteration(1, 1); present_error = 0;
+  assert(!lines && !presents && report.left == PF_COUNT + 3);
+  puts("no presentation, no report drain PASS");
+
+  /* Witnesses 2/5: old 111 us must survive a new 222 us sample at the
+   * next threshold. A successful frame on that threshold emits one row. */
+  iteration(1, 1); assert(lines == 1); /* old header */
+  perf_add(&perf[PF_TICK], 222000);
+  now = 10000000000ull;
+  iteration(1, 1); assert(lines == 2 && report.dropped == 1);
+  assert(strstr(output[1], "ticks per step"));
+  assert(report.shot[PF_TICK].ns == 111000);
+  now = 15000000000ull; iteration(0, 0);
+  assert(lines == 2 && report.dropped == 2);
+  assert(report.shot[PF_TICK].ns == 111000);
+  while (report.left) {
+    unsigned old = lines;
+    iteration(1, 1);
+    assert(lines - old <= 1);
+  }
+  assert(strstr(output[lines - 1], "tick slice calls 1 total us 111"));
+  puts("one line per present and unfinished snapshot retained PASS");
+
+  /* Next snapshot advertises skipped windows. Audio occupies its own frame. */
+  aud_on = 1; now = 20000000000ull;
+  iteration(1, 1); /* snapshot creation itself emits nothing */
+  unsigned old = lines;
+  iteration(1, 1); assert(lines == old + 1);
+  assert(strstr(output[old], "reports dropped 2"));
+  while (report.left) {
+    old = lines; iteration(1, 1); assert(lines == old + 1);
+  }
+  assert(lines <= presents);
+  puts("drop count and audio share frame budget PASS");
+  return 0;
+}
