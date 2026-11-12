@@ -25,7 +25,11 @@ PFLAGS := $(ARCH) $(C_WARNINGS) -DGMOS_SCAN_VERBOSE=$(SCAN_VERBOSE) -std=c11 -Is
 # System includes keep vendor header diagnostics out of the project warning policy.
 PXXFLAGS := $(ARCH) $(CXX_WARNINGS) -std=c++17 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -Isrc -isystem third_party/gmcore
 LFLAGS := -nostdlib -Tsdk/lib/sandbox.ld -Wl,-z,noexecstack -Wl,--build-id=none -Wl,-z,max-page-size=4096
+<<<<<<< HEAD
 CORE := src/eink_page.c src/einkart_data.c src/opl.c src/opl_tables.c src/cmf.c src/audio.c src/uisound.c src/vocplay.c src/pcspeaker.c src/ostune_data.c src/asset_scratch.c src/zip.c src/gam.c src/menu.c src/collections.c src/settings.c src/library.c src/scan_cache.c src/thumb.c src/view.c src/font_data.c src/gif.c src/fli.c src/text.c src/font8_data.c src/session.c src/dosmenu.c src/sound.c src/hiscore.c src/savefile.c src/gmoslog.c src/hiscreen.c src/hisload.c src/saveplay.c src/bootart.c src/bootart_data.c src/headart_data.c
+=======
+CORE := src/eink_page.c src/einkart_data.c src/opl.c src/opl_tables.c src/cmf.c src/audio.c src/vocplay.c src/pcspeaker.c src/ostune_data.c src/asset_scratch.c src/zip.c src/gam.c src/menu.c src/library.c src/scan_cache.c src/thumb.c src/thumbq.c src/view.c src/font_data.c src/gif.c src/fli.c src/text.c src/font8_data.c src/session.c src/sound.c src/hiscore.c src/savefile.c src/hiscreen.c src/hisload.c src/saveplay.c src/bootart.c src/bootart_data.c src/headart_data.c
+>>>>>>> origin/feature/gmos-thumb-speed-1112
 PLAYCORE := src/game.cpp
 GMPCORE := src/gmp.cpp src/asset_scratch.h third_party/gmcore/gmsmall.h third_party/puff/puff.h
 GMCORE := third_party/gmcore/gmcore.h third_party/gmcore/gmmon.h
@@ -73,6 +77,10 @@ $(HOSTDIR)/gmplay: tests/host/gmplay.cpp tests/host/hostio.h $(PLAYCORE) $(GMCOR
 	$(HOSTCC) $(VENDOR_HOSTFLAGS) -c third_party/puff/puff.c -o $(HOSTDIR)/gmplay_puff.o
 	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -Isrc -c src/asset_scratch.c -o $(HOSTDIR)/gmplay_scratch.o
 	$(HOSTCXX) -std=c++17 $(HOSTFLAGS) $(CXX_WARNINGS) -Isrc -isystem third_party/gmcore -Ithird_party/puff $(PLAYCORE) tests/host/gmplay.cpp $(HOSTDIR)/gmplay_gmp.o $(HOSTDIR)/gmplay_puff.o $(HOSTDIR)/gmplay_scratch.o -o $@
+# Per-card thumbnail cost on the host: make thumbcost GAMES=<folder of game folders> [SUB=/disk]
+thumbcost: host tests/host/thumbcost.c
+	$(HOSTCC) $(HOSTFLAGS) -std=gnu11 -Isrc -isystem third_party/gmcore tests/host/thumbcost.c $(HOSTDIR)/libgmos.so -Wl,-rpath,$(abspath $(HOSTDIR)) -o $(HOSTDIR)/thumbcost
+	$(HOSTDIR)/thumbcost $(GAMES) $(SUB)
 # The kernel refuses a program whose loaded image tops U_IMAGE_QUOTA (8 MiB): fail while 64 KiB short of it.
 quota: build/GMOS.ELF
 	$(PYTHON) tools/check_quota.py build/GMOS.ELF $(wildcard build/js/JS.full.elf)

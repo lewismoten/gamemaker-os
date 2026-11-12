@@ -181,6 +181,11 @@ const uint16_t *gm_thumb_get(unsigned id) {
   for (unsigned i = 0; i < GM_THUMB_SLOTS; i++) if (owner[i] == (int16_t)id) {used[i] = ++clock; return cache[i];}
   return 0;
 }
+int gm_thumb_has(unsigned id) {
+  init();
+  for (unsigned i = 0; i < GM_THUMB_SLOTS; i++) if (owner[i] == (int16_t)id) return 1;
+  return 0;
+}
 void gm_thumb_put(unsigned id, const uint8_t *px, const uint8_t *pal) {
   init();
   unsigned s = 0;
