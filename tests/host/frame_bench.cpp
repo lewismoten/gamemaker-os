@@ -115,7 +115,8 @@ int main(int argc,char **argv) {
     if (memcmp(oldfb,full,sizeof full)||memcmp(oldfb,dirty,sizeof dirty)) {fprintf(stderr,"pixels differ at tick %u\n",t);return 1;}
     uint32_t a=0,b=0;
     timed(OLD_HASH,[&]{a=gp_frame_hash();}); timed(HASH,[&]{b=gp_pixels_hash(s.px);});
-    if(a!=b)return 1; checksum^=b;
+    if(a!=b)return 1;
+    checksum^=b;
     timed(OLD_PRESENT,[&]{present(oldfb,hdmi,stride,0,480);});
     timed(PRESENT,[&]{present(dirty,partial,stride,y,h);});
     if(memcmp(hdmi,partial,sizeof hdmi)) {fprintf(stderr,"present span differs at tick %u\n",t);return 1;}

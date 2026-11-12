@@ -107,7 +107,7 @@ static void hush(void) {
   CHECK(peak(tail + 2 * 480 * 19, 480) == 0, "the last 10 ms of the 200 ms after a stop are not silent (peak %d)", peak(tail + 2 * 480 * 19, 480));
 }
 static void ticks(void) {
-  static struct au a; static int16_t out[AU_CHUNK * 2];
+  static struct au a; static int16_t out[9600 * 2]; /* render() below walks 9600 frames */
   FILE *f = fopen("tests/data/syn.cmf", "rb"); CHECK(f != 0, "no tests/data/syn.cmf"); if (!f) return;
   static uint8_t bytes[4096]; uint32_t n = (uint32_t)fread(bytes, 1, sizeof bytes, f); fclose(f);
   CHECK(CMF_TICK_Q16 / 65536.0 > 329.50 && CMF_TICK_Q16 / 65536.0 < 329.52, "samples per tick %f", CMF_TICK_Q16 / 65536.0);

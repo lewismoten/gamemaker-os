@@ -160,7 +160,7 @@ $(HOSTDIR)/settings_check: src/awake.c tests/host/settings_check.c $(HOSTDIR)/li
 # Menu UI sounds: cues per action, the off switch, burst bounds.
 host: $(HOSTDIR)/uisound_check
 $(HOSTDIR)/uisound_check: tests/host/uisound_check.c $(HOSTDIR)/libgmos.so $(wildcard src/*.h) Makefile | $(HOSTDIR)
-	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -Isrc tests/host/uisound_check.c $(HOSTDIR)/libgmos.so -o $@
+	$(HOSTCC) $(HOSTFLAGS) -std=c11 -D_POSIX_C_SOURCE=200809L $(C_WARNINGS) -Isrc tests/host/uisound_check.c $(HOSTDIR)/libgmos.so -o $@
 
 # Pages and animations against the kernel's heartbeat (bounded steps, hook, wakes).
 host: $(HOSTDIR)/fli_pages_check

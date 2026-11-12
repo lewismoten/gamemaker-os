@@ -26,7 +26,7 @@ static unsigned services, beats; static int flap;
 static void s_beat_service(void *u) {(void)u; beats++; services++;}
 static void s_service(void *u) {(void)u; services++;}
 /* A clip made of many tiny blocks: every sample is a block of its own, so one source sample costs a block read. */
-static uint8_t clip[26 + 6 + 4000 * 8 + 1]; static uint32_t clip_n;
+static uint8_t clip[26 + 7 + 4000 * 8 + 1]; static uint32_t clip_n;
 static int32_t pread_clip(void *u, uint32_t off, void *buf, uint32_t n) {
   struct sim *s = u; s->preads++; if (off >= clip_n) return 0; if (n > clip_n - off) n = clip_n - off; memcpy(buf, clip + off, n); return (int32_t)n;
 }
