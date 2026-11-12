@@ -13,3 +13,4 @@ void gc_init(struct gc_cache *,const void *old,uint32_t bytes,void *out,uint32_t
 const uint8_t *gc_get(const struct gc_cache *,const char *path,const void *key,uint32_t keybytes,uint32_t *bytes);
 int gc_add(struct gc_cache *,const char *path,const void *key,uint32_t keybytes,const void *value,uint32_t bytes);
 uint32_t gc_finish(struct gc_cache *); /* 0 on overflow: do not publish */
+int gc_carry(struct gc_cache *,const char *skip_prefix); /* copy every valid old entry whose path does not start with skip_prefix */

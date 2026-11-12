@@ -257,9 +257,11 @@ static void scan_tree(const char *relative,unsigned depth) {
   sbx_close(fd);
 }
 /* One ZIP/SFX as a game: a main-tab game, or (archive) a card of the Archive tab, whose own room never crowds the others. */
+static int arch_noget;
 static int add_zip_at(const char *path,uint32_t size,const uint8_t *key,int keyed,unsigned archive) { /* archive: 0 for a main-tab game, else the arch_q number + 1 */
   struct cache_source source={0};
-  if(!(keyed&&cache_source_get(path,key,16,&source))){
+  int noget=arch_noget;arch_noget=0;
+  if(!(keyed&&!noget&&cache_source_get(path,key,16,&source))){
     uint32_t errors=sz_io_errors;struct gz_zip *z=sz_open(path,size,abi_minor);
     int32_t have=z?gz_read(z,z->gam,gamfile,sizeof gamfile):-1;
     if(have>=0&&gm_gam_title(gamfile,(uint32_t)have,source.title)>=0){source.valid=1;source.crc=gm_crc32(0,gamfile,(uint32_t)have);put(source.gam,z->gam);}
@@ -283,54 +285,175 @@ static void add_zip(unsigned id) {add_zip_at(zip_candidates[id].path,zip_candida
 #define ARCH_NAME 40u
 static struct {char name[ARCH_NAME];uint32_t size;uint8_t key[16];} arch_q[GM_MAX_ARCHIVE];
 static unsigned arch_n,arch_next;
+/* The folder's signature: entry count, total size and a 64-bit FNV-1a over every accepted entry's name and metadata (one directory read). */
+struct arch_acc {uint32_t count,sum;uint64_t h;};
+static uint8_t arch_sig[16];static int arch_sig_ok,arch_warm; /* arch_warm: the cache held this very signature at boot */
+static uint32_t arch_zip_reads; /* ZIPs opened by the Archive scan (tests count them) */
+static void acc_init(struct arch_acc *a){a->count=a->sum=0;a->h=1469598103934665603ull;}
+static void acc_byte(struct arch_acc *a,uint8_t b){a->h^=b;a->h*=1099511628211ull;}
+static void acc_add(struct arch_acc *a,const char *name,const void *key){
+  for(const char *p=name;*p;p++)acc_byte(a,(uint8_t)*p);
+  for(unsigned k=0;k<16;k++)acc_byte(a,((const uint8_t *)key)[k]);
+  a->count++;uint32_t sz;cache_copy(&sz,key,4);a->sum+=sz;
+}
+static void acc_key(const struct arch_acc *a,uint8_t k[16]){cache_copy(k,&a->count,4);cache_copy(k+4,&a->sum,4);cache_copy(k+8,&a->h,8);}
+/* One directory entry that belongs to the Archive: a short plain .ZIP or .EXE file. */
+static int arch_accept(const sbx_dirent *e,const char *name){
+  char clean[256];unsigned n=length(name);char ext[5]={0};
+  if(n>4)for(unsigned k=0;k<4;k++){char c=name[n-4+k];ext[k]=c>='a'&&c<='z'?(char)(c-32):c;}
+  return e->type==SBX_DT_FILE&&n>4&&n<ARCH_NAME&&!gz_noise(name)&&!gz_path(name,clean,0)&&cache_same(name,clean)&&(cache_same(ext,".ZIP")||cache_same(ext,".EXE"));
+}
+static void arch_seal_hook(void){
+  if(!arch_sig_ok||arch_next<arch_n)return;
+  uint8_t v=1;gc_add(&scan_cache,"/sd/ARCHIVE",arch_sig,16,&v,1);
+}
 static const char *w_path(unsigned i){
   static char buf[64];if(!is_arch(i))return where[i].path;
   char *p=put(buf,"/sd/ARCHIVE/");put(p,arch_q[where_a[arch_slot(i)].q].name);return buf;}
 static const char *w_gam(unsigned i){return is_arch(i)?where_a[arch_slot(i)].gam:where[i].gam;}
 static void arch_list(void) {
   uint64_t fd,got;_Alignas(8) uint8_t list[2048];
-  arch_n=arch_next=0;
+  arch_n=arch_next=0;arch_sig_ok=arch_warm=0;struct arch_acc acc;acc_init(&acc);
   if(sbx_open("/sd/ARCHIVE",11,SBX_O_RDONLY,&fd))return;
   int status;
   while(!(status=scan_list(fd,list,sizeof list,&got))&&got){
     for(uint32_t at=0;at<got;){
       const sbx_dirent *e=(const sbx_dirent *)(const void *)(list+at);
       if(!scan_dent(e,(uint32_t)got-at))break;
-      char name[256],clean[256];cache_copy(name,list+at+scan_head(),e->name_bytes);name[e->name_bytes]=0;
-      unsigned n=length(name);char ext[5]={0};
-      if(n>4)for(unsigned k=0;k<4;k++){char c=name[n-4+k];ext[k]=c>='a'&&c<='z'?(char)(c-32):c;}
-      if(e->type==SBX_DT_FILE&&n>4&&n<ARCH_NAME&&!gz_noise(name)&&!gz_path(name,clean,0)&&cache_same(name,clean)&&(cache_same(ext,".ZIP")||cache_same(ext,".EXE"))){
-        if(arch_n<GM_MAX_ARCHIVE){put(arch_q[arch_n].name,name);arch_q[arch_n].size=e->size;
-          if(abi_minor>=4)cache_copy(arch_q[arch_n].key,&e->size,16);else for(unsigned k=0;k<16;k++)arch_q[arch_n].key[k]=0;
-          arch_n++;}
+      char name[256];cache_copy(name,list+at+scan_head(),e->name_bytes);name[e->name_bytes]=0;
+      if(arch_accept(e,name)){
+        uint8_t key[16]={0};if(abi_minor>=4)cache_copy(key,&e->size,16);
+        acc_add(&acc,name,key);
+        if(arch_n<GM_MAX_ARCHIVE){put(arch_q[arch_n].name,name);arch_q[arch_n].size=e->size;cache_copy(arch_q[arch_n].key,key,16);arch_n++;}
         else {scan_say("GMOS archive full; remaining files skipped");}
       }
       at+=e->length;heartbeat();
     }
   }
   sbx_close(fd);
-  char line[64],*p=put(line,"GMOS archive: ");p=num(p,arch_n);put(p,arch_n==1?" file":" files");scan_say(line);
+  acc_key(&acc,arch_sig);arch_sig_ok=status==0&&abi_minor>=4;
+  if(arch_sig_ok&&cache_enabled){uint32_t vn;arch_warm=gc_get(&scan_cache,"/sd/ARCHIVE",arch_sig,16,&vn)!=0;}
+  char line[64],*p=put(line,"GMOS archive: ");p=num(p,arch_n);p=put(p,arch_n==1?" file":" files");put(p,arch_warm?", folder unchanged":"");scan_say(line);
+}
+/* Background CRC32 of each ZIP's whole file (a second pass, after the list is up). Its record in the cache sits beside the ZIP's
+   own: the same path, the ZIP's key plus 'C', and 10 bytes (offset u32, running CRC u32, done u8, 0). A pass that stops
+   resumes at the offset on the next boot. A ZIP whose size and dates still match but whose CRC no longer does is read again.
+   (The ZIP's central directory also holds CRCs, but they are only stored values; they tell nothing about the bytes that follow.) */
+#define CRC_CHUNK 32768u
+struct arch_crc {uint32_t off,crc,at;uint8_t done,ver;}; /* at: where the record's value sits in cache_new, 0 for none */
+static struct arch_crc arch_c[GM_MAX_ARCHIVE];
+static unsigned arch_cq,crc_q,crc_dirty,crc_steps,crc_open; static uint32_t crc_off,crc_run;
+static uint32_t arch_force; /* arch_q number + 1 of a ZIP to read again whatever the cache says */
+static void arch_crc_carry(unsigned q,const char *path){
+  struct arch_crc *c=&arch_c[q];*c=(struct arch_crc){0};
+  if(!cache_enabled||abi_minor<4)return;
+  uint8_t key[17],val[10]={0};cache_copy(key,arch_q[q].key,16);key[16]='C';uint32_t n;
+  const uint8_t *o=gc_get(&scan_cache,path,key,17,&n);
+  if(o&&n==10){cache_copy(&c->off,o,4);cache_copy(&c->crc,o+4,4);c->done=o[8]==1;if(!c->done&&c->off>=arch_q[q].size)c->off=c->crc=0;cache_copy(val,o,10);}
+  else{cache_copy(val,&c->off,4);}
+  if(cache_room(length(path),10)){
+    if(gc_add(&scan_cache,path,key,17,val,10))c->at=scan_cache.used-10;
+  }
+}
+static void arch_crc_put(unsigned q){
+  struct arch_crc *c=&arch_c[q];if(!c->at||c->at+10>sizeof cache_new)return;
+  cache_copy(cache_new+c->at,&c->off,4);cache_copy(cache_new+c->at+4,&c->crc,4);cache_new[c->at+8]=c->done;
 }
 /* One archive file (one ZIP opened, read and closed): 1 when a game joined the tab. Never more than one per call. */
 static int arch_one(void) {
   char path[64],*p=put(path,"/sd/ARCHIVE/");unsigned q=arch_next++;put(p,arch_q[q].name);
-  return add_zip_at(path,arch_q[q].size,arch_q[q].key,cache_enabled&&abi_minor>=4,q+1);
+  int keyed=cache_enabled&&abi_minor>=4;
+  if(keyed&&arch_force==q+1){keyed=0;arch_force=0;arch_noget=1;} /* read again: the old record is not used, the new one is kept */
+  uint32_t vn;int hit=keyed&&gc_get(&scan_cache,path,arch_q[q].key,16,&vn)!=0;if(!hit)arch_zip_reads++;
+  int r=add_zip_at(path,arch_q[q].size,arch_q[q].key,cache_enabled&&abi_minor>=4,q+1);
+  arch_crc_carry(q,path);
+  return r;
 }
 /* True when the cache already knows ZIP q (its name, size and dates are the key): reading it costs no SD access. */
 static int arch_known(unsigned q) {
   char path[64],*p=put(path,"/sd/ARCHIVE/");put(p,arch_q[q].name);uint32_t n;
-  return cache_enabled&&abi_minor>=4&&gc_get(&scan_cache,path,arch_q[q].key,16,&n)!=0;
+  return arch_force!=q+1&&cache_enabled&&abi_minor>=4&&gc_get(&scan_cache,path,arch_q[q].key,16,&n)!=0;
 }
-/* One pass of the idle loop: one unknown ZIP is opened, and every ZIP the cache knows after it joins free of charge. */
+/* One pass of the idle loop: one unknown ZIP is opened, and every ZIP the cache knows after it joins free of charge
+   (at most 64, then the keys are looked at again). */
 static int arch_step(void) {
   if(arch_next>=arch_n)return 0;
   int added=arch_one();
-  while(arch_next<arch_n&&arch_known(arch_next))added|=arch_one();
+  for(unsigned k=0;k<64&&arch_next<arch_n&&arch_known(arch_next);k++)added|=arch_one();
   if(arch_next>=arch_n&&cache_wait){cache_wait=0;cache_seal();}
   return added;
 }
 /* At startup: the known ZIPs, from the cache, before the list's first draw, so a warm card shows its final counts at once. */
-static void arch_prefill(void) {while(arch_next<arch_n&&arch_known(arch_next))arch_one();}
+static void arch_prefill(void) {unsigned k=0;while(arch_next<arch_n&&arch_known(arch_next)){arch_one();if(!(++k&31))heartbeat();}}
+/* The folder changed: the Archive part of the list is built again from a fresh directory read. Known ZIPs (same name, size and
+   dates) join from the cache at once; only new or changed ones wait for the idle loop. Gone ones are simply not re-added. */
+static void arch_relist(uint32_t force){
+  gm_thumb_drop_from(menu.count-menu.archive_count);menu.count-=menu.archive_count;menu.archive_count=0;big_id=-1;
+  cache_rebase();
+  arch_force=force;arch_list();
+  for(unsigned i=0;i<GM_MAX_ARCHIVE;i++)arch_c[i]=(struct arch_crc){0};
+  arch_cq=0;crc_open=0;arch_prefill();
+  if(arch_next<arch_n)cache_wait=1;
+  else{cache_wait=0;cache_seal();}
+  gm_refresh(&menu);menu.scan_left=arch_n-arch_next;
+}
+/* The cheap watcher: re-reads the directory one buffer per idle pass, hashing as it goes, and compares the signature when done.
+   Returns 1 when the folder changed. Never while the Archive scan is still running. */
+#define CHK_EVERY 30000000000ull
+#define CHK_GIVE_UP 5000000000ull
+static uint64_t chk_next,chk_since,chk_fd;static int chk_open;static struct arch_acc chk_acc;static unsigned chk_passes;
+static void arch_check_soon(uint64_t now){chk_next=now+1000000000ull;}
+static void chk_stop(uint64_t now){if(chk_open)sbx_close(chk_fd);chk_open=0;chk_next=now+CHK_EVERY;}
+static int arch_check_step(uint64_t now){
+  if(!arch_sig_ok||arch_next<arch_n||!cache_enabled)return 0;
+  if(!chk_open){
+    if(now<chk_next)return 0;
+    if(sbx_open("/sd/ARCHIVE",11,SBX_O_RDONLY,&chk_fd)){chk_next=now+CHK_EVERY;return 0;}
+    chk_open=1;chk_since=now;acc_init(&chk_acc);
+  }
+  chk_passes++;heartbeat();
+  _Alignas(8) static uint8_t list[2048];uint64_t got=0;
+  int status=scan_list(chk_fd,list,sizeof list,&got);
+  if(status||now-chk_since>CHK_GIVE_UP){chk_stop(now);return 0;}
+  for(uint32_t at=0;at<got;){
+    const sbx_dirent *e=(const sbx_dirent *)(const void *)(list+at);
+    if(!scan_dent(e,(uint32_t)got-at))break;
+    char name[256];cache_copy(name,list+at+scan_head(),e->name_bytes);name[e->name_bytes]=0;
+    if(arch_accept(e,name)){uint8_t key[16]={0};cache_copy(key,&e->size,16);acc_add(&chk_acc,name,key);}
+    at+=e->length;
+  }
+  if(got)return 0;
+  uint8_t k[16];acc_key(&chk_acc,k);int changed=!cache_equal(k,arch_sig,16);
+  chk_stop(now);return changed;
+}
+/* One chunk (32 KiB) of the CRC pass. 0: nothing to do; 1: a chunk read; 2: the list changed (a ZIP was rewritten in place). */
+static int arch_crc_step(void){
+  if(!cache_enabled||abi_minor<4||arch_next<arch_n)return 0;
+  while(arch_cq<arch_n&&arch_c[arch_cq].ver)arch_cq++;
+  if(arch_cq>=arch_n){
+    if(crc_dirty){crc_dirty=0;cache_resave();say("GMOS archive crc: every ZIP checked");}
+    return 0;
+  }
+  unsigned q=arch_cq;struct arch_crc *c=&arch_c[q];
+  if(!crc_open||crc_q!=q){crc_open=1;crc_q=q;crc_off=c->done?0:c->off;crc_run=c->done?0:c->crc;}
+  heartbeat();
+  static uint8_t buf[CRC_CHUNK];char path[64],*p=put(path,"/sd/ARCHIVE/");put(p,arch_q[q].name);
+  uint64_t fd,got=0,at;int bad=sbx_open(path,length(path),SBX_O_RDONLY,&fd);
+  if(!bad){bad=crc_off&&sbx_seek(fd,crc_off,&at);if(!bad)bad=sbx_read(fd,buf,sizeof buf,&got);sbx_close(fd);}
+  crc_steps++;
+  if(bad){c->ver=1;crc_open=0;return 1;} /* unreadable now: leave it for the next boot */
+  crc_run=gm_crc32(crc_run,buf,(uint32_t)got);crc_off+=(uint32_t)got;
+  if(got&&crc_off<arch_q[q].size){ /* more to do: only a first reading is kept across boots */
+    if(!c->done){c->off=crc_off;c->crc=crc_run;arch_crc_put(q);crc_dirty=1;}
+    return 1;
+  }
+  crc_open=0;c->ver=1;
+  if(!c->done){c->off=crc_off;c->crc=crc_run;c->done=1;arch_crc_put(q);crc_dirty=1;return 1;}
+  if(c->crc==crc_run)return 1;
+  {char l[96],*w=put(l,"GMOS archive crc changed: ");put(w,arch_q[q].name);say(l);}
+  c->crc=crc_run;arch_crc_put(q);crc_dirty=1;
+  arch_relist(q+1);return 2;
+}
 static void find_games(void) {
   scan_detail_count = 0;zip_count=0;
   cache_begin();sp_beat = heartbeat;sz_beat=heartbeat;
@@ -1013,6 +1136,28 @@ static int title_picture(const struct gm_game *g, uint8_t *px, uint8_t *pal) {
 }
 /* The next card whose title screen is not drawn (thumb.h: the selected one, its page, then the
    neighbor pages): reads it. 1 when a card on the page was read, 2 for a neighbor's, else 0. */
+/* The Archive's background work, one small step per idle pass (the caller has checked that no key is pending and no demo runs):
+   the folder watcher, a periodic cache write, and the CRC pass. Returns 1 when it did something worth a short sleep. */
+static void show_list(uint16_t *px);
+static uint64_t crc_flushed;
+static int arch_bg(uint16_t *px) {
+  uint64_t now = clock_ns();
+  if (now - demo_idle < 2000000000ull) return 0; /* a key was pressed a moment ago: stay out of the way */
+  int work = 0;
+  if (arch_check_step(now)) {
+    say("GMOS archive folder changed; updating the difference"); arch_relist(0); work = 2;
+  } else if (crc_dirty && crc_flushed && now - crc_flushed >= 600000000000ull) {
+    crc_flushed = now; crc_dirty = 0; cache_resave(); doing = "cache"; cache_flush(); return 1; /* at most one write every ten minutes */
+  } else {
+    if (!crc_flushed) crc_flushed = now;
+    work = arch_crc_step();
+  }
+  if (work == 2) {
+    menu.scan_left = arch_n - arch_next; arch_dirty = 0; arch_shown = now; doing = "list"; show_list(px);
+    if (arch_next >= arch_n) cache_flush();
+  }
+  return work;
+}
 static int load_next_thumb(void) {
   int on_page = 0, id = gm_thumb_next(&menu, &on_page);
   if (id < 0) return 0;
@@ -1131,6 +1276,8 @@ static int gmos_main(const sbx_startup *start) {
         /* The list redraws every few seconds while scanning, and once more when it ends (then with the final counts). */
         if (!menu.scan_left || now - arch_shown >= 3000000000ull) {arch_dirty = 0; arch_shown = now; doing = "list"; show_list(px);}
         if (arch_next >= arch_n) {char l[64], *q = put(l, "GMOS archive tab: "); q = num(q, menu.archive_count); put(q, menu.archive_count == 1 ? " game" : " games"); say(l); cache_flush();}
+      } else if (arch_bg(px)) {
+        audio_sleep_until(clock_ns() + 10000000ull);
       } else {
         doing = "list";
         const struct gm_game *g = gm_selected(&menu);
@@ -1190,7 +1337,7 @@ static int gmos_main(const sbx_startup *start) {
       if (g) {
         if (action == GM_CHOSEN) {
           p = put(line, "GMOS chose "); p = put(p, g->dir); p = put(p, " \""); p = put(p, g->title); put(p, "\""); say(line);
-          ga_yield = game_yield; play((uint32_t *)surface, g); ga_yield = 0;
+          ga_yield = game_yield; play((uint32_t *)surface, g); ga_yield = 0; arch_check_soon(clock_ns());
         } else top_ten((uint32_t *)surface, g, -1, 1);
         if (screen_mode(GM_W, GM_H, SBX_FB_RGB565)) return 4;
         menu.message[0] = 0; menu.shift = 0; redraw = 1; big_id = -1;

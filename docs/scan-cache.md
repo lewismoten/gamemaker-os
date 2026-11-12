@@ -152,3 +152,20 @@ While files are left (`menu.scan_left`) the header shows "Scanning games... N le
 and the Archive and Search counts show "..." until the scan ends. The list redraws
 every 3 seconds, and once more at the end. The scan runs only in the idle list loop,
 never during a game or an idle demo.
+
+## The Archive folder (/sd/ARCHIVE)
+
+- **Signature.** One directory read gives entry count, total size and a 64-bit FNV-1a over each accepted entry's name and
+  metadata. It is stored as a record at path `/sd/ARCHIVE` (key = the 16 signature bytes). At boot a match logs
+  "folder unchanged" and every ZIP joins from the cache with no SD access to any ZIP. A mismatch needs no separate diff
+  step: each ZIP is keyed by name, size and dates, so only new or changed ZIPs are read and gone ones are not re-added.
+- **Watcher.** In the idle library loop (no demo, no key in the last 2 s, the Archive scan finished) the directory is re-read
+  one 2 KiB buffer per pass every 30 s (one second after a game returns). A changed signature rebuilds only the Archive
+  part of the list (`arch_relist`): the sealed cache becomes the old one, every non-Archive record is carried over
+  (`gc_carry`), known ZIPs rejoin from it, unknown ones are read in the idle loop. The cache is written once at the end.
+- **CRC pass.** After the list is up, each ZIP's whole-file CRC32 is computed in 32 KiB chunks, one chunk per idle pass
+  (heartbeat first). The record (key = the ZIP's key + 'C', 10 bytes: offset, running CRC, done) is patched in place in the
+  sealed cache, so a pass that stops resumes at its offset next boot. Patches are written at most once every 10 minutes
+  and once when the pass ends. Central-directory CRCs are not used: they are stored values and say nothing about the bytes.
+  Each boot then verifies every stored CRC once in the background; a ZIP whose size and dates match but whose CRC does
+  not is read again and the list rebuilt.

@@ -24,6 +24,8 @@ void gm_shrink(const uint8_t *px, const uint8_t *pal, uint16_t *out, uint32_t w,
 const uint16_t *gm_thumb_get(unsigned id);
 void gm_thumb_put(unsigned id, const uint8_t *px, const uint8_t *pal);
 void gm_thumb_clear(void);
+/* Forget the cards of every game with an id of `first` or more (the Archive part of the list was rebuilt). */
+void gm_thumb_drop_from(unsigned first);
 /* Cooperative picture loading: present immediately, then at 50 ms checkpoints.
    The transport must checkpoint between bounded reads; a blocking syscall itself
    cannot be preempted here. The callbacks must not load another picture. */
