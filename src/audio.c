@@ -109,8 +109,9 @@ int au_pump(struct au *a, const struct au_sink *s) {
   if (fill > cap) fill = cap;
   a->low_frames = low;
   if (queued >= low) return 0;
-  uint32_t budget = AU_BATCH;
+  uint32_t budget = AU_BATCH; uint64_t io_ns = 0; /* time in the device's write and query: the render's own time is bounded by the budget */
   while (queued < fill) {
+    if (io_ns > AU_PUMP_IO_NS) break; /* a flapping device: give up for this frame, the rest is kept for the next pump */
     uint32_t want = fill - queued;
     if (!a->hold_len) {
       if (!budget) break;
@@ -126,14 +127,18 @@ int au_pump(struct au *a, const struct au_sink *s) {
     }
     uint32_t bytes = a->hold_len;
     if (bytes > want * 4u) bytes = want * 4u;
+    uint64_t io0 = s->now(s->user);
     int32_t w = s->write(s->user, (const uint8_t *)a->hold + a->hold_off, bytes);
+    io_ns += s->now(s->user) - io0;
     if (w == -11 || w == 0) {a->eagain++; break;} /* keep the unsent samples for the next pump */
     if (w < 0 || (uint32_t)w > bytes || w % 4) return -1;
-    a->writes++; a->hold_off += (uint32_t)w; a->hold_len -= (uint32_t)w; sent += (uint32_t)w / 4u;
-    if (s->query(s->user, &queued, &cap) || !cap || queued > cap) return -1;
+    a->writes++;
+    a->hold_off += (uint32_t)w; a->hold_len -= (uint32_t)w; sent += (uint32_t)w / 4u;
+    io0 = s->now(s->user); int32_t qrc = s->query(s->user, &queued, &cap); io_ns += s->now(s->user) - io0;
+    if (qrc || !cap || queued > cap) return -1;
     fill = a->playing ? AU_PLAY_FILL_FRAMES : AU_FILL_FRAMES;
     if (fill > cap) fill = cap;
-    if (!a->hold_len && queued < fill && fill - queued <= AU_REFILL_MARGIN) break;
+    if ((!a->hold_len && queued < fill && fill - queued <= AU_REFILL_MARGIN)) break;
   }
   return (int)sent;
 }
