@@ -57,6 +57,7 @@ struct au {
   uint64_t pump_gap_ns;        /* the last gap between two pumps */
   uint32_t hush_left;          /* frames until a hushed chip is reset (0: none) */
   uint8_t music_muted;         /* advances the song silently; effects keep playing */
+  uint8_t asleep;              /* the screen is dark: au_pump does no work (au_sleep) */
   uint8_t playing;             /* gameplay mode; both modes retain stall headroom */
   uint64_t last_pump_ns, gap_max_ns, svc_max_ns; /* interval maxima, in every mode */
   uint64_t gap_peak_ns, slice_peak_ns; /* lifetime observations for low-water sizing */
@@ -87,6 +88,10 @@ void au_volume(struct au *a, uint32_t target);
 int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, uint32_t), void *user);
 /* Renders n frames (at most AU_CHUNK) of stereo s16 into out: the sequencer ticks, the synth, the speaker. */
 void au_render(struct au *a, int16_t *out, unsigned n);
+/* The screen went dark (1) or woke (0). Asleep: au_pump renders and writes nothing, so no CPU goes to the synth, and the song,
+   speaker and clip stand still where they are (the kernel drops what is written anyway, ABI 1.12). Waking continues them,
+   fading in from silence over 0.68 s with no catch-up burst for the time that passed. */
+void au_sleep(struct au *a, int asleep);
 /* Select gameplay/library mode without discarding queued PCM or gap history. */
 void au_set_playing(struct au *a, int playing);
 /* Feeds the ring if low, rechecking after writes, with at most AU_BATCH frames rendered per call;

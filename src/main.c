@@ -606,7 +606,7 @@ static int play_music_event(const sbx_input_event *event) {
 static void bg_leave(void);
 /* The game's or the preview's sound owns the player (music in the 64 KB scratch), until bg_return. */
 static void audio_take(void) {
-  bg_leave(); aud.want_music[0] = 0; aud.music_muted = 0; aud.vol = aud.vol_target = AU_VOL_ONE; aud.music = pic_px; aud.music_cap = sizeof pic_px;
+  bg_leave(); aud.asleep = 0; aud.want_music[0] = 0; aud.music_muted = 0; aud.vol = aud.vol_target = AU_VOL_ONE; aud.music = pic_px; aud.music_cap = sizeof pic_px;
 }
 /* Back to the list: hard stop (every channel keyed off, chip reset), the tune buffer back, the cycle restarts after a pause. */
 static int bg_state; static uint64_t bg_t0, bg_next; static uint32_t bg_fail, bg_loops0, bg_picks, bg_seed = 12345u;
@@ -1080,7 +1080,9 @@ static int gmos_main(const sbx_startup *start) {
     awake_set(demo_on);
     heartbeat();
     if (audio_note_tick()) show_list(px);
-    if (aud_on) {
+    /* The screen is blanked (power saving): the music and menu sounds stop with it, no synthesis runs, and they pick up again on any key. */
+    int dark = awake_screen_dark(); au_sleep(&aud, dark);
+    if (aud_on && !dark) {
       audio_service(demo_on ? game.read : 0, game.user); if (!demo_on) bg_tick();
       if (clock_ns() - list_log >= 10000000000ull) {list_log = clock_ns(); audio_log(demo_on ? "demo 10 s" : "list 10 s");}
     }

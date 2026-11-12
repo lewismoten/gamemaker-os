@@ -16,6 +16,18 @@ device disconnects. Optional library background music does not inhibit idle
 saving. The independent experimental `JS.ELF` shell and its sample SETTINGS
 app are separate from the native GMOS menus; this change targets `GMOS.ELF`.
 
+Sleep and sound (kernel ABI 1.12 or newer): when the screen blanks, the library's
+music and menu sounds stop with it. `awake_screen_dark()` asks the kernel
+(call 22, operation 2) once a pass of the library loop; while it says the
+screen is blanked, `au_sleep` makes the audio pump do nothing, so the synth,
+the song's file reads and the sound writes cost no CPU, and the kernel drops
+anything written anyway. The song, speaker and clip stand still where they
+were. On any key, CEC key or USB input the screen wakes, and the same song
+continues from that spot, fading in from silence over about 0.7 seconds (it
+does not restart: the library's cycle of songs carries on rather than starting
+over, and no catch-up for the time asleep is rendered). Slowdown alone (60
+seconds) does not touch the sound. Older kernels are never asked.
+
 Native library Options (Back from cards, or Up from tabs) includes:
 
 - **Screen off after: 5 / 10 / 30 min / Never**. OK cycles the choices.
