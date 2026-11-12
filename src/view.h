@@ -16,6 +16,11 @@ void gm_draw(uint16_t *px, uint32_t stride, const struct gm_menu *m, const uint8
 /* Only the details view's picture (PIC_X, PIC_Y, 640 x 400 at 2 x 2): the demo preview redraws just this
    each game tick instead of the whole page. gm_picture_rect gives where it sits, for sbx_fb_present. */
 void gm_draw_picture(uint16_t *px, uint32_t stride, const uint8_t *big, const uint8_t *big_pal);
+/* Host frame-cost tests: pixels stored and software divisions since the reset. */
+uint32_t gm_view_work(uint32_t *divisions);
+void gm_view_work_reset(void);
+/* While the details picture is being read, its placeholder says "Loading..." (not "No title screen"). */
+void gm_view_picture_loading(int on);
 void gm_picture_rect(uint32_t *x, uint32_t *y, uint32_t *w, uint32_t *h);
 /* Where card i of a page sits (for the host tests). */
 void gm_card_rect(unsigned i, uint32_t *x, uint32_t *y, uint32_t *w, uint32_t *h);

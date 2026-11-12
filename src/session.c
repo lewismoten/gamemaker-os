@@ -447,8 +447,11 @@ static uint64_t play_due(uint64_t elapsed) {
 static uint64_t play_deadline(uint64_t ticks) {
   return ticks / 10u * GS_TICK_NS10 + (ticks % 10u * GS_TICK_NS10 + 9u) / 10u;
 }
+/* A preview slice is bounded in ticks and in time: a slow tick (a busy frame) ends the slice at
+   DEMO_SLICE_NS, so the caller feeds audio and presents at least that often. */
+#define DEMO_SLICE_NS 40000000ull
 static int demo_step(struct gs_session *s, uint64_t now) {
-  uint64_t due = play_due(now - s->t0);
+  uint64_t due = play_due(now - s->t0), began = s->clock_ns ? s->clock_ns() : 0;
   while (s->ticks < due && s->ran < 4) {
     if (demo_feed(s)) {gs_demo_stop(s); return GS_EXIT;}
     char r = play_tick(s);
@@ -461,9 +464,13 @@ static int demo_step(struct gs_session *s, uint64_t now) {
      }}
     if (r == 'W' || (r == 'D' && gp_lives() <= 0) || ((r == 'L' || r == 'D') && gp_finish())) {gs_demo_stop(s); return GS_EXIT;}
     if (r) gp_release_all(); /* a link or a lost life: the next level or try starts at once, keys let go */
+    if (s->clock_ns && s->clock_ns() - began >= DEMO_SLICE_NS) break;
   }
-  /* Keep the time debt, as in normal play. */
-  if (!s->ran || s->ticks < due) return 0; /* catch up before drawing */
+  if (!s->ran) return 0;
+  /* A preview is not real time: when the board falls behind (slow frames, a stall) it plays on from
+     here in slow motion rather than owing the missed ticks, and it draws after every slice. Keeping the
+     debt froze the picture until it was paid, and slow ticks never paid it. */
+  if (s->ticks < due) s->t0 = now - play_deadline(s->ticks);
   render_play(s); copy(s->pal, gp_palette(), 768);
   return GS_DRAW;
 }

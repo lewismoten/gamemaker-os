@@ -943,8 +943,8 @@ static void show_list(uint16_t *px) {
   const struct gm_game *g = gm_selected(&menu);
   if (menu.view == GM_DETAILS && g && big_id != (int)(g - menu.games)) {
     big_id = (int)(g - menu.games); big_ok = 0;
-    gm_draw(px, GM_W, &menu, 0, big_pal);
-    uint64_t t0 = clock_ns(); big_ok = !title_picture(g, big_px, big_pal);
+    gm_view_picture_loading(1); gm_draw(px, GM_W, &menu, 0, big_pal);
+    uint64_t t0 = clock_ns(); big_ok = !title_picture(g, big_px, big_pal); gm_view_picture_loading(0);
     char bl[64], *q = put(bl, "GMOS details picture "); q = put(q, g->dir); q = put(q, " in "); q = num(q, (uint32_t)((clock_ns() - t0) / 1000000u)); put(q, " ms"); say(bl);
   }
   audio_poll();

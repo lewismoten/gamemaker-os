@@ -40,15 +40,17 @@
 #define SIDE_X 700 /* the details view's column beside it */
 #define SIDE_W 232
 static uint16_t *P; static uint32_t S; /* the surface being drawn */
+static int picture_loading; /* the details picture is still being read: say so, not "No title screen" */
 static int measuring; /* count_lines: nothing is drawn */
+static uint32_t work_stores, work_divs; /* gm_view_work: pixels stored and software divisions, for the host frame-cost tests */
 static int on_page(int32_t x, int32_t y) {return !measuring && x >= 0 && y >= 0 && x < (int32_t)GM_W && y < (int32_t)GM_H;}
-static void dot16(int32_t x, int32_t y, uint16_t c) {if (on_page(x, y)) P[(uint32_t)y * S + (uint32_t)x] = c;}
-static void dot_dither(int32_t x, int32_t y, uint32_t c) {if (on_page(x, y)) P[(uint32_t)y * S + (uint32_t)x] = gm_565_dither(c, (uint32_t)x, (uint32_t)y);}
+static void dot16(int32_t x, int32_t y, uint16_t c) {if (on_page(x, y)) {work_stores++; P[(uint32_t)y * S + (uint32_t)x] = c;}}
+static void dot_dither(int32_t x, int32_t y, uint32_t c) {if (on_page(x, y)) {work_stores++; P[(uint32_t)y * S + (uint32_t)x] = gm_565_dither(c, (uint32_t)x, (uint32_t)y);}}
 static void fill(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t c) {
   if (measuring) return;
   uint16_t v = gm_565(c);
   for (int32_t j = y < 0 ? 0 : y; j < y + h && j < (int32_t)GM_H; j++)
-    for (int32_t i = x < 0 ? 0 : x; i < x + w && i < (int32_t)GM_W; i++) P[(uint32_t)j * S + (uint32_t)i] = v;
+    for (int32_t i = x < 0 ? 0 : x; i < x + w && i < (int32_t)GM_W; i++) {P[(uint32_t)j * S + (uint32_t)i] = v; work_stores++;}
 }
 /* How far row j (0 at the top edge) of a corner of radius r is cut in. */
 static int32_t inset(int32_t r, int32_t j) {
@@ -301,9 +303,12 @@ static void grid(const struct gm_menu *m) {
   for (unsigned i = 0; i < (m->search_active && m->search_keyboard?GM_COLS:GM_PAGE) && first + i < n; i++) card(m, gm_tab_game(m, t, first + i), i, first + i == p);
   if(m->search_active && m->search_keyboard) search_keyboard(m);
 }
+uint32_t gm_view_work(uint32_t *divisions) {if (divisions) *divisions = work_divs; return work_stores;}
+void gm_view_picture_loading(int on) {picture_loading = on;}
+void gm_view_work_reset(void) {work_stores = work_divs = 0;}
 static uint32_t mix(uint32_t a, uint32_t b, uint32_t k, uint32_t of) {
   uint32_t out = 0;
-  for (int s = 16; s >= 0; s -= 8) {uint32_t x = a >> s & 255u, y = b >> s & 255u; out = out << 8 | (x * (of - k) + y * k) / of;}
+  for (int s = 16; s >= 0; s -= 8) {uint32_t x = a >> s & 255u, y = b >> s & 255u; work_divs++; out = out << 8 | (x * (of - k) + y * k) / of;}
   return out;
 }
 static void button(int32_t x, int32_t y, int32_t w, const char *label, int primary, int focus) {
@@ -324,16 +329,27 @@ static void picture_area(const uint8_t *big, const uint8_t *big_pal) {
     for (int32_t j = 0; j < 400; j++) for (int32_t i = 0; i < 640; i++) dot16(PIC_X + i, PIC_Y + j, c16[big[(j >> 1) * 320 + (i >> 1)]]);
   } else {
     fill(PIC_X, PIC_Y, 640, 400, C_EMPTY);
-    const char *say = "No title screen";
+    const char *say = picture_loading ? "Loading..." : "No title screen";
     text(F8, PIC_X + (640 - width(F8, say, len(say), 2)) / 2, PIC_Y + 192, say, len(say), C_DIM, 2);
   }
 }
 static void details(const struct gm_menu *m, const uint8_t *big, const uint8_t *big_pal) {
   const struct gm_game *g = gm_selected(m);
   int32_t px = 16, py = TABS_Y, pw = GM_W - 32, ph = FOOT_Y - 8 - TABS_Y;
+  /* The panel's gradient: left to right once per column, then top to bottom per row. The blend is
+     (x * (of - k) + y * k) / of, exact, with one reciprocal for the whole panel: a division per pixel
+     was software (ARM1176 has none) and ran for over a second a frame (the 2 s heartbeat fault). */
+  static uint32_t col[GM_W];
+  const uint32_t of = (uint32_t)ph * 2u, bottom = 0x370d4eu;
+  const uint64_t inv = (1ull << 40) / of + 1u;
+  for (int32_t i = 0; i < pw && i < (int32_t)GM_W; i++) col[i] = mix(0x150e4cu, 0x3b2272u, (uint32_t)i, (uint32_t)pw);
   for (int32_t j = 0; j < ph; j++) {
     int32_t k = inset(12, j < ph - 1 - j ? j : ph - 1 - j);
-    for (int32_t i = k; i < pw - k; i++) dot_dither(px + i, py + j, mix(mix(0x150e4cu, 0x3b2272u, (uint32_t)i, (uint32_t)pw), 0x370d4eu, (uint32_t)j, (uint32_t)ph * 2));
+    for (int32_t i = k; i < pw - k && i < (int32_t)GM_W; i++) {
+      uint32_t c = 0, a = col[i];
+      for (int s = 16; s >= 0; s -= 8) {uint32_t n = (a >> s & 255u) * (of - (uint32_t)j) + (bottom >> s & 255u) * (uint32_t)j; c = c << 8 | (uint32_t)((n * inv) >> 40);}
+      dot_dither(px + i, py + j, c);
+    }
   }
   if (!g) return;
   round_rect(PIC_X - 8, PIC_Y - 8, 656, 416, 10, C_FRAME);

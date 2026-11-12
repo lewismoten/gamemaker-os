@@ -101,6 +101,13 @@ canvases are limited to 64,000 pixels. PCX is unsupported. Bad or missing
 artwork falls through to alternatives, then “No title screen”; this is not
 complete validation of every malformed game file.
 
+Frame cost: the board has no hardware divide, so a details frame must not divide per
+pixel (its gradient did, 2.4 million divisions, over a second: the 2 s heartbeat fault on
+First Steps). The panel now uses one reciprocal; `tests/test_frame_cost.py` fails past the
+division and pixel-store budgets. The demo preview runs at most four ticks and 40 ms per
+step, draws after every step and drops missed ticks (slow motion, not a frozen picture).
+While the picture is read, its placeholder says "Loading..." (not "No title screen").
+
 Index title/company/blurb fields hold at most 63/31/639 bytes. Details titles
 wrap to three lines; blurbs use the remaining space above y=440, with `...`
 when text remains. There is no description scrolling. `test_details_bounds.py`
