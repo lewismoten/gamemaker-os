@@ -29,6 +29,7 @@
 #include "bootart.h"
 #include "eink.h"
 #include "audio.h"
+#include "beat.h"
 #include "font.h"
 #include "ostune.h"
 #include "awake.h"
@@ -75,7 +76,14 @@ static void scan_summary(void) {
 static int no_index; /* read_index found no LIBRARY.JSL */
 static void (*beat_hook)(int); /* the loading splash's animation, set in main: called between files and games */
 static void (*audio_hook)(void); /* feeds /dev/audio (set while a game plays): the heartbeat is called all through its slow steps */
-static void heartbeat(void) {if (audio_hook) audio_hook(); sbx_health(generation, ++beat); if (beat_hook) beat_hook(0); if (audio_hook) audio_hook();}
+static void bt_health(void *u) {(void)u; sbx_health(generation, ++beat);}
+static void bt_audio(void *u) {(void)u; audio_hook();}
+static void bt_hook(void *u) {(void)u; beat_hook(0);}
+/* Health first (beat.h): a late heartbeat survives the kernel's 2 s rule; the pump's first call is a clock read. */
+static void heartbeat(void) {
+  struct bt_ops o = {0, bt_health, audio_hook ? bt_audio : 0, beat_hook ? bt_hook : 0};
+  bt_beat(&o);
+}
 static int ends_with_gam(const char *s, unsigned n) {
   return n > 4 && s[n - 4] == '.' && (s[n - 3] == 'G'||s[n - 3]=='g') && (s[n - 2] == 'A'||s[n - 2]=='a') && (s[n - 1] == 'M'||s[n - 1]=='m');
 }
@@ -477,6 +485,9 @@ static void audio_service(gp_read_fn read, void *user) {
   if (elapsed > aud.svc_max_ns) aud.svc_max_ns = elapsed;
   audio_poll();
 }
+/* A game's files are inflated in one call (puff, then the CRC): on the board that can run past the kernel's 2 s with no system call, so
+ * zip.c's checkpoint reports health and feeds the audio while a game plays (set around play(), never in the scan). */
+static void game_yield(void) {sbx_health(generation, ++beat); audio_poll();}
 /* A clip of the playing game for vocplay.h: a folder's file is streamed (an open fd, 384-byte reads); a pack's or zip's is read whole
  * into index_text (the library's scan buffer, idle while a game plays; a clip that does not fit is refused). */
 static uint64_t voc_fd, voc_pos; static uint32_t voc_blob_n;
@@ -1143,7 +1154,7 @@ static int gmos_main(const sbx_startup *start) {
       if (g) {
         if (action == GM_CHOSEN) {
           p = put(line, "GMOS chose "); p = put(p, g->dir); p = put(p, " \""); p = put(p, g->title); put(p, "\""); say(line);
-          play((uint32_t *)surface, g);
+          ga_yield = game_yield; play((uint32_t *)surface, g); ga_yield = 0;
         } else top_ten((uint32_t *)surface, g, -1, 1);
         if (screen_mode(GM_W, GM_H, SBX_FB_RGB565)) return 4;
         menu.message[0] = 0; menu.shift = 0; redraw = 1; big_id = -1;
