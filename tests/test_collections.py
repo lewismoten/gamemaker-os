@@ -5,7 +5,7 @@ import pathlib
 import unittest
 from gmos_page import Page, lib, png, GRID, DETAILS, OUT
 
-SEARCH, FAVORITES, RECENT = 5, 6, 7
+SEARCH, FAVORITES, RECENT = 6, 7, 8  # the Archive tab (5) comes before them
 
 class List(C.Structure):
     _fields_ = [('count', C.c_uint), ('key', (C.c_char * 9) * 32)]

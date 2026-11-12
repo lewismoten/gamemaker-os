@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT; the games list as data, and what input does
  * to it. It follows the Sandbox Edition web site's Games page: category tabs
- * (Starters, Sandbox, Bizarre, CD, and Other for games the library index does
- * not know), a grid of game cards eight to a page, and a details view with Play.
+ * (Starters, Sandbox, Bizarre, CD, Other for games the library index does
+ * not know, and Archive for /sd/ARCHIVE, which no index line moves a game out of), a grid of game cards eight to a page, and a details view with Play.
  * Pure: no system calls, so the host tests drive it directly. */
 #pragma once
 #include <stdint.h>
@@ -11,28 +11,32 @@
 #include "collections.h"
 #include "settings.h"
 #include "uisound.h"
-#define GM_MAX_GAMES 256u
+#define GM_MAX_GAMES 256u    /* games on the main tabs */
+#define GM_MAX_ARCHIVE 512u  /* games of the Archive tab (/sd/ARCHIVE): their own room, so they never crowd the main tabs out */
+#define GM_MAX_ALL (GM_MAX_GAMES + GM_MAX_ARCHIVE)
 #define GM_COLS 4u
 #define GM_PAGE 8u /* cards on a page: four across, two down */
 #define GM_MESSAGE_MAX 48u
 #include "osk.h"
 #define GM_SEARCH_KEYS OSK_KEYS
-enum {GM_CAT_STARTER, GM_CAT_SANDBOX, GM_CAT_BIZARRE, GM_CAT_CD, GM_CAT_OTHER, GM_CAT_SEARCH, GM_CAT_FAVORITES, GM_CAT_RECENT, GM_CATS};
+enum {GM_CAT_STARTER, GM_CAT_SANDBOX, GM_CAT_BIZARRE, GM_CAT_CD, GM_CAT_OTHER, GM_CAT_ARCHIVE, GM_CAT_SEARCH, GM_CAT_FAVORITES, GM_CAT_RECENT, GM_CATS};
 enum {GM_GRID, GM_DETAILS};       /* what shows */
 enum {GM_BTN_PLAY, GM_BTN_BACK, GM_BTN_FAVORITE, GM_BTN_SCORES, GM_BTN_MUSIC, GM_BUTTONS}; /* the details view's buttons */
 struct gm_game {
   char dir[9], gam[13], key[9];     /* folder, .GAM file and saved-list identity */
   char title[GM_LIB_TITLE + 1];     /* the index's title, else the .GAM's, else the folder */
-  char company[GM_LIB_COMPANY + 1], blurb[GM_LIB_BLURB + 1];
   uint32_t crc; int32_t year, course;
   uint8_t cat; int8_t pic;          /* pic: 0 not looked for yet, 1 found, -1 none */
 };
+/* The index's words, only for the main tabs' games (slot = the game's number): an Archive entry is compact and has none. */
+struct gm_text {char company[GM_LIB_COMPANY + 1], blurb[GM_LIB_BLURB + 1];};
 enum {GM_OPT_BACK, GM_OPT_FAVORITE, GM_OPT_SCORES, GM_OPT_MUSIC, GM_OPT_OPEN, GM_OPT_QUIT, GM_OPT_SOUNDS, GM_OPT_SCREEN, GM_OPT_POWER, GM_OPTIONS};
 struct gm_menu {
-  struct gm_game games[GM_MAX_GAMES];
-  unsigned count;
-  uint16_t order[GM_MAX_GAMES];      /* by category, then course and title */
-  uint16_t visible[GM_CATS][GM_MAX_GAMES];
+  struct gm_game games[GM_MAX_ALL];
+  struct gm_text text[GM_MAX_GAMES];
+  unsigned count, archive_count;    /* count holds both; archive_count of them are the Archive tab's */
+  uint16_t order[GM_MAX_ALL];       /* by category, then course and title */
+  uint16_t visible[GM_CATS][GM_MAX_ALL];
   struct gm_list favorites, recent;
   char query[25];
   int search_active, tabs_focus, search_keyboard;
@@ -43,6 +47,7 @@ struct gm_menu {
   int background_music;             /* owner setting: on by default, M toggles in the library */
   struct gm_settings settings;
   unsigned pos[GM_CATS];            /* the selected card in each tab (remembered) */
+  int finished;                     /* gm_finish has run: archive adds then insert in order */
   int shift;                        /* a Shift key is held (Shift+Tab) */
   int options_active, open_keyboard; unsigned option;
   int open_active;                  /* slash starts a folder-name request */
@@ -50,10 +55,21 @@ struct gm_menu {
   int cue;                          /* the last gm_event's UI sound (GM_CUE_*, uisound.h); GM_CUE_NONE when UI sounds are off */
   char message[GM_MESSAGE_MAX + 1]; /* footer line; empty shows the key help */
 };
+/* Size budget: the 512 Archive entries may cost under 100 KiB in all (a game here, its place in order[], main.c's where_a). */
+_Static_assert(sizeof(struct gm_game) <= 112, "struct gm_game grew: every Archive entry pays for it (512 of them)");
+/* The company and blurb of a game ("" for an Archive entry or a game the index does not name). */
+static inline const char *gm_company(const struct gm_menu *m, const struct gm_game *g) {return g->cat == GM_CAT_ARCHIVE ? "" : m->text[g - m->games].company;}
+static inline const char *gm_blurb(const struct gm_menu *m, const struct gm_game *g) {return g->cat == GM_CAT_ARCHIVE ? "" : m->text[g - m->games].blurb;}
 enum {GM_NONE, GM_MOVED, GM_CHOSEN, GM_QUIT, GM_RESYNC, GM_SCORES, GM_MUSIC, GM_OPEN_FOUND, GM_OPEN_MISSING, GM_OPEN_PLAY, GM_FAVORITE, GM_SETTINGS}; /* GM_SCORES: H, the selected game's Top Ten */
 /* Add a game (dir is its folder's name, gam its .GAM file, title from that
    file, crc the .GAM's CRC-32); false when the list is full. */
 bool gm_add(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc);
+/* Add a game of /sd/ARCHIVE to the Archive tab (its own room of GM_MAX_ARCHIVE; the
+   main tabs keep GM_MAX_GAMES). Before gm_finish it is only appended; after, it is
+   inserted into the tab's sorted place (one pass over the Archive tab, so a frame
+   can add one without a pause), whatever order the files were found in.
+   False when the Archive room is full. */
+bool gm_add_archive(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc);
 /* One line of the library index: fills in the game it describes (matched by
    the .GAM's CRC-32, else its locator or DOS name). 1 when a game matched. */
 int gm_library_line(struct gm_menu *m, const char *line, uint32_t n);

@@ -24,7 +24,6 @@ void gm_shrink(const uint8_t *px, const uint8_t *pal, uint16_t *out, uint32_t w,
 const uint16_t *gm_thumb_get(unsigned id);
 void gm_thumb_put(unsigned id, const uint8_t *px, const uint8_t *pal);
 void gm_thumb_clear(void);
-<<<<<<< HEAD
 /* Cooperative picture loading: present immediately, then at 50 ms checkpoints.
    The transport must checkpoint between bounded reads; a blocking syscall itself
    cannot be preempted here. The callbacks must not load another picture. */
@@ -36,7 +35,6 @@ struct gm_load_progress {
 };
 void gm_load_start(struct gm_load_progress *p, uint64_t (*now)(void *), void (*present)(void *), void *user);
 void gm_load_tick(struct gm_load_progress *p);
-=======
 /* True when game `id`'s card is kept, without counting as a use. */
 int gm_thumb_has(unsigned id);
 /* The game whose card to draw next, or -1 when the page and its neighbors are all drawn (or
@@ -44,4 +42,3 @@ int gm_thumb_has(unsigned id);
    next page and the previous one (*on_page = 0). Neighbors are 16 cards of the 24 kept, so a
    page turn finds its cards drawn and the visible ones are never given up for them. */
 int gm_thumb_next(const struct gm_menu *m, int *on_page);
->>>>>>> origin/feature/gmos-thumb-speed-1112

@@ -99,7 +99,7 @@ class RemoteOnly(unittest.TestCase):
         seen = {p.tab}
         for _ in range(8):
             r.keys('right'); seen.add(p.tab)
-        self.assertEqual(seen, set(range(8)))
+        self.assertEqual(seen, {0, 1, 2, 3, 4, 6, 7, 8})  # no Archive games here, so tab 5 is left out
         while p.tab != SEARCH: r.keys('right')
         r.keys('enter', 'enter')  # A filters all five titles
         self.assertEqual(lib().gm_tab_size(p.m, SEARCH), 3)

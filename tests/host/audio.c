@@ -210,6 +210,30 @@ static void latency(void) {
     CHECK(dry == 0, "queue ran dry %u times", dry);
   }
 }
+/* The Archive tab fills while the library music plays (main.c arch_step): one ZIP per idle pass, each read in chunks of
+   at most 16 KiB (sdzip.c) with the heartbeat, which pumps the audio, after every chunk. Modeled in 1 ms ticks on a
+   ring drained at 48 frames a ms: 365 ZIPs each take 4 chunks of 8 ms (16 KiB from the card). The music must never
+   run dry, the longest gap between pumps stays small, and the whole tab is filled within a bounded time. */
+static void archive_with_music(void) {
+  static struct au a; static int16_t got[48000 * 20 * 2]; static struct ring r; struct au_sink sink = {&r, rq, rw, rn};
+  memset(&r, 0, sizeof r); r.cap = 16384; r.take = 4000; r.got = got;
+  au_init(&a, music_buf, sizeof music_buf);
+  FILE *f = fopen("tests/data/syn.cmf", "rb"); uint32_t n = f ? (uint32_t)fread(music_buf, 1, sizeof music_buf, f) : 0; if (f) fclose(f);
+  cmf_load(&a.cmf, music_buf, n); au_set_playing(&a, 1);
+  unsigned ms = 0, last_pump = 0, gap = 0, dry = 0, done = 0, min_q = 1u << 30;
+  #define TICK() do { ms++; r.queued = r.queued > 48 ? r.queued - 48 : 0; if (ms > 300 && r.queued < min_q) min_q = r.queued; if (ms > 300 && !r.queued) dry++; } while (0)
+  #define PUMP() do { au_pump(&a, &sink); if (ms - last_pump > gap) gap = ms - last_pump; last_pump = ms; } while (0)
+  for (unsigned i = 0; i < 200; i++) {TICK(); PUMP();} /* the music is up */
+  while (done < 365 && ms < 20000) {
+    for (unsigned chunk = 0; chunk < 4; chunk++) {for (unsigned t = 0; t < 8; t++) TICK(); PUMP();} /* a ZIP: four chunk reads, a beat after each */
+    done++;
+    TICK(); PUMP(); /* the pass ends: keys are read, the music pumped */
+  }
+  CHECK(done == 365 && ms < 20000, "the Archive tab filled %u of 365 in %u ms with music playing", done, ms);
+  CHECK(dry == 0, "music ran dry %u times while the archive filled (lowest queue %u frames)", dry, min_q);
+  CHECK(gap <= 12, "longest gap between audio pumps %u ms", gap);
+  printf("archive with music: 365 zips in %u ms, lowest queue %u frames, longest pump gap %u ms\n", ms, min_q, gap);
+}
 /* Current and documented older rings, including a last write smaller than AU_CHUNK. */
 static void capacities(void) {
   static struct au a; static int16_t got[20000 * 2];
@@ -317,4 +341,4 @@ static void slice_limit(void) {
   au_init(&a, music_buf, sizeof music_buf); sl_calls = 0; sl_t = 0; sl_frames = 0; au_pump(&a, &sink);
   CHECK(sl_frames == 2 * AU_CHUNK, "synthesis passed the limit: %u frames rendered", sl_frames);
 }
-int main(void) {speaker(); ticks(); fades(); hush(); double_stop(); huge_gap(); slice_limit(); slow_frames(); feeding(); latency(); capacities(); retries(); stalled_drain(); volumes(); if (!fails) puts("audio ok"); return fails != 0;}
+int main(void) {speaker(); ticks(); fades(); hush(); double_stop(); huge_gap(); slice_limit(); slow_frames(); feeding(); latency(); capacities(); retries(); archive_with_music(); stalled_drain(); volumes(); if (!fails) puts("audio ok"); return fails != 0;}
