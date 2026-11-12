@@ -225,4 +225,13 @@ static void volumes(void) {
   }
   au_volume(&a, 65536); CHECK(a.vol_target == 65535, "volume not clamped to uint16 range");
 }
-int main(void) {speaker(); ticks(); fades(); feeding(); latency(); capacities(); retries(); volumes(); if (!fails) puts("audio ok"); return fails != 0;}
+/* A full or stalled ring (EAGAIN every time): one pump makes one write, keeps the samples and returns; it never waits or loops. */
+static int stall_calls;
+static int32_t stall_write(void *u, const void *p, uint32_t n) {(void)u; (void)p; (void)n; stall_calls++; return -11;}
+static void stalled_drain(void) {
+  static struct au a; struct ring r = {4096, 0, 0, 0, 0, 0, 0, 0}; struct au_sink s = {&r, rq, stall_write, rn};
+  au_init(&a, music_buf, sizeof music_buf); au_beep(&a, "T.SND", 3); au_service(&a, reader, 0);
+  for (unsigned i = 0; i < 50; i++) { stall_calls = 0; int w = au_pump(&a, &s); CHECK(w == 0 && stall_calls == 1, "EAGAIN pump wrote %d times, returned %d", stall_calls, w); }
+  CHECK(a.eagain == 50 && a.hold_len == AU_CHUNK * 4, "samples not held for the next frame");
+}
+int main(void) {speaker(); ticks(); fades(); feeding(); latency(); capacities(); retries(); stalled_drain(); volumes(); if (!fails) puts("audio ok"); return fails != 0;}
