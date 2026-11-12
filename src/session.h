@@ -50,6 +50,8 @@ struct gs_session {
   uint32_t pause;               /* the pause's seconds (GS_KEY_WAIT: until a key) */
   uint32_t fade_step;           /* the fade's step shown */
   uint32_t fli_frame;           /* animation frames shown */
+  void (*keep)(const char *line, uint64_t now_ns); /* optional: lines worth keeping on the card (main.c's gl_add) */
+  uint64_t fli_ask_ns, fli_go_ns, fli_first_ns; /* the animation page's timing for the card log: asked for, file read (retraces start), first frame up (0: not yet) */
   struct gp_fli fli;
   int text, more;               /* a text page showing; more lines after it */
   uint32_t text_at, text_n; int32_t vertpos; uint8_t text_col, text_red;
