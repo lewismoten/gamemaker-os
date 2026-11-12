@@ -119,6 +119,7 @@ flags=['-O2',*extra,'-ffunction-sections','-fdata-sections','-I'+str(out),'-I'+s
 commands=[]
 units=[('probe','probe.c','cc'),('sdpack',str(repo/'src/sdpack.c'),'cc'),('menu',str(repo/'src/menu.c'),'cc'),('library',str(repo/'src/library.c'),'cc'),('gam',str(repo/'src/gam.c'),'cc'),('gmp',str(repo/'src/gmp.cpp'),'c++'),('puff',str(repo/'third_party/puff/puff.c'),'cc')]
 units += [('zip',str(repo/'src/zip.c'),'cc'),('sdzip',str(repo/'src/sdzip.c'),'cc'),('asset_scratch',str(repo/'src/asset_scratch.c'),'cc')]
+units.append(('beat',str(repo/'src/beat.c'),'cc'))
 if (repo/'src/scan_cache.c').exists(): units.append(('scan_cache',str(repo/'src/scan_cache.c'),'cc'))
 if (repo/'src/settings.c').exists(): units.append(('settings',str(repo/'src/settings.c'),'cc'))
 for name,src,compiler in units:
