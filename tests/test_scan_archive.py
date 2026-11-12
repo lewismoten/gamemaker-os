@@ -28,6 +28,13 @@ class ArchiveFolder(unittest.TestCase):
     def run_probe(self, **extra):
         env = dict(os.environ, GMOS_SCAN_CACHE='1', GMOS_SCAN_ARCH='1', GMOS_SCAN_FAT='1', **extra) # FAT-like keys: size and whole-second date only
         return json.loads(subprocess.check_output([str(self.probe), str(self.card)], env=env))
+    def test_long_zip_names_are_listed_and_cached(self):
+        g = bytearray(self.gam); g[-1] = 99
+        for n in (120, 230):                                           # FAT long names; 243 is the most one /sd/ARCHIVE path holds
+            g[-1] = 90 + n % 7
+            (self.card/('ARCHIVE/' + 'a' * (n - 4) + '.ZIP')).write_bytes(make_zip(bytes(g)))
+        cold = self.run_probe(); self.assertEqual((cold['arch_zip_reads'], cold['games']), (N + 2, N + 2))
+        warm = self.run_probe(); self.assertEqual((warm['arch_zip_reads'], warm['arch_warm'], warm['games']), (0, 1, N + 2))
     def test_a_matching_signature_reads_no_zip(self):
         cold = self.run_probe(); self.assertEqual((cold['arch_zip_reads'], cold['arch_warm']), (N, 0))
         warm = self.run_probe(); self.assertEqual((warm['arch_zip_reads'], warm['arch_warm'], warm['arch_left'], warm['games']), (0, 1, 0, N))
