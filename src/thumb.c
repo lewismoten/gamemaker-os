@@ -176,6 +176,7 @@ void gm_shrink(const uint8_t *px, const uint8_t *pal, uint16_t *out, uint32_t w,
 }
 static void init(void) {if (!owners_set) {for (unsigned i = 0; i < GM_THUMB_SLOTS; i++) owner[i] = -1; owners_set = 1;}}
 void gm_thumb_clear(void) {owners_set = 0; init();}
+void gm_thumb_drop_from(unsigned first) {init(); for (unsigned i = 0; i < GM_THUMB_SLOTS; i++) if (owner[i] >= (int16_t)first) owner[i] = -1;}
 const uint16_t *gm_thumb_get(unsigned id) {
   init();
   for (unsigned i = 0; i < GM_THUMB_SLOTS; i++) if (owner[i] == (int16_t)id) {used[i] = ++clock; return cache[i];}

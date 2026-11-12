@@ -140,13 +140,37 @@ static void cache_source_put(const char *path,const void *key,unsigned kn,const 
 static uint32_t cache_pending; /* bytes of the fresh cache still to persist: cache_flush writes them */
 /* The scan is done: close the fresh cache in memory. Writing it (an fsync and a rename can block for half a second)
    waits for cache_flush, which GMOS calls once the games list is on screen. */
-static void cache_end(void) {
+static void arch_seal_hook(void); /* main.c: adds the Archive folder's signature record */
+static int cache_wait; /* the Archive ZIPs are still being read: seal once they are (cache_seal) */
+static void cache_seal(void) {
  cache_pending=0;
  if(!cache_enabled)return;
+ arch_seal_hook();
  uint32_t n=gc_finish(&scan_cache);
  if(!n){say("GMOS cache capacity exceeded; live scan retained");return;}
  if(scan_cache.valid&&n==scan_cache.oldbytes&&cache_equal(cache_new,cache_old,n))return; /* no warm writes */
  cache_pending=n;
+}
+static void cache_end(unsigned archive_left) {if(archive_left&&cache_enabled){cache_pending=0;cache_wait=1;return;}cache_seal();}
+/* The Archive's background CRC pass patched records in the sealed cache: close it again (one CRC over the buffer) and queue one write. */
+static void cache_resave(void) {
+ if(!cache_enabled||scan_cache.overflow)return;
+ uint32_t n=gc_finish(&scan_cache);if(n)cache_pending=n;
+}
+/* A change in /sd/ARCHIVE: the sealed cache becomes the old one, every record outside the Archive carries over, and the
+   Archive's records are re-added for the ZIPs still there. Returns 0 when the cache cannot be rebased (it is then off). */
+static int cache_rebase(void) {
+ if(!cache_enabled)return 0;
+ uint32_t n=cache_new[4]|cache_new[5]<<8|(uint32_t)cache_new[6]<<16;
+ if(scan_cache.overflow||n<16||n>GC_CAPACITY){cache_enabled=0;return 0;}
+ cache_copy(cache_old,cache_new,n);cache_pending=0;
+ gc_init(&scan_cache,cache_old,n,cache_new,sizeof cache_new);
+ if(!scan_cache.valid||!gc_carry(&scan_cache,"/sd/ARCHIVE")){cache_enabled=0;return 0;}
+ return 1;
+}
+/* An Archive ZIP's record joins the cache only while it fits (one that overflows would drop the whole cache). */
+static int cache_room(unsigned path_bytes,unsigned value_bytes) {
+ return !scan_cache.overflow&&(unsigned)(cache_new[8]|cache_new[9]<<8)<1000u&&scan_cache.used+8u+path_bytes+16u+value_bytes+64u<scan_cache.capacity;
 }
 /* Persist the fresh cache: write temp file, fsync, rename (power-cut safe). Each step's time is logged once. */
 static void cache_flush(void) {

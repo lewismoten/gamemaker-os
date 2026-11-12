@@ -59,6 +59,7 @@ static void add_game(const char*p,unsigned n){uint64_t t=ns();add_game_impl(p,n)
 static void read_index(void){uint64_t t=ns();read_index_impl();phase_ns[2]+=ns()-t;phase_calls[2]++;}
 static void add_pack(const struct sp_pack*p){uint64_t t=ns();add_pack_impl(p);phase_ns[3]+=ns()-t;phase_calls[3]++;}
 static void find_packs(uint8_t f){uint64_t t=ns();find_packs_impl(f);phase_ns[4]+=ns()-t;phase_calls[4]++;}
+void gm_thumb_drop_from(unsigned f){(void)f;}
 uint32_t __real_gm_crc32(uint32_t,const uint8_t*,uint32_t);
 uint32_t __wrap_gm_crc32(uint32_t c,const uint8_t*b,uint32_t n){uint64_t t=ns();uint32_t r=__real_gm_crc32(c,b,n);crc_ns+=ns()-t;crc_calls++;crc_bytes+=n;return r;}
 int __real_gm_library_line(struct gm_menu*,const char*,uint32_t);
@@ -84,7 +85,7 @@ static int32_t host_dents(uint64_t h,void*b,uint32_t cap,uint64_t*got,int meta){
  struct stat st; if(fstatat(dirfd(handles[h].d),e->d_name,&st,0))continue;
  sbx_dirent d={(uint16_t)len,S_ISDIR(st.st_mode)?SBX_DT_DIR:SBX_DT_FILE,(uint8_t)nb,S_ISDIR(st.st_mode)?0:(uint32_t)st.st_size};
  memset((char*)b+at,0,len);memcpy((char*)b+at,&d,8);
- if(meta){uint32_t m[4]={(uint32_t)st.st_mtim.tv_sec^(uint32_t)st.st_mtim.tv_nsec,(uint32_t)st.st_ctim.tv_sec^(uint32_t)st.st_ctim.tv_nsec,(uint32_t)st.st_ino,0};memcpy((char*)b+at+8,m,16);}
+ if(meta){uint32_t m[4]={(uint32_t)st.st_mtim.tv_sec^(uint32_t)st.st_mtim.tv_nsec,(uint32_t)st.st_ctim.tv_sec^(uint32_t)st.st_ctim.tv_nsec,(uint32_t)st.st_ino,0};if(getenv("GMOS_SCAN_FAT")){m[0]=(uint32_t)st.st_mtim.tv_sec;m[1]=m[2]=0;}memcpy((char*)b+at+8,m,16);}
  memcpy((char*)b+at+head,e->d_name,nb);at+=len;dent_entries++;
  }*got=at;io_ns+=ns()-t;return 0;
 }
@@ -98,10 +99,21 @@ int32_t sbx_rename(const char*a,uint32_t an,const char*b,uint32_t bn){char ap[40
 int32_t sbx_log(uint64_t h,const char*b,uint32_t n){(void)h;(void)b;logs++;log_bytes+=n;return 0;}
 int32_t sbx_health(uint32_t g,uint64_t s){(void)g;(void)s;healths++;return 0;}
 static void jstr(const char*s){putchar('"');for(;*s;s++){unsigned char c=*s;if(c=='"'||c=='\\')printf("\\%c",c);else if(c<32||c>=127)printf("\\u%04x",c);else putchar(c);}putchar('"');}
-int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;i++)handles[i].f=-1;abi_minor=getenv("GMOS_SCAN_CACHE")?5:3;if(getenv("GMOS_SCAN_ABI"))abi_minor=(unsigned)atoi(getenv("GMOS_SCAN_ABI"));sp_set_abi(1,abi_minor);uint64_t t=ns();find_games();cache_flush();t=ns()-t;
+int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;i++)handles[i].f=-1;abi_minor=getenv("GMOS_SCAN_CACHE")?5:3;if(getenv("GMOS_SCAN_ABI"))abi_minor=(unsigned)atoi(getenv("GMOS_SCAN_ABI"));sp_set_abi(1,abi_minor);uint64_t t=ns();find_games();unsigned arch_left=arch_n-arch_next,left_shown=menu.scan_left,arch_steps=0;
+ uint64_t t_find=ns()-t,t1=ns();while(getenv("GMOS_SCAN_ARCH")&&arch_next<arch_n){arch_step();arch_steps++;}
+ uint64_t t_arch=ns()-t1;unsigned crc_done=0,crc_max_chunk=0,check_passes=0,check_changed=0,relisted=0;uint64_t t_crc=0,t_check=0,t_relist=0;
+ if(getenv("GMOS_SCAN_HOOK")&&system(getenv("GMOS_SCAN_HOOK")))return 3; /* the card changes behind the board's back */
+ if(getenv("GMOS_SCAN_CHECK")){t1=ns();uint64_t now=1000000000000ull;unsigned guard=0;
+  while(guard++<100000){int c=arch_check_step(now);now+=10000000;if(c){check_changed=1;break;}if(!chk_open&&chk_passes)break;}
+  check_passes=chk_passes;t_check=ns()-t1;
+  if(check_changed){t1=ns();arch_relist(0);relisted=1;t_relist=ns()-t1;while(arch_next<arch_n){arch_step();arch_steps++;}}}
+ if(getenv("GMOS_SCAN_CRC")){unsigned limit=(unsigned)atoi(getenv("GMOS_SCAN_CRC"));t1=ns();
+  while(crc_done<limit){uint64_t a=ns();int r=arch_crc_step();uint64_t d=ns()-a;if(d/1000>crc_max_chunk)crc_max_chunk=(unsigned)(d/1000);if(!r)break;crc_done++;if(r==2)relisted=2;}
+  t_crc=ns()-t1;if(crc_dirty){crc_dirty=0;cache_resave();}}
+ cache_flush();t=ns()-t;
  printf("{\"elapsed_ns\":%llu,\"games\":%u,\"menu_crc\":%u,\"where_crc\":%u",(unsigned long long)t,menu.count,__real_gm_crc32(0,(const uint8_t*)&menu,sizeof menu),__real_gm_crc32(0,(const uint8_t*)where,sizeof where));
  #define FIELD(x) printf(",\"" #x "\":%llu",(unsigned long long)x)
- FIELD(opens);FIELD(dir_opens);FIELD(file_opens);FIELD(read_calls);FIELD(read_bytes);FIELD(dent_calls);FIELD(dent_entries);FIELD(logs);FIELD(log_bytes);FIELD(healths);FIELD(seeks);FIELD(io_ns);FIELD(crc_ns);FIELD(crc_calls);FIELD(crc_bytes);FIELD(lib_ns);FIELD(lib_calls);
+ FIELD(t_find);FIELD(t_arch);FIELD(t_crc);FIELD(t_check);FIELD(t_relist);FIELD(crc_done);FIELD(crc_max_chunk);FIELD(check_passes);FIELD(check_changed);FIELD(relisted);FIELD(arch_zip_reads);FIELD(arch_warm);FIELD(arch_left);FIELD(left_shown);FIELD(arch_steps);FIELD(opens);FIELD(dir_opens);FIELD(file_opens);FIELD(read_calls);FIELD(read_bytes);FIELD(dent_calls);FIELD(dent_entries);FIELD(logs);FIELD(log_bytes);FIELD(healths);FIELD(seeks);FIELD(io_ns);FIELD(crc_ns);FIELD(crc_calls);FIELD(crc_bytes);FIELD(lib_ns);FIELD(lib_calls);
  printf(",\"inclusive_phase_ns\":[");for(unsigned i=0;i<5;i++)printf("%s%llu",i?",":"",(unsigned long long)phase_ns[i]);printf("],\"phase_calls\":[");for(unsigned i=0;i<5;i++)printf("%s%llu",i?",":"",(unsigned long long)phase_calls[i]);printf("],\"list\":[");
  for(unsigned j=0;j<menu.count;j++){
   unsigned i=menu.order[j];const struct gm_game*g=&menu.games[i];

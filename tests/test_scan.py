@@ -238,6 +238,31 @@ class PersistentScan(Scan):
         self.assertEqual(self.scan()['games'],1)
         archive.unlink();self.assertEqual(self.scan()['games'],0)
 
+    def test_archive_zips_are_cached_and_the_warm_list_is_complete_at_startup(self):
+        import io, zipfile
+        def make_zip(gam):
+            b=io.BytesIO()
+            with zipfile.ZipFile(b,'w',zipfile.ZIP_DEFLATED) as z: z.writestr('DICE.GAM',gam)
+            return b.getvalue()
+        gam=bytearray((ROOT/'tests/games/DICE/DICE.GAM').read_bytes())
+        (self.card/'ARCHIVE').mkdir()
+        for k in range(5):
+            gam[-1]=k;(self.card/('ARCHIVE/OLD%d.ZIP'%k)).write_bytes(make_zip(bytes(gam)))
+        env=dict(os.environ,GMOS_SCAN_CACHE='1',GMOS_SCAN_ARCH='1')
+        run=lambda:json.loads(subprocess.check_output([str(self.probe),str(self.card)],env=env))
+        cold=run()
+        self.assertEqual((cold['arch_left'],cold['arch_steps'],cold['games']),(5,5,5)) # unknown ZIPs wait for the idle loop
+        self.assertEqual(cold['crc_calls'],5)
+        # A new build changes nothing the cache keys on: the same card is complete before the first draw.
+        warm=run()
+        self.assertEqual((warm['arch_left'],warm['left_shown'],warm['games'],warm['crc_calls']),(0,0,5,0))
+        self.assertEqual([(g['title'],g['crc'],g['cat']) for g in warm['list']],[(g['title'],g['crc'],g['cat']) for g in cold['list']])
+        # One changed ZIP is the only one read again; the rest come from the cache.
+        gam[-1]=99;(self.card/'ARCHIVE/OLD2.ZIP').write_bytes(make_zip(bytes(gam)))
+        part=run()
+        self.assertEqual((part['crc_calls'],part['games']),(1,5));self.assertGreaterEqual(part['arch_left'],1) # prefill stops at the unknown ZIP
+        self.assertEqual(run()['crc_calls'],0)
+
     def test_long_gam_cache_exact_paths_and_no_truncated_join(self):
         folder=self.dice('Long Game Folder')
         (folder/'DICE.GAM').rename(folder/'Long Metadata Filename.gam')

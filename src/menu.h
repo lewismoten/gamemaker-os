@@ -47,6 +47,7 @@ struct gm_menu {
   int background_music;             /* owner setting: on by default, M toggles in the library */
   struct gm_settings settings;
   unsigned pos[GM_CATS];            /* the selected card in each tab (remembered) */
+  unsigned scan_left;               /* Archive files still to read: 0 when the scan is done. The header shows one calm note, and the Archive and Search counts wait for the end */
   int finished;                     /* gm_finish has run: archive adds then insert in order */
   int shift;                        /* a Shift key is held (Shift+Tab) */
   int options_active, open_keyboard; unsigned option;

@@ -54,3 +54,15 @@ uint32_t gc_finish(struct gc_cache *c) {
  if(c->overflow)return 0;
  w32(c->out+4,c->used);w32(c->out+12,checksum(c->out,c->used));return c->used;
 }
+int gc_carry(struct gc_cache *c,const char *skip) {
+ uint32_t sn=pathlen(skip);char path[256];
+ if(!c->valid)return 0;
+ for(uint32_t at=16;at<c->oldbytes;){
+  const uint8_t *p=c->old+at;uint32_t a=u16(p),b=u16(p+2),n=u32(p+4);p+=8;
+  at+=8+a+b+n;
+  if(a>=sn&&equal(p,(const uint8_t *)skip,sn))continue;
+  copy((uint8_t *)path,p,a);path[a]=0;
+  if(!gc_add(c,path,p+a,b,p+a+b,n))return 0;
+ }
+ return 1;
+}
