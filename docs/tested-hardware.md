@@ -12,11 +12,12 @@ tested" or "not recorded".
 
 ## Displays
 
-| Display                              | Connection  | What works                                                                 | Notes                                                                                      | Date       | Tested by |
-| ------------------------------------ | ----------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------- | --------- |
-| Desk monitor                         | HDMI        | Games list, menus and play.                                                | Make and model not recorded.                                                               | 2026-11-11 | Lewis     |
-| Living-room TV                       | HDMI        | Games list, menus and play.                                                | Make and model not recorded. HDMI sound and the TV remote (CEC): see the kernel's notes.   | 2026-11-11 | Lewis     |
-| Waveshare 2.13 inch e-Paper HAT (V4) | GPIO header | The kernel's status lines show on the panel during start-up and USB setup. | Game-Maker OS's own e-ink pages (loading, library count, game title, `SAVING`) not tested. | 2026-11-11 | Lewis     |
+| Display                              | Connection  | What works                                                                 | Notes                                                                                                                                         | Date       | Tested by |
+| ------------------------------------ | ----------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | --------- |
+| Desk monitor                         | HDMI        | Games list, menus and play.                                                | Make and model not recorded.                                                                                                                  | 2026-11-11 | Lewis     |
+| Living-room TV                       | HDMI        | Games list, menus and play.                                                | Make and model not recorded. HDMI sound and the TV remote (CEC): see the kernel's notes.                                                      | 2026-11-11 | Lewis     |
+| Insignia NS-50F301NA22 (50 inch)     | HDMI        | Picture.                                                                   | TV remote over HDMI-CEC did not respond on PI-2. Music stopped after a few seconds (cause not known yet). Kernel and GMOS build not recorded. | 2026-11-12 | Lewis     |
+| Waveshare 2.13 inch e-Paper HAT (V4) | GPIO header | The kernel's status lines show on the panel during start-up and USB setup. | Game-Maker OS's own e-ink pages (loading, library count, game title, `SAVING`) not tested.                                                    | 2026-11-11 | Lewis     |
 
 ## USB hubs
 
