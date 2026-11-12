@@ -837,7 +837,7 @@ int main(const sbx_startup *start) {
       }
       doing = "thumbnail";
       if (load_next_thumb()) {doing = "list"; show_list(px);}
-      else if (arch_next < arch_n && !(aud_on && menu.background_music)) { /* one ZIP per pass, so keys are read between; paused while music plays (it shares the open ZIP) */
+      else if (arch_next < arch_n) { /* one ZIP per pass, so keys are read between; the heartbeat in its reads pumps the music, which plays from its own buffer and shares no reader */
         doing = "archive"; arch_dirty |= arch_step();
         uint64_t now = clock_ns();
         if (arch_dirty && (arch_next >= arch_n || now - arch_shown >= 400000000ull)) {arch_dirty = 0; arch_shown = now; doing = "list"; show_list(px);}
