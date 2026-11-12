@@ -13,6 +13,8 @@
 #define AU_FILL_FRAMES 15000u /* and top up to this many (312 ms; the kernel ring holds 16384, an older one 4096) */
 #define AU_VOL_MAX 65535u     /* full uint16 gain range, Q15; saturated after mixing */
 #define AU_VOL_ONE 32768u     /* master volume 1.0 (Q15); it ramps one step a sample: 0.68 s from silence to full */
+#define AU_QUIET_LOW_FRAMES 2400u  /* nothing sounding (no song, clip or speaker; the library's usual state): the ring only holds silence, so a stall cannot be heard and a menu blip, which waits behind whatever is queued (the ring is write-only), can reach the speaker within about 80 ms */
+#define AU_QUIET_FILL_FRAMES 3840u /* 80 ms */
 #define AU_PLAY_FILL_FRAMES AU_FILL_FRAMES /* 312.5 ms, clamped to the kernel ring */
 #define AU_PLAY_LOW_FRAMES AU_LOW_FRAMES
 #define AU_CHUNK 480u        /* frames per synthesis slice (10 ms); pcspeaker.h's limit is 1920 */
@@ -27,6 +29,9 @@
 #define AU_WAIT_SPINS 64u
 #define AU_PUMP_IO_NS 20000000ull /* the most one au_pump call spends in the device's write and query: past it, it gives up for this frame */
 #define AU_NAME_MAX 16u
+/* 1 when nothing is sounding and the library's ring is kept shallow (AU_QUIET_*). */
+struct au;
+int au_quiet(const struct au *a);
 struct au_sink {
   void *user;
   /* Frames queued and the ring's capacity; 0 when it was read. */

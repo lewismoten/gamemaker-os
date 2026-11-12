@@ -100,10 +100,15 @@ void au_render(struct au *a, int16_t *out, unsigned n) {
   }
   a->frames += n;
 }
+int au_quiet(const struct au *a) {
+  return !a->playing && !(a->cmf.playing && !a->music_muted) && !a->hush_left && !a->music_pending && !a->voc_pending && !a->beep_pending &&
+         !a->pc.active && a->vp.state != VP_PLAYING && a->vp.state != VP_PENDING && a->vol == a->vol_target;
+}
 int au_pump(struct au *a, const struct au_sink *s) {
   uint32_t queued = 0, cap = 0, sent = 0;
   if (s->query(s->user, &queued, &cap)) return -1;
-  uint32_t low = a->playing ? AU_PLAY_LOW_FRAMES : AU_LOW_FRAMES, fill = a->playing ? AU_PLAY_FILL_FRAMES : AU_FILL_FRAMES;
+  int quiet = au_quiet(a);
+  uint32_t low = quiet ? AU_QUIET_LOW_FRAMES : a->playing ? AU_PLAY_LOW_FRAMES : AU_LOW_FRAMES, fill = quiet ? AU_QUIET_FILL_FRAMES : a->playing ? AU_PLAY_FILL_FRAMES : AU_FILL_FRAMES;
   uint64_t t = s->now(s->user);
   if (a->last_pump_ns) {
     uint64_t gap = t - a->last_pump_ns;
@@ -116,7 +121,7 @@ int au_pump(struct au *a, const struct au_sink *s) {
   /* Round up observed worst gap + worst slice + two 10 ms scheduling slices.
      Keep a conservative floor before observations, and never exceed the target. */
   uint64_t observed = ((a->gap_peak_ns + a->slice_peak_ns + 2u * AU_SLEEP_NS) * 48000u + 999999999u) / 1000000000u;
-  if (observed > low) low = observed < fill ? (uint32_t)observed : fill;
+  if (!quiet && observed > low) low = observed < fill ? (uint32_t)observed : fill;
   if (!cap || queued > cap) return -1;
   if (low > cap) low = cap;
   if (fill > cap) fill = cap;
@@ -152,7 +157,7 @@ int au_pump(struct au *a, const struct au_sink *s) {
     a->hold_off += (uint32_t)w; a->hold_len -= (uint32_t)w; sent += (uint32_t)w / 4u;
     io0 = s->now(s->user); int32_t qrc = s->query(s->user, &queued, &cap); io_ns += s->now(s->user) - io0;
     if (qrc || !cap || queued > cap) return -1;
-    fill = a->playing ? AU_PLAY_FILL_FRAMES : AU_FILL_FRAMES;
+    fill = quiet ? AU_QUIET_FILL_FRAMES : a->playing ? AU_PLAY_FILL_FRAMES : AU_FILL_FRAMES;
     if (fill > cap) fill = cap;
     if ((!a->hold_len && queued < fill && fill - queued <= AU_REFILL_MARGIN)) break;
   }
