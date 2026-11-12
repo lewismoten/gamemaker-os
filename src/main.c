@@ -545,7 +545,14 @@ static void audio_log(const char *what) { /* the kernel's counters, and what the
   p = put(p, ", beeps "); p = num(p, aud.beeps); p = put(p, ", vocs "); p = num(p, aud.vocs); p = put(p, "/"); p = num(p, aud.voc_refused); p = put(p, ", synth CPU "); p = num(p, t > au_prev_t ? (uint32_t)((aud.total_ns - au_prev_ns) * 1000u / (t - au_prev_t)) : 0);
   p = put(p, " per mille, longest pump gap "); p = num(p, (uint32_t)(aud.gap_max_ns / 1000u)); p = put(p, " us, longest sound read "); p = num(p, (uint32_t)(aud.svc_max_ns / 1000u));
   p = put(p, " us, low water "); p = num(p, aud.low_frames);
-  put(p, " frames; since the last line"); say(line); if (what[0] == 'g') gl_add(line, t); aud.gap_max_ns = aud.svc_max_ns = 0;
+  put(p, " frames; since the last line"); say(line);
+  if (what[0] == 'g') { /* the card's copy is cut at 160 bytes, so it carries the fields that explain a silent game first: the mute flag, the song's state and the volume */
+    char brief[GL_LINE_MAX], *b = put(brief, "GMOS audio game: mute "); b = num(b, aud.music_muted); b = put(b, " song "); b = num(b, aud.cmf.playing);
+    b = put(b, " vol "); b = num(b, aud.vol >> 8); b = put(b, "/"); b = num(b, aud.vol_target >> 8); b = put(b, " songs "); b = num(b, aud.music_loads); b = put(b, " vocs "); b = num(b, aud.vocs);
+    b = put(b, " q "); b = num(b, (uint32_t)i.queued_frames); b = put(b, " under "); b = num(b, (uint32_t)i.underruns); b = put(b, " gap "); b = num(b, (uint32_t)(aud.gap_max_ns / 1000u));
+    b = put(b, " read "); b = num(b, (uint32_t)(aud.svc_max_ns / 1000u)); b = put(b, " low "); b = num(b, aud.low_frames); put(b, " us"); gl_add(brief, t);
+  }
+  aud.gap_max_ns = aud.svc_max_ns = 0;
   au_prev_ns = aud.total_ns; au_prev_t = t;
 }
 static void audio_open(void) {
@@ -590,6 +597,7 @@ static int play_music_event(const sbx_input_event *event) {
   if (event->type != SBX_EV_KEY || event->code != 50) return 0;
   if (event->value == 1) {
     aud.music_muted = !aud.music_muted;
+    gl_add(aud.music_muted ? "GMOS music off (M)" : "GMOS music on (M)", clock_ns());
     music_feedback(!aud.music_muted);
   }
   return 1;
@@ -852,7 +860,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
     for (unsigned batch = 0; batch < GI_DRAIN && have_input && !(s = gi_read(in_fd, ev, &count)); batch++) {
       for (uint32_t i = 0; i < count; i++) {
         if (ev[i].type == 0 && ev[i].code == 3) {sbx_input_state st; sbx_input_state_get(in_fd, &st); gp_release_all(); say("GMOS input resync after SYN_DROPPED"); break;}
-        if (play_music_event(&ev[i])) continue;
+        if (!sp_on && play_music_event(&ev[i])) continue; /* a save slot's name is typed text: its M is a letter, not the mute toggle */
         if (sp_on || (ev[i].type == 1 && ev[i].value == 1 && (ev[i].code == 63 || ev[i].code == 64) && sp_ok && game.phase == GS_PLAY && !game.demo)) {
           /* PLAYGAME's F5 (SaveGame) and F6 (LoadGame): the play waits while the screen is up (PLAYGAME.C 1609-1613) */
           int q;
