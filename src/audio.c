@@ -16,7 +16,7 @@ void au_stop(struct au *a) {a->want_music[0] = 0; a->music_pending = 1; a->beep_
 void au_volume(struct au *a, uint32_t target) {a->vol_target = target > AU_VOL_MAX ? AU_VOL_MAX : target;}
 void au_silence(struct au *a) {
   a->music_pending = 0; a->beep_pending = 0; a->voc_pending = 0; a->hold_len = 0; vp_stop(&a->vp);
-  cmf_stop(&a->cmf); pc_stop(&a->pc); a->vol = a->vol_target = 0;
+  cmf_stop(&a->cmf); pc_stop(&a->pc); a->hush_left = 0; a->vol = a->vol_target = 0;
 }
 void au_hush(struct au *a) {
   for (unsigned i = 0; i < 9; i++) opl_write(&a->opl, 0xb0 + i, opl_read(&a->opl, 0xb0 + i) & ~0x20u);
@@ -34,6 +34,7 @@ int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, ui
   if (a->music_pending) {
     a->music_pending = 0;
     if (a->cmf.playing && a->vol && a->want_music[0]) {a->vol_target = 0; a->music_pending = 1; return 0;} /* fade out first; the switch is at silence */
+    if (!a->want_music[0] && a->hush_left) return 0; /* a second stop keeps the release running */
     if (!a->want_music[0] && a->cmf.playing) {au_hush(a); return 0;} /* a stop: keyed off at once, the chip reset in 200 ms */
     cmf_stop(&a->cmf); /* the buffer is about to change under the pump (the read calls the heartbeat) */
     if (a->want_music[0]) {
@@ -106,6 +107,7 @@ int au_pump(struct au *a, const struct au_sink *s) {
   uint64_t t = s->now(s->user);
   if (a->last_pump_ns) {
     uint64_t gap = t - a->last_pump_ns;
+    if (gap > AU_GAP_CLAMP_NS) gap = AU_GAP_CLAMP_NS; /* a long pause: more than this is never useful, and the frame math must not wrap */
     a->pump_gap_ns = gap;
     if (gap > a->gap_max_ns) a->gap_max_ns = gap;
     if (gap > a->gap_peak_ns) a->gap_peak_ns = gap;
@@ -137,7 +139,7 @@ int au_pump(struct au *a, const struct au_sink *s) {
       a->total_ns += elapsed; render_ns += elapsed;
       if (elapsed > a->slice_peak_ns) a->slice_peak_ns = elapsed;
       a->hold_len = n * 4u; a->hold_off = 0;
-      budget = render_ns > AU_PUMP_RENDER_NS ? 0 : budget - n;
+      budget = render_ns >= AU_PUMP_RENDER_NS ? 0 : budget - n;
     }
     uint32_t bytes = a->hold_len;
     if (bytes > want * 4u) bytes = want * 4u;

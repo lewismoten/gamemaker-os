@@ -278,4 +278,41 @@ static void stalled_drain(void) {
   for (unsigned i = 0; i < 50; i++) { stall_calls = 0; int w = au_pump(&a, &s); CHECK(w == 0 && stall_calls == 1, "EAGAIN pump wrote %d times, returned %d", stall_calls, w); }
   CHECK(a.eagain == 50 && a.hold_len == AU_CHUNK * 4, "samples not held for the next frame");
 }
-int main(void) {speaker(); ticks(); fades(); hush(); slow_frames(); feeding(); latency(); capacities(); retries(); stalled_drain(); volumes(); if (!fails) puts("audio ok"); return fails != 0;}
+/* A stop served twice, a frame apart, keeps the release running (it does not reset the chip and cut the tail). */
+static void double_stop(void) {
+  static struct au a, b; static int16_t out[AU_CHUNK * 2];
+  FILE *f = fopen("tests/data/syn.cmf", "rb"); if (!f) {CHECK(0, "no syn.cmf"); return;}
+  cmf_len = (uint32_t)fread(cmf_file, 1, sizeof cmf_file, f); fclose(f);
+  for (unsigned i = 0; i < 16; i++) cmf_file[40 + i * 16 + 6] = cmf_file[40 + i * 16 + 7] = 0xf0;
+  struct au *v[2] = {&a, &b}; int nxt[2];
+  for (int k = 0; k < 2; k++) {
+    au_init(v[k], music_buf, sizeof music_buf);
+    au_music(v[k], "S.CMF"); au_service(v[k], reader, 0); render(v[k], out, 9600);
+    au_stop(v[k]); au_service(v[k], reader, 0); au_render(v[k], out, 1);
+    if (k) {au_stop(v[k]); au_service(v[k], reader, 0);}
+    au_render(v[k], out, 2); nxt[k] = out[0]; /* the sample after the second stop */
+  }
+  CHECK(nxt[0] != 0 && nxt[0] == nxt[1] && b.hush_left == a.hush_left, "a second serviced stop changed the release (%d vs %d)", nxt[0], nxt[1]);
+}
+/* After a gap of days the frame math must not wrap: the ring is refilled to the target. */
+static int32_t gq(void *u, uint32_t *q, uint32_t *c) {*q = *(uint32_t *)u; *c = 16384; return 0;}
+static int32_t gw(void *u, const void *p, uint32_t n) {(void)p; *(uint32_t *)u += n / 4; return (int32_t)n;}
+static uint64_t gn_t; static uint64_t gn(void *u) {(void)u; return gn_t;}
+static void huge_gap(void) {
+  static struct au a; uint32_t queued = 15000; struct au_sink sink = {&queued, gq, gw, gn};
+  au_init(&a, music_buf, sizeof music_buf);
+  gn_t = 1; au_pump(&a, &sink);
+  queued = 10000; gn_t = 384307168202284ull; au_pump(&a, &sink);
+  CHECK(queued == 15000 && a.low_frames == 15000, "after a huge gap: %u queued, low water %u", queued, a.low_frames);
+}
+/* Synthesis time is spent up to the limit and no further: two 12.5 ms slices, not three. */
+static uint32_t sl_calls, sl_frames;
+static uint64_t sl_t; static uint64_t sl_now(void *u) {(void)u; if (sl_calls++ % 6 == 2) sl_t += 12500000ull; return sl_t;} /* only the end of a render takes time */
+static int32_t sl_q(void *u, uint32_t *q, uint32_t *c) {(void)u; *q = 0; *c = 16384; return 0;}
+static int32_t sl_w(void *u, const void *p, uint32_t n) {(void)u; (void)p; sl_frames += n / 4; return (int32_t)n;}
+static void slice_limit(void) {
+  static struct au a; struct au_sink sink = {0, sl_q, sl_w, sl_now};
+  au_init(&a, music_buf, sizeof music_buf); sl_calls = 0; sl_t = 0; sl_frames = 0; au_pump(&a, &sink);
+  CHECK(sl_frames == 2 * AU_CHUNK, "synthesis passed the limit: %u frames rendered", sl_frames);
+}
+int main(void) {speaker(); ticks(); fades(); hush(); double_stop(); huge_gap(); slice_limit(); slow_frames(); feeding(); latency(); capacities(); retries(); stalled_drain(); volumes(); if (!fails) puts("audio ok"); return fails != 0;}

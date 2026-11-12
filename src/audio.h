@@ -18,6 +18,7 @@
 #define AU_CHUNK 480u        /* frames per synthesis slice (10 ms); pcspeaker.h's limit is 1920 */
 #define AU_BATCH (AU_CHUNK * 4u)
 #define AU_BATCH_MAX (AU_CHUNK * 20u) /* 200 ms of audio: what one call renders to catch up after a slow frame */
+#define AU_GAP_CLAMP_NS 60000000000ull /* a pump gap beyond a minute counts as a minute */
 #define AU_PUMP_RENDER_NS 25000000ull /* the most synthesis time one call spends, whatever the catch-up asks */
 #define AU_HUSH_FRAMES 9600u /* after a hush the chip is reset once this many frames (200 ms) have been rendered */
 #define AU_REFILL_MARGIN 48u
