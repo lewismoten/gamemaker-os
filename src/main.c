@@ -383,6 +383,7 @@ static int32_t au_query(void *u, uint32_t *queued, uint32_t *cap) {
       audio_failure("query format", -SBX_EINVAL); return -SBX_EINVAL;
     }
     *queued = (uint32_t)i.queued_frames; *cap = (uint32_t)i.capacity_frames;
+    if (i.underruns > last_under && au_quiet(&aud)) last_under = i.underruns; /* a shallow, silent ring running dry is expected (audio.h AU_QUIET_*) */
     if (i.underruns > last_under) { /* a stall: the ring ran dry (silence, never a repeat) */
       char line[120], *p = put(line, "GMOS audio underrun +"); p = num(p, (uint32_t)(i.underruns - last_under)); p = put(p, " at ");
       uint64_t t = 0; sbx_clock_ns(&t); p = num(p, (uint32_t)((t - audio_t_open) / 1000000u)); p = put(p, " ms during: "); put(p, doing); say(line);

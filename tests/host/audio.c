@@ -215,14 +215,16 @@ static void capacities(void) {
   static struct au a; static int16_t got[20000 * 2];
   const unsigned caps[] = {1, 479, 480, 4096, 16384};
   for (unsigned k = 0; k < sizeof caps / sizeof caps[0]; k++) {
-    for (int play = 0; play <= 1; play++) {
+    for (int mode = 0; mode <= 2; mode++) { /* 0: library with nothing sounding (shallow ring), 1: a game, 2: library with something sounding */
+      int play = mode == 1;
       struct ring r = {caps[k], 0, 100, 0, 0, got, 0, 0}; struct au_sink s = {&r, rq, rw, rn};
-      au_init(&a, music_buf, sizeof music_buf); au_set_playing(&a, play);
-      unsigned fill = play ? AU_PLAY_FILL_FRAMES : AU_FILL_FRAMES;
+      au_init(&a, music_buf, sizeof music_buf); au_set_playing(&a, play); if (mode == 2) a.hush_left = 1000000;
+      CHECK(au_quiet(&a) == (mode == 0), "quiet in mode %d", mode);
+      unsigned fill = mode == 0 ? AU_QUIET_FILL_FRAMES : play ? AU_PLAY_FILL_FRAMES : AU_FILL_FRAMES;
       if (fill > r.cap) fill = r.cap;
       int total = 0;
       for (unsigned i = 0; i < 16 && r.queued < fill; i++) total += au_pump(&a, &s);
-      unsigned low = play ? AU_PLAY_LOW_FRAMES : AU_LOW_FRAMES;
+      unsigned low = mode == 0 ? AU_QUIET_LOW_FRAMES : play ? AU_PLAY_LOW_FRAMES : AU_LOW_FRAMES;
       if (low > r.cap) low = r.cap;
       CHECK(total == (int)r.queued && r.queued >= low && r.queued <= fill && !a.hold_len,
             "capacity %u play %d: queued %u, held %u", r.cap, play, r.queued, a.hold_len);
@@ -300,7 +302,7 @@ static int32_t gw(void *u, const void *p, uint32_t n) {(void)p; *(uint32_t *)u +
 static uint64_t gn_t; static uint64_t gn(void *u) {(void)u; return gn_t;}
 static void huge_gap(void) {
   static struct au a; uint32_t queued = 15000; struct au_sink sink = {&queued, gq, gw, gn};
-  au_init(&a, music_buf, sizeof music_buf);
+  au_init(&a, music_buf, sizeof music_buf); au_set_playing(&a, 1);
   gn_t = 1; au_pump(&a, &sink);
   queued = 10000; gn_t = 384307168202284ull; au_pump(&a, &sink);
   CHECK(queued == 15000 && a.low_frames == 15000, "after a huge gap: %u queued, low water %u", queued, a.low_frames);

@@ -186,6 +186,7 @@ static int counters(void) {
   ring.capacity = 16384; ring.queued = AU_FILL_FRAMES;
   ring.time = ring.last_drain = 1;
   au_init(&ring.audio, ring.music, sizeof ring.music);
+  ring.audio.hush_left = 1000000; /* the library with something sounding (an idle one keeps a shallow ring, audio.h AU_QUIET_*) */
   service(&ring);
   advance(&ring, ring.time + 280000000u);
   service(&ring);
