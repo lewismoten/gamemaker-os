@@ -24,8 +24,8 @@ int main(void) {
   CHECK(file_n == strlen("[1s] first\n") && !memcmp(file, "[1s] first\n", file_n), "file text");
   CHECK(gl_flush(&o, 99000000000ull, 0) == 0 && opens == 1, "wrote with nothing new");
   for (unsigned i = 0; i < 300; i++) {snprintf(l, sizeof l, "line %u", i); gl_add(l, 40000000000ull + i * 1000000000ull);}
-  CHECK(gl_flush(&o, 45000000000ull, 0) == 0, "wrote inside the 30 s");
-  CHECK(gl_flush(&o, 62000000000ull, 0) == 1, "not written when due again");
+  CHECK(gl_flush(&o, 75000000000ull, 0) == 0, "wrote inside the 30 s");
+  CHECK(gl_flush(&o, 92000000000ull, 0) == 1, "not written when due again");
   unsigned nl = 0; for (uint32_t i = 0; i < file_n; i++) nl += file[i] == '\n';
   CHECK(nl == GL_LINES && file_n <= GL_BYTES, "%u lines, %u bytes", nl, file_n);
   CHECK(!memcmp(file, "[140s] line 100\n", 16), "oldest kept line wrong: %.20s", file);
