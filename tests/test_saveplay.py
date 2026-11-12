@@ -27,6 +27,8 @@ class SavePlayTests(unittest.TestCase):
 
     def test_remote_name_and_save(self): self.probe(7)
 
+    def test_physical_keyboard_keeps_the_on_screen_one(self): self.probe(8)
+
     def test_names_open_error_preserves_all_names(self): self.probe(0)
     def test_names_partial_read_error_preserves_all_names(self): self.probe(1)
     def test_missing_names_can_be_created(self): self.probe(2)

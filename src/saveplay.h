@@ -16,7 +16,7 @@ enum {SP_PICK, SP_NAME, SP_MSG};
 enum {SP_DRAW = 1, SP_DONE = 2, SP_LOADED = 4, SP_FATAL = 8};
 struct sp_menu {
   int mode, stage, sel, shift, ctrl, cur_on, cur_drawn;
-  int keyboard; unsigned keyboard_pos;
+  int keyboard, typed; unsigned keyboard_pos; /* typed: the last key was a physical one (the on-screen keyboard stays up) */
   int names_error; /* unread names must never be replaced with blank records */
   const struct save_ops *ops; char key[9];
   struct gs_session *s;

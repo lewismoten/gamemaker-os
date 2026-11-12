@@ -246,6 +246,8 @@ static int search_event(struct gm_menu *m, uint16_t code, int32_t value) {
   }
   if (m->search_keyboard && (code==103 || code==108 || code==105 || code==106 || code==28)) {
     if(code==103 && m->keyboard_pos<9) {m->search_active=m->search_keyboard=0;m->tabs_focus=1;return GM_MOVED;}
+    if(code==28 && m->search_typed) {if(value==1)m->search_keyboard=m->search_typed=0;return GM_MOVED;} /* Enter after typing: Done */
+    m->search_typed=0;
     int c=osk_press(&m->keyboard_pos,code,value);
     if(c==13) {m->search_keyboard=0;return GM_MOVED;}
     if(c) {osk_edit(m->query,24,c);m->pos[GM_CAT_SEARCH]=0;gm_refresh(m);}
@@ -272,7 +274,7 @@ static int search_event(struct gm_menu *m, uint16_t code, int32_t value) {
     if(code==40)c='\'';
     if(code==52)c='.';
     if(!c||n==24)return GM_NONE;
-    m->search_keyboard=0;
+    if(m->search_keyboard){m->search_typed=1;osk_select(&m->keyboard_pos,c);} /* the on-screen keyboard stays up */
     m->query[n++]=c;m->query[n]=0;
   }
   m->pos[GM_CAT_SEARCH]=0;gm_refresh(m);return GM_MOVED;
@@ -322,7 +324,7 @@ static int event_plain(struct gm_menu *m, uint16_t type, uint16_t code, int32_t 
     if (code==105 || code==106) return next_tab(m,code==105?-1:1);
     if (code==108 || code==28 || code==1) {
       m->tabs_focus=0; m->search_active=m->tab==GM_CAT_SEARCH;
-      m->search_keyboard=m->search_active && code!=1; m->keyboard_pos=0; return GM_MOVED;
+      m->search_keyboard=m->search_active && code!=1; m->search_typed=0; m->keyboard_pos=0; return GM_MOVED;
     }
   }
   if (code==33 && value==1) return gm_favorite(m); /* F */

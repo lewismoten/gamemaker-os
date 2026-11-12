@@ -41,7 +41,7 @@ void hs_modifiers(struct hs_screen *h, const uint64_t *keys) {
 void hs_start(struct hs_screen *h, const struct his_table *t, int32_t score, uint64_t now) {
   h->t = *t; h->score = score; h->place = score > 0 ? his_place(t, score) + 1 : 0; h->shift = 0; h->ctrl = 0; h->cur_on = 1;
   for (unsigned i = 0; i <= HIS_NAME_MAX; i++) h->name[i] = 0;
-  h->keyboard=1; h->keyboard_pos=0;
+  h->keyboard=1; h->typed=0; h->keyboard_pos=0;
   h->len = 0; h->t0 = h->blink = now;
   h->stage = h->place ? HS_NAME : HS_TABLE;
 }
@@ -59,6 +59,8 @@ int hs_event(struct hs_screen *h, uint16_t type, uint16_t code, int32_t value, u
   h->blink = now; h->cur_on = 1;
   if(!h->keyboard && (code==103 || code==108)) {h->keyboard=1;return HS_DRAW;}
   if(h->keyboard && (code==103 || code==108 || code==105 || code==106 || code==28)) {
+    if(code==28 && h->typed) return value==1 ? accept(h,now) : 0; /* Enter after typing on a keyboard: done, as in DOS */
+    h->typed=0;
     int ch=osk_press(&h->keyboard_pos,code,value);
     if(ch==13)return accept(h,now);
     if(ch)osk_edit(h->name,HIS_NAME_MAX,ch);
@@ -66,13 +68,14 @@ int hs_event(struct hs_screen *h, uint16_t type, uint16_t code, int32_t value, u
     return HS_DRAW;
   }
   int c = h->ctrl ? ctrl_byte(code) : hs_ascii(code, h->shift);
-  if(c || code==K_BACK)h->keyboard=0;
+  if(c || code==K_BACK)h->typed=1; /* the on-screen keyboard stays up and follows the typing */
   if (code == K_ESC || code == K_ENTER || code == 96 || c == 27 || c == 13) return value == 1 ? accept(h, now) : 0; /* 27, 13 */
   if (code == K_BACK || code == K_LEFT || c == 8) {if (h->len) h->name[--h->len] = 0; return HS_DRAW;} /* 8; Left: DOS erases too */
   /* Right (RIGHTKEY) is "if (ans[ctr] != 0) ctr++", and ans[ctr] is always 0 here because Left and
      Backspace truncate the answer and a new entry's starts empty: it never moves, so it is ignored.
      Every other byte GGet's default case takes: any key byte but 0, 8, 13 and 27, controls included. */
   if (c && h->len < HIS_NAME_MAX) {h->name[h->len++] = (char)c; h->name[h->len] = 0;}
+  osk_select(&h->keyboard_pos, c);
   return HS_DRAW;
 }
 /* GGet's cursor: shown from a key press for 500 ms, hidden 400 ms, again. */

@@ -39,7 +39,7 @@ struct gm_menu {
   uint16_t visible[GM_CATS][GM_MAX_ALL];
   struct gm_list favorites, recent;
   char query[25];
-  int search_active, tabs_focus, search_keyboard;
+  int search_active, tabs_focus, search_keyboard, search_typed;
   unsigned keyboard_pos;
   unsigned detail_id;              /* stable while a virtual tab changes */
   unsigned tab_count[GM_CATS];

@@ -73,6 +73,17 @@ int main(int argc, char **argv) {
     for(unsigned i=1;i<10;i++)assert(!memcmp(names+i*21,original+i*21,21));
     puts("ALL PASS");return 0;
   }
+  if(scenario==8) {
+    /* A physical keyboard types; the on-screen keyboard stays up and follows it; Enter saves. */
+    for(unsigned i=0;i<20;i++)sp_event(&menu,1,14,1,0);
+    sp_event(&menu,1,32,1,0);sp_event(&menu,1,24,1,0);sp_event(&menu,1,46,1,0); /* d o c */
+    assert(menu.keyboard && menu.typed && !strcmp(menu.names[0],"doc") && menu.keyboard_pos==2); /* C */
+    sp_event(&menu,1,106,1,0); assert(!menu.typed && menu.keyboard_pos==3 && !strcmp(menu.names[0],"doc")); /* arrow: the remote's again */
+    sp_event(&menu,1,30,1,0); assert(menu.typed && menu.keyboard_pos==0 && !strcmp(menu.names[0],"doca"));
+    sp_event(&menu,1,28,1,0);
+    assert(menu.stage==SP_MSG && slot_writes==1);
+    puts("ALL PASS");return 0;
+  }
   /* Replace the first slot name with 'a' through the production menu. */
   for (unsigned i = 0; i < 20; i++) sp_event(&menu, 1, 14, 1, 0);
   sp_event(&menu, 1, 30, 1, 0);

@@ -15,6 +15,7 @@
 #include "gam.h"
 #include "input.h"
 #include "hiscreen.h"
+#include "entryloop.h"
 #include "gmoslog.h"
 #include "hisload.h"
 #include "menu.h"
@@ -822,6 +823,34 @@ static struct hs_screen hsc;
    score is the game's (a name entry first if it places), or -1 for the list alone; open is 1 when no
    game is open in the play core yet. The table is read from /OS/SAVES/<GAME>/, else seeded from the
    game's own .HIS (read only); a new name is written back there. */
+struct top_ctx {uint32_t *px; int back, open; char *key, *stem; sbx_input_event *ev; uint32_t *count;};
+static uint64_t top_now(void *u) {(void)u; return clock_ns();}
+static void top_wait(void *u, uint64_t wake) {(void)u; audio_sleep_until(wake);}
+static void top_service(void *u) {(void)u; ge_poll(); if (aud_on) audio_service(game.read, game.user);}
+/* The draw is the slow part (a full 320x200 scale to the TV): feed the ring between its stages. */
+static void top_draw(void *u, const struct hs_screen *h) {
+  struct top_ctx *c = u;
+  hs_draw_colors(h, hs_px, hs_pal, c->back ? back_px : 0, back_pal, c->open ? 0 : game.colors); audio_wait_poll(0);
+  gs_show(hs_px, hs_pal, c->px, PLAY_W); audio_wait_poll(0);
+  sbx_fb_present(fb_fd, 0, 0, PLAY_W, PLAY_H); audio_wait_poll(0);
+}
+static int top_keys(void *u, struct hs_screen *h) {
+  struct top_ctx *c = u; int r = 0; int32_t s = -SBX_EAGAIN; char line[96], *p;
+  for (unsigned batch = 0; batch < GI_DRAIN && have_input && !(s = gi_read(in_fd, c->ev, c->count)); batch++) {
+    for (uint32_t i = 0; i < *c->count && !(r & HS_DONE); i++) {
+      int a = hs_event(h, c->ev[i].type, c->ev[i].code, c->ev[i].value, clock_ns());
+      if (a & HS_COMMIT) {
+        int w = hl_save(&save_sbx_ops, c->key, c->stem, &h->t);
+        p = put(line, "GMOS Top Ten "); p = put(p, c->stem); p = put(p, w ? " save failed " : " saved "); num(p, (uint32_t)-w); say(line);
+      }
+      r |= a;
+    }
+    if (r & HS_DONE) break;
+  }
+  if (have_input && s && s != -SBX_EAGAIN) {sbx_close(in_fd); have_input = 0; gi_reset(&list_keys); menu.shift = 0; say("GMOS input removed");}
+  if (!have_input) open_input();
+  return r;
+}
 static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int open) {
   char line[96], stem[9], key[9], *p; void *user; gp_read_fn read = reader(g, &user);
   const char *gam = w_gam((unsigned)(g - menu.games));
@@ -847,32 +876,9 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
   hs_start(&hsc, &t, score, clock_ns());
   if (have_ist) hs_modifiers(&hsc, ist.keys); /* a Shift or Ctrl already down */
   p = put(line, "GMOS Top Ten "); p = put(p, stem); put(p, hsc.stage == HS_NAME ? ": name entry" : ": list"); say(line);
-  int r = HS_DRAW;
-  for (;;) {
-    heartbeat();
-    ge_poll();
-    if (aud_on) audio_service(game.read, game.user);
-    if (r & HS_DRAW) {hs_draw_colors(&hsc, hs_px, hs_pal, back ? back_px : 0, back_pal, open ? 0 : game.colors); gs_show(hs_px, hs_pal, px, PLAY_W); sbx_fb_present(fb_fd, 0, 0, PLAY_W, PLAY_H);}
-    if (r & HS_DONE) break;
-    r = 0;
-    uint64_t now = clock_ns(), wake = hs_wake(&hsc, now); if (wake > now + (aud_on ? 10000000ull : 500000000ull)) wake = now + (aud_on ? 10000000ull : 500000000ull);
-    audio_sleep_until(wake);
-    int32_t s = -SBX_EAGAIN;
-    for (unsigned batch = 0; batch < GI_DRAIN && have_input && !(s = gi_read(in_fd, ev, &count)); batch++) {
-      for (uint32_t i = 0; i < count && !(r & HS_DONE); i++) {
-        int a = hs_event(&hsc, ev[i].type, ev[i].code, ev[i].value, clock_ns());
-        if (a & HS_COMMIT) {
-          int w = hl_save(&save_sbx_ops, key, stem, &hsc.t);
-          p = put(line, "GMOS Top Ten "); p = put(p, stem); p = put(p, w ? " save failed " : " saved "); num(p, (uint32_t)-w); say(line);
-        }
-        r |= a;
-      }
-      if (r & HS_DONE) break;
-    }
-    if (have_input && s && s != -SBX_EAGAIN) {sbx_close(in_fd); have_input = 0; gi_reset(&list_keys); menu.shift = 0; say("GMOS input removed");}
-    if (!have_input) open_input();
-    r |= hs_step(&hsc, clock_ns());
-  }
+  struct top_ctx c = {px, back, open, key, stem, ev, &count};
+  struct el_ops ops = {&c, {0, bt_health, audio_hook ? bt_audio : 0, beat_hook ? bt_hook : 0}, top_now, top_wait, top_service, top_draw, top_keys};
+  for (int r = HS_DRAW; !(r & HS_DONE);) r = el_pass(&hsc, r, &ops); /* every pass feeds health and audio, and waits at most 20 ms */
   say("GMOS back from the Top Ten");
 }
 /* Five-second stage totals include syscall time; no serial traffic per sample. */

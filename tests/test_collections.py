@@ -80,13 +80,22 @@ class Collections(unittest.TestCase):
         self.assertEqual(self.size(p, SEARCH), 2)
         self.assertEqual(p.key(33), 1)  # F is text while searching, never favorite
         self.assertEqual(self.size(p, SEARCH), 0)
-        p.key('backspace'); p.key('right'); chosen = p.selected
+        p.key('backspace'); p.key('enter'); p.key('right'); chosen = p.selected  # Enter after typing is Done
         p.key('enter'); self.assertEqual((p.view, p.selected), (DETAILS, chosen))
         p.key('esc'); self.assertEqual(p.view, GRID)
         p.key('esc'); self.assertEqual(self.size(p, SEARCH), 3)  # clear first
         type_text(p, 'alpha world'); self.assertEqual(self.size(p, SEARCH), 1)
         p.key('esc'); p.key('esc'); p.key('right'); p.key('enter')
         self.assertEqual(p.tab, FAVORITES)  # empty page reachable with remote keys
+
+    def test_typing_keeps_the_search_keyboard_up(self):
+        p = fixture(); search_tab(p)
+        self.assertEqual(p.state(5), 1)  # the on-screen keyboard is up
+        type_text(p, 'dice')
+        self.assertEqual((p.state(5), p.state(6), self.size(p, SEARCH)), (1, 1, 2))  # still up; the last key was a real one
+        p.key('right'); self.assertEqual(p.state(6), 0)  # an arrow is the remote's again
+        type_text(p, 'x'); p.key('enter')  # Enter after typing is Done
+        self.assertEqual((p.state(5), p.view), (0, GRID))
 
     def test_remote_search_keyboard_and_favorite_button(self):
         p = fixture(); search_tab(p)

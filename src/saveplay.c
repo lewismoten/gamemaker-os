@@ -130,7 +130,7 @@ int sp_event(struct sp_menu *m, uint16_t type, uint16_t code, int32_t value, uin
     if (m->mode == SP_LOAD) return do_load(m, slot, now);
     m->sel = (int)slot; m->stage = SP_NAME; m->back = pixel(m, 79, 40 + (int)slot * 14);
     m->len = slen(m->names[slot]); m->blink = now; cursor(m, 1); m->cur_on = 1;
-    m->keyboard=1; m->keyboard_pos=0;
+    m->keyboard=1; m->typed=0; m->keyboard_pos=0;
     osk_draw(m->s->px,0,m->names[slot],m->name_col,0);
     return SP_DRAW;
   }
@@ -138,15 +138,18 @@ int sp_event(struct sp_menu *m, uint16_t type, uint16_t code, int32_t value, uin
   char *ans = m->names[m->sel]; int y = 40 + m->sel * 14, ch = m->ctrl ? 0 : hs_ascii(code, m->shift);
   if(!m->keyboard && (code==103 || code==108)) {m->keyboard=1;osk_draw(m->s->px,m->keyboard_pos,ans,m->name_col,0);return SP_DRAW;}
   if(m->keyboard && (code==103 || code==108 || code==105 || code==106 || code==28)) {
+    if(code==28 && m->typed) return value==1 ? do_save(m,(unsigned)m->sel,write_names(m),now) : 0; /* Enter after typing: save */
+    m->typed=0;
     int c=osk_press(&m->keyboard_pos,code,value);
     if(c==13)return do_save(m,(unsigned)m->sel,write_names(m),now);
     if(c)osk_edit(ans,SP_NAME_MAX,c);
     m->len=slen(ans);osk_draw(m->s->px,m->keyboard_pos,ans,m->name_col,0);return SP_DRAW;
   }
-  if(m->keyboard && (ch || code==K_BACK)) {
-    m->keyboard=0;
-    for(unsigned j=0;j<GP_W*GP_H;j++)m->s->px[j]=0;
-    put(m->s->px,80,y,m->name_col,ans);
+  if(m->keyboard && (ch || code==K_BACK) && code!=K_ESC) { /* a physical keyboard types into the field; the on-screen one stays up and follows it */
+    m->typed=1;
+    if(code==K_BACK)osk_edit(ans,SP_NAME_MAX,8);
+    else if(ch>=32 && ch<127) {osk_edit(ans,SP_NAME_MAX,ch);osk_select(&m->keyboard_pos,ch);}
+    m->len=slen(ans);osk_draw(m->s->px,m->keyboard_pos,ans,m->name_col,0);return SP_DRAW;
   }
   if (code == K_ESC) {cursor(m, 0); return value == 1 ? SP_DONE : 0;} /* done = -1: nothing is saved, SavNames stays */
   cursor(m, 0); m->blink = now; m->cur_on = 1;
