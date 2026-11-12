@@ -93,6 +93,7 @@ void au_render(struct au *a, int16_t *out, unsigned n);
    speaker and clip stand still where they are (the kernel drops what is written anyway, ABI 1.12). Waking continues them,
    fading in from silence over 0.68 s with no catch-up burst for the time that passed. */
 void au_sleep(struct au *a, int asleep);
+uint64_t au_shift_dark(uint64_t t, uint64_t dark_since_ns, uint64_t now_ns); /* a deadline t pushed later by the time spent dark (0 stays 0) */
 /* Select gameplay/library mode without discarding queued PCM or gap history. */
 void au_set_playing(struct au *a, int playing);
 /* Feeds the ring if low, rechecking after writes, with at most AU_BATCH frames rendered per call;

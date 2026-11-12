@@ -34,6 +34,7 @@ void au_sleep(struct au *a, int asleep) {
   if (asleep) {a->vol = 0; a->hold_len = a->hold_off = 0; return;}
   a->vol = 0; a->vol_target = AU_VOL_ONE; a->last_pump_ns = 0; a->pump_gap_ns = 0; /* the first pump after waking sees no gap */
 }
+uint64_t au_shift_dark(uint64_t t, uint64_t since, uint64_t now) {return t && now > since ? t + (now - since) : t;}
 void au_set_playing(struct au *a, int playing) {a->playing = playing != 0;}
 int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, uint32_t), void *user) {
   int started = 0;
