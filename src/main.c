@@ -549,9 +549,10 @@ static void audio_log(const char *what) { /* the kernel's counters, and what the
   if (what[0] == 'g') { /* the card's copy is cut at 160 bytes, so it carries the fields that explain a silent game first: the mute flag, the song's state and the volume */
     char brief[160], *b = put(brief, "GMOS audio game: mute "); b = num(b, aud.music_muted); b = put(b, " song "); b = num(b, aud.cmf.playing);
     b = put(b, " vol "); b = num(b, aud.vol >> 8); b = put(b, "/"); b = num(b, aud.vol_target >> 8); b = put(b, " songs "); b = num(b, aud.music_loads); b = put(b, " vocs "); b = num(b, aud.vocs);
-    b = put(b, " q "); b = num(b, (uint32_t)i.queued_frames); b = put(b, " under "); b = num(b, (uint32_t)i.underruns); b = put(b, " gap "); b = num(b, (uint32_t)(aud.gap_max_ns / 1000u));
+    b = put(b, " peak "); b = num(b, aud.peak); b = put(b, "/"); b = num(b, aud.music_peak); b = put(b, " q "); b = num(b, (uint32_t)i.queued_frames); b = put(b, " under "); b = num(b, (uint32_t)i.underruns); b = put(b, " gap "); b = num(b, (uint32_t)(aud.gap_max_ns / 1000u));
     b = put(b, " read "); b = num(b, (uint32_t)(aud.svc_max_ns / 1000u)); b = put(b, " low "); b = num(b, aud.low_frames); put(b, " us"); gl_add(brief, t);
   }
+  aud.peak = aud.music_peak = 0;
   aud.gap_max_ns = aud.svc_max_ns = 0;
   au_prev_ns = aud.total_ns; au_prev_t = t;
 }

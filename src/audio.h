@@ -61,6 +61,7 @@ struct au {
   uint64_t last_pump_ns, gap_max_ns, svc_max_ns; /* interval maxima, in every mode */
   uint64_t gap_peak_ns, slice_peak_ns; /* lifetime observations for low-water sizing */
   uint32_t low_frames; /* last effective low-water mark, capacity clamped */
+  uint32_t peak, music_peak;   /* loudest output sample, and loudest song-only sample, since the log last cleared them (a silent game shows 0 here while its counters run) */
   /* Counters. */
   uint64_t frames, total_ns; uint32_t writes, eagain, music_loads, beeps, vocs, voc_refused;
 };

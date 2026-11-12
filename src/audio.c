@@ -26,7 +26,7 @@ void au_hush(struct au *a) {
 }
 int au_play_loaded(struct au *a, uint32_t n) {
   if (cmf_load(&a->cmf, a->music, n)) {cmf_stop(&a->cmf); return -1;}
-  a->until_q16 = 0; a->music_loads++; a->vol_target = AU_VOL_ONE; return 0;
+  a->until_q16 = 0; a->hush_left = 0; a->music_loads++; a->vol_target = AU_VOL_ONE; return 0;
 }
 void au_set_playing(struct au *a, int playing) {a->playing = playing != 0;}
 int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, uint32_t), void *user) {
@@ -81,6 +81,7 @@ void au_render(struct au *a, int16_t *out, unsigned n) {
     opl_render(&a->opl, acc, n); /* a stopped song's last notes ring out their release */
     if (a->hush_left) {if (a->hush_left <= n) {a->hush_left = 0; cmf_stop(&a->cmf);} else a->hush_left -= n;}
   }
+  for (unsigned k = 0; k < n; k++) {int32_t m = (int32_t)((int64_t)acc[k] * a->vol >> 15); if (m < 0) m = -m; if (!a->music_muted && (uint32_t)m > a->music_peak) a->music_peak = (uint32_t)m;} /* the song alone, after the master volume */
   if (a->music_muted) for (unsigned k = 0; k < n; k++) acc[k] = 0;
   if (a->pc.active) {
     pc_render(&a->pc, sp, n);
@@ -97,6 +98,7 @@ void au_render(struct au *a, int16_t *out, unsigned n) {
     if (v > 32767) v = 32767;
     if (v < -32768) v = -32768;
     out[k * 2] = out[k * 2 + 1] = (int16_t)v;
+    if ((uint32_t)(v < 0 ? -v : v) > a->peak) a->peak = (uint32_t)(v < 0 ? -v : v);
   }
   a->frames += n;
 }
