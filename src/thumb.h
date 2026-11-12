@@ -9,6 +9,7 @@
 #pragma once
 #include <stdint.h>
 #include "game.h"
+struct gm_menu;
 #define GM_THUMB_W 218u /* a card on the 960 x 540 page, inside its line */
 #define GM_THUMB_H 136u
 #define GM_THUMB_SLOTS 24u /* cards kept drawn, the least recently used given up first */
@@ -23,3 +24,10 @@ void gm_shrink(const uint8_t *px, const uint8_t *pal, uint16_t *out, uint32_t w,
 const uint16_t *gm_thumb_get(unsigned id);
 void gm_thumb_put(unsigned id, const uint8_t *px, const uint8_t *pal);
 void gm_thumb_clear(void);
+/* True when game `id`'s card is kept, without counting as a use. */
+int gm_thumb_has(unsigned id);
+/* The game whose card to draw next, or -1 when the page and its neighbors are all drawn (or
+   the details view shows): the selected card, the rest of its page (*on_page = 1), then the
+   next page and the previous one (*on_page = 0). Neighbors are 16 cards of the 24 kept, so a
+   page turn finds its cards drawn and the visible ones are never given up for them. */
+int gm_thumb_next(const struct gm_menu *m, int *on_page);

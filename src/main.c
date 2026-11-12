@@ -705,23 +705,17 @@ static int title_picture(const struct gm_game *g, uint8_t *px, uint8_t *pal) {
   void *user; gp_read_fn read = reader(g, &user);
   return read ? gm_title_picture(read, user, where[g-menu.games].gam, px, pal) : -1;
 }
-/* The next card on the page whose title screen is not drawn yet: reads it. 1 when one was read. */
+/* The next card whose title screen is not drawn (thumb.h: the selected one, its page, then the
+   neighbor pages): reads it. 1 when a card on the page was read, 2 for a neighbor's, else 0. */
 static int load_next_thumb(void) {
-  if (menu.view != GM_GRID) return 0;
-  unsigned t = menu.tab, first = menu.pos[t] / GM_PAGE * GM_PAGE;
-  for (unsigned i = 0; i < GM_PAGE; i++) {
-    const struct gm_game *selected = gm_tab_game(&menu, t, first + i);
-    struct gm_game *g = selected ? &menu.games[selected - menu.games] : 0;
-    if (!g || g->pic < 0) continue;
-    unsigned id = (unsigned)(g - menu.games);
-    if (g->pic > 0 && gm_thumb_get(id)) continue;
-    uint64_t t0 = clock_ns();
-    g->pic = title_picture(g, pic_px, pic_pal) ? -1 : 1;
-    if (g->pic > 0) gm_thumb_put(id, pic_px, pic_pal);
-    char line[80], *p = put(line, "GMOS title screen "); p = put(p, g->dir); p = put(p, g->pic > 0 ? " drawn in " : " none, looked "); p = num(p, (uint32_t)((clock_ns() - t0) / 1000000u)); put(p, " ms"); say(line);
-    return 1;
-  }
-  return 0;
+  int on_page = 0, id = gm_thumb_next(&menu, &on_page);
+  if (id < 0) return 0;
+  struct gm_game *g = &menu.games[id];
+  uint64_t t0 = clock_ns();
+  g->pic = title_picture(g, pic_px, pic_pal) ? -1 : 1;
+  if (g->pic > 0) gm_thumb_put((unsigned)id, pic_px, pic_pal);
+  char line[80], *p = put(line, "GMOS title screen "); p = put(p, g->dir); p = put(p, g->pic > 0 ? " drawn in " : " none, looked "); p = num(p, (uint32_t)((clock_ns() - t0) / 1000000u)); p = put(p, " ms"); put(p, on_page ? "" : " (ahead)"); say(line);
+  return on_page ? 1 : 2;
 }
 /* Draws the games page and presents it; once every card on it is drawn, logs the frame's CRC (the host tests render the same frame). */
 static void show_list(uint16_t *px) {
@@ -799,7 +793,8 @@ int main(const sbx_startup *start) {
         continue;
       }
       doing = "thumbnail";
-      if (load_next_thumb()) {doing = "list"; show_list(px);}
+      int loaded = load_next_thumb();
+      if (loaded) {doing = "list"; if (loaded == 1) show_list(px);}
       else {
         doing = "list";
         const struct gm_game *g = gm_selected(&menu);
