@@ -1,18 +1,20 @@
 /* SPDX-License-Identifier: MIT; the games list as data, and what input does
  * to it. It follows the Sandbox Edition web site's Games page: category tabs
- * (Starters, Sandbox, Bizarre, CD, and Other for games the library index does
- * not know), a grid of game cards eight to a page, and a details view with Play.
+ * (Starters, Sandbox, Bizarre, CD, Other for games the library index does
+ * not know, and Archive for /sd/ARCHIVE, which no index line moves a game out of), a grid of game cards eight to a page, and a details view with Play.
  * Pure: no system calls, so the host tests drive it directly. */
 #pragma once
 #include <stdint.h>
 #include <stdbool.h>
 #include "gam.h"
 #include "library.h"
-#define GM_MAX_GAMES 256u
+#define GM_MAX_GAMES 256u    /* games on the main tabs */
+#define GM_MAX_ARCHIVE 512u  /* games of the Archive tab (/sd/ARCHIVE): their own room, so they never crowd the main tabs out */
+#define GM_MAX_ALL (GM_MAX_GAMES + GM_MAX_ARCHIVE)
 #define GM_COLS 4u
 #define GM_PAGE 8u /* cards on a page: four across, two down */
 #define GM_MESSAGE_MAX 48u
-enum {GM_CAT_STARTER, GM_CAT_SANDBOX, GM_CAT_BIZARRE, GM_CAT_CD, GM_CAT_OTHER, GM_CATS};
+enum {GM_CAT_STARTER, GM_CAT_SANDBOX, GM_CAT_BIZARRE, GM_CAT_CD, GM_CAT_OTHER, GM_CAT_ARCHIVE, GM_CATS};
 enum {GM_GRID, GM_DETAILS};       /* what shows */
 enum {GM_BTN_PLAY, GM_BTN_BACK, GM_BUTTONS}; /* the details view's buttons */
 struct gm_game {
@@ -23,13 +25,14 @@ struct gm_game {
   uint8_t cat; int8_t pic;          /* pic: 0 not looked for yet, 1 found, -1 none */
 };
 struct gm_menu {
-  struct gm_game games[GM_MAX_GAMES];
-  unsigned count;
-  uint16_t order[GM_MAX_GAMES];      /* games by tab, then by course and title */
+  struct gm_game games[GM_MAX_ALL];
+  unsigned count, archive_count;    /* count holds both; archive_count of them are the Archive tab's */
+  uint16_t order[GM_MAX_ALL];      /* games by tab, then by course and title */
   unsigned tab_first[GM_CATS], tab_count[GM_CATS];
   unsigned tab, view, button;
   int background_music;             /* owner setting: off on boot, M toggles in the library */
   unsigned pos[GM_CATS];            /* the selected card in each tab (remembered) */
+  int finished;                     /* gm_finish has run: archive adds then insert in order */
   int shift;                        /* a Shift key is held (Shift+Tab) */
   char message[GM_MESSAGE_MAX + 1]; /* footer line; empty shows the key help */
 };
@@ -37,6 +40,12 @@ enum {GM_NONE, GM_MOVED, GM_CHOSEN, GM_QUIT, GM_RESYNC, GM_SCORES, GM_MUSIC}; /*
 /* Add a game (dir is its folder's name, gam its .GAM file, title from that
    file, crc the .GAM's CRC-32); false when the list is full. */
 bool gm_add(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc);
+/* Add a game of /sd/ARCHIVE to the Archive tab (its own room of GM_MAX_ARCHIVE; the
+   main tabs keep GM_MAX_GAMES). Before gm_finish it is only appended; after, it is
+   inserted into the tab's sorted place (one pass over the Archive tab, so a frame
+   can add one without a pause), whatever order the files were found in.
+   False when the Archive room is full. */
+bool gm_add_archive(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc);
 /* One line of the library index: fills in the game it describes (matched by
    the .GAM's CRC-32, else its locator or DOS name). 1 when a game matched. */
 int gm_library_line(struct gm_menu *m, const char *line, uint32_t n);

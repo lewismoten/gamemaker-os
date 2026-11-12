@@ -7,7 +7,7 @@ person to look at. GMOS_GAMES may name a folder of game folders (each with a
 import ctypes as C
 import os, pathlib, struct, subprocess, sys, unittest, zlib
 from gmos_page import (Page, lib, png, crc, q, rgb, gam_of, W, H, TW, TH, PAGE, NONE, MOVED, CHOSEN, QUIT, RESYNC, SCORES,
-                       STARTER, SANDBOX, BIZARRE, CD, OTHER, GRID, DETAILS)
+                       STARTER, SANDBOX, BIZARRE, CD, OTHER, ARCHIVE, GRID, DETAILS)
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUT = ROOT / os.environ.get('GMOS_HOST', 'build/host')  # make test-asan: build/asan
 DICE = ROOT / 'tests/games/DICE'
@@ -227,6 +227,65 @@ class Layout(unittest.TestCase):
     def test_empty(self):
         px = page().render(); png(OUT / 'games-list-empty.png', px)
         self.assertTrue(any(rgb(px[y * W + x]) == q(0xeef0f6) for y in range(230, 256) for x in range(100, 860)))
+
+class ArchiveTab(unittest.TestCase):
+    """/sd/ARCHIVE (365 old user-made games on the board's card) is its own tab with its own room: it never crowds the
+    main tabs (before, every game shared 256 slots and fell into Other unless the index named it)."""
+    def setUp(self):
+        c().gm_add_archive.argtypes = [C.c_void_p, C.c_char_p, C.c_char_p, C.c_char_p, C.c_uint32]
+        c().gm_add_archive.restype = C.c_bool
+    def build(self, n=365, shuffle=False, after_finish=False):
+        p = Page(); lines = []
+        for i in range(40):
+            p.add(f'M{i:02d}', f'Main {i:02d}', crc=1000 + i); lines.append(f'{{"schema":"gmp-library","title":"Main {i:02d}","category":["sandbox"],"locator":"M{i:02d}"}}')
+        p.index('\n'.join(lines))
+        order = list(range(n))
+        if shuffle: order = [(i * 7919) % n for i in order]
+        if not after_finish:
+            for i in order: self.assertTrue(p.add_archive(f'A{i:03d}', f'Old {i:03d}', crc=5000 + i))
+        p.finish()
+        if after_finish:
+            for i in order: self.assertTrue(p.add_archive(f'A{i:03d}', f'Old {i:03d}', crc=5000 + i))
+        return p
+    def dirs(self, p, tab=ARCHIVE):
+        c().gm_tab_game.restype = C.c_void_p; c().gm_tab_game.argtypes = [C.c_void_p, C.c_uint, C.c_uint]
+        c().gm_tab_size.argtypes = [C.c_void_p, C.c_uint]
+        return [C.string_at(c().gm_tab_game(p.m, tab, i), 9).split(b'\0')[0] for i in range(c().gm_tab_size(p.m, tab))]
+    def test_365_archive_games_leave_the_main_tabs_alone(self):
+        p = self.build()
+        c().gm_tab_size.argtypes = [C.c_void_p, C.c_uint]
+        self.assertEqual(c().gm_tab_size(p.m, SANDBOX), 40); self.assertEqual(c().gm_tab_size(p.m, OTHER), 0)
+        self.assertEqual(c().gm_tab_size(p.m, ARCHIVE), 365)
+        self.assertEqual(p.tab, SANDBOX)
+    def test_a_late_main_game_still_fits_after_the_archive_scan(self):
+        p = Page()
+        for i in range(256): self.assertTrue(p.add(f'M{i:03d}', f'Main {i}', crc=i + 1))
+        self.assertTrue(p.add_archive('A', 'Old')) and self.assertFalse(p.add('X', 'late'))  # main room is 256 whatever the archive holds
+        self.assertTrue(all(p.add_archive(f'B{i:03d}', f'Old {i}', crc=9000 + i) for i in range(500)))  # and the archive's room is its own
+    def test_archive_room_is_bounded(self):
+        p = Page()
+        self.assertTrue(all(p.add_archive(f'A{i:03d}', f'Old {i}', crc=i + 1) for i in range(512)))
+        self.assertFalse(p.add_archive('Z', 'one too many'))
+    def test_index_never_moves_an_archive_game(self):
+        p = Page(); p.add_archive('OLD', 'Old', crc=77)
+        self.assertEqual(p.index('{"schema":"gmp-library","title":"New words","category":["sandbox"],"locator":"OLD"}'), 1)
+        p.finish(); self.assertEqual(p.tab, ARCHIVE)
+    def test_stable_order_however_found(self):
+        a, b, d = self.build(), self.build(shuffle=True), self.build(shuffle=True, after_finish=True)
+        want = [f'A{i:03d}'.encode() for i in range(365)]
+        for x in (a, b, d): self.assertEqual(self.dirs(x), want)
+    def test_incremental_insert_keeps_the_tab_sorted(self):
+        p = self.build(shuffle=True, after_finish=True)
+        got = self.dirs(p); self.assertEqual(got, sorted(got)); self.assertEqual(len(set(got)), 365)
+        # the selected card keeps its game while more arrive in front of it
+        q = Page(); q.add('M', 'Main', crc=1); q.finish(); q.add_archive('Z', 'Zed', crc=2); q.key('tab'); self.assertEqual(q.tab, ARCHIVE)
+        c().gm_selected.restype = C.c_void_p; c().gm_selected.argtypes = [C.c_void_p]
+        before = c().gm_selected(q.m)
+        for i in range(30): q.add_archive(f'A{i:02d}', f'A {i}', crc=100 + i)
+        self.assertEqual(c().gm_selected(q.m), before)
+    def test_one_insert_touches_only_the_archive_tab(self):
+        p = self.build(after_finish=True); sand = [p.c.gmos_tab_game(p.m, SANDBOX, i) for i in range(40)]
+        p.add_archive('A000', 'Old 000', crc=1); self.assertEqual([p.c.gmos_tab_game(p.m, SANDBOX, i) for i in range(40)], sand)
 
 class Memory(unittest.TestCase):
     """Regression tests from the AddressSanitizer pass (make test-asan): what the C side writes fits what it is given."""

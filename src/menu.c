@@ -12,9 +12,14 @@ bool gm_dir_ok(const char *name, unsigned n) {
   for (unsigned i = 0; i < n; i++) if (!name[i] || name[i] == '/' || name[i] == '.') return false;
   return true;
 }
+static int before(const struct gm_game *a, const struct gm_game *b);
+static void fill(struct gm_game *g, const char *dir, const char *gam, const char *title, uint32_t crc);
 bool gm_add(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc) {
-  if (m->count >= GM_MAX_GAMES) return false;
-  struct gm_game *g = &m->games[m->count++];
+  if (m->count - m->archive_count >= GM_MAX_GAMES || m->archive_count) return false; /* main games come first: the Archive tab is the list's tail */
+  fill(&m->games[m->count++], dir, gam, title, crc);
+  return true;
+}
+static void fill(struct gm_game *g, const char *dir, const char *gam, const char *title, uint32_t crc) {
   copy(g->dir, dir, 8); copy(g->gam, gam, 12);
   if (title[0]) copy(g->title, title, GM_LIB_TITLE);
   else {
@@ -28,6 +33,19 @@ bool gm_add(struct gm_menu *m, const char *dir, const char *gam, const char *tit
     g->title[n]=0;
   }
   g->company[0] = g->blurb[0] = 0; g->year = g->course = 0; g->crc = crc; g->cat = GM_CAT_OTHER; g->pic = 0;
+}
+bool gm_add_archive(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc) {
+  if (m->archive_count >= GM_MAX_ARCHIVE) return false;
+  struct gm_game *g = &m->games[m->count];
+  fill(g, dir, gam, title, crc); g->cat = GM_CAT_ARCHIVE;
+  uint16_t id = (uint16_t)m->count++;
+  m->archive_count++;
+  if (!m->finished) return true; /* gm_finish sorts it with the rest */
+  unsigned first = m->count - m->archive_count, j = m->count - 1; /* the Archive tab is the tail of order[] */
+  while (j > first && before(g, &m->games[m->order[j - 1]])) {m->order[j] = m->order[j - 1]; j--;}
+  m->order[j] = id;
+  if (m->tab == GM_CAT_ARCHIVE && m->view == GM_GRID && j - first <= m->pos[GM_CAT_ARCHIVE] && m->archive_count > 1) m->pos[GM_CAT_ARCHIVE]++; /* the selected card keeps its game */
+  m->tab_first[GM_CAT_ARCHIVE] = first; m->tab_count[GM_CAT_ARCHIVE] = m->archive_count;
   return true;
 }
 static int same_dos(const char *dos, const char *gam) { /* "DICE" and "DICE.GAM" */
@@ -49,7 +67,8 @@ int gm_library_line(struct gm_menu *m, const char *line, uint32_t n) {
   for (unsigned i = 0; i < m->count && !hit; i++) if (r.dos[0] && same_dos(r.dos, m->games[i].gam)) hit = &m->games[i];
   if (!hit) return 0;
   copy(hit->title, r.title, GM_LIB_TITLE); copy(hit->company, r.company, GM_LIB_COMPANY); copy(hit->blurb, r.blurb, GM_LIB_BLURB);
-  hit->year = r.year; hit->course = r.course; hit->cat = category(&r);
+  hit->year = r.year; hit->course = r.course;
+  if (hit->cat != GM_CAT_ARCHIVE) hit->cat = category(&r); /* /sd/ARCHIVE stays there: the index fills in words, never moves it */
   return 1;
 }
 /* Within a tab: by course (Starters), then title ignoring case, then folder. */
@@ -59,6 +78,8 @@ static int before(const struct gm_game *a, const struct gm_game *b) {
   if (ca != cb) return ca < cb;
   int c = compare(a->title, b->title, true);
   if (!c) c = compare(a->dir, b->dir, false);
+  if (!c) c = compare(a->gam, b->gam, false);
+  if (!c) return a->crc < b->crc; /* a total order: the same list whatever order the files were found in */
   return c < 0;
 }
 void gm_finish(struct gm_menu *m) {
@@ -71,7 +92,7 @@ void gm_finish(struct gm_menu *m) {
   for (unsigned i = m->count; i--;) {unsigned t = m->games[m->order[i]].cat; m->tab_first[t] = i; m->tab_count[t]++;}
   m->tab = GM_CAT_SANDBOX;
   if (!m->tab_count[m->tab]) for (unsigned t = 0; t < GM_CATS; t++) if (m->tab_count[t]) {m->tab = t; break;}
-  m->view = GM_GRID; m->button = GM_BTN_PLAY; m->shift = 0; m->message[0] = 0; m->background_music = 0;
+  m->finished = 1; m->view = GM_GRID; m->button = GM_BTN_PLAY; m->shift = 0; m->message[0] = 0; m->background_music = 0;
 }
 unsigned gm_tab_size(const struct gm_menu *m, unsigned tab) {return tab < GM_CATS ? m->tab_count[tab] : 0;}
 const struct gm_game *gm_tab_game(const struct gm_menu *m, unsigned tab, unsigned i) {

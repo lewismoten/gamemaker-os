@@ -14,7 +14,7 @@ TW, TH = 218, 136
 NONE, MOVED, CHOSEN, QUIT, RESYNC, SCORES = range(6)
 KEYS = dict(esc=1, backspace=14, tab=15, q=16, lbracket=26, rbracket=27, enter=28, lshift=42, space=57,
             h=35, home=102, up=103, pgup=104, left=105, right=106, end=107, down=108, pgdn=109)
-STARTER, SANDBOX, BIZARRE, CD, OTHER = range(5)
+STARTER, SANDBOX, BIZARRE, CD, OTHER, ARCHIVE = range(6)
 GRID, DETAILS = range(2)
 PAGE, COLS = 8, 4   # cards on a page, and across
 _lib = None
@@ -65,6 +65,9 @@ class Page:
     def add(self, dir_name, title, gam='', crc=0):
         self.paths.append(None)
         return self.c.gm_add(self.m, dir_name.encode(), (gam or dir_name + '.GAM').encode(), title.encode(), crc)
+    def add_archive(self, dir_name, title, gam='', crc=0):
+        self.paths.append(None)
+        return self.c.gm_add_archive(self.m, dir_name.encode(), (gam or dir_name + '.GAM').encode(), title.encode(), crc)
     def index(self, text):
         return sum(self.c.gm_library_line(self.m, l, len(l)) for l in text.encode().split(b'\n'))
     def finish(self): self.c.gm_finish(self.m); return self

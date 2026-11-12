@@ -150,14 +150,15 @@ static unsigned count_lines(int f, int32_t w, const char *s, unsigned max, int32
 }
 static char *put(char *p, const char *s) {while (*s) *p++ = *s++; *p = 0; return p;}
 static char *num(char *p, uint32_t n) {char t[11]; int k = 0; do t[k++] = (char)('0' + n % 10); while (n /= 10); while (k) *p++ = t[--k]; *p = 0; return p;}
-static const char *const TAB_NAME[GM_CATS] = {"Starters", "Sandbox", "Bizarre", "CD", "Other"};
-static const char *const BADGE[GM_CATS] = {"STARTER", "SANDBOX", "BIZARRE", "CD", "ON THIS CARD"};
+static const char *const TAB_NAME[GM_CATS] = {"Starters", "Sandbox", "Bizarre", "CD", "Other", "Archive"};
+static const char *const BADGE[GM_CATS] = {"STARTER", "SANDBOX", "BIZARRE", "CD", "ON THIS CARD", "ARCHIVE"};
 static const char *const TAB_LINE[GM_CATS] = {
   "Small games that each show one Game-Maker idea.",
   "New games in the original formats, so they play in DOS too.",
   "Heartfelt songs about all the wrong things, made into games.",
   "The Game-Maker CD: free gameware, then other people's shareware.",
   "Games in /sd/GAMES that the library index does not list.",
+  "Old user-made Game-Maker games from /sd/ARCHIVE.",
 };
 extern const uint16_t ha_pal[4];
 extern const uint8_t ha_bits[256];
