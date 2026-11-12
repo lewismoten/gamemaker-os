@@ -136,3 +136,19 @@ changed/removed duplicate winners, split volumes, same-size USB replacement and
 read-only/full media. Qualify interrupted temp/fsync/rename/remount on a disposable
 card, including fsck if needed. Do not claim physical-removal safety merely from
 host write-cut tests, menu CRCs, or POSIX rename.
+
+## Archive ZIPs and a quiet scan
+
+`/sd/ARCHIVE` ZIPs are keyed in the same cache by their live name, size and dates
+(path `/sd/ARCHIVE/NAME`), so a warm boot reads none of them: before the first draw
+every known ZIP joins the Archive tab from the cache. Unknown or changed ZIPs are
+read one per idle pass; any known ones after them join free in the same pass. A
+record is added only while it fits (the whole cache is dropped on overflow); the
+cache is written once, when the last ZIP is read (`cache_wait`/`cache_seal`).
+The key is card metadata, never the GMOS build, so installing a new GMOS does not
+rescan. Only the `GMI2` magic changes that.
+
+While files are left (`menu.scan_left`) the header shows "Scanning games... N left"
+and the Archive and Search counts show "..." until the scan ends. The list redraws
+every 3 seconds, and once more at the end. The scan runs only in the idle list loop,
+never during a game or an idle demo.

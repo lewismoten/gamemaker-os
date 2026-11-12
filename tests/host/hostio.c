@@ -29,6 +29,7 @@ int gmos_menu_state(const struct gm_menu *m, int what);
 int gmos_menu_music(const struct gm_menu *m);
 void gmos_menu_message(struct gm_menu *m, const char *s);
 void gmos_menu_pic(struct gm_menu *m, unsigned id, int pic);
+void gmos_scan_left(struct gm_menu *m, unsigned n);
 int gmos_tab_game(const struct gm_menu *m, unsigned tab, unsigned i);
 unsigned gmos_record_bytes(void);
 void gmos_session_sound_dir(struct gs_session *s, const char *dir);
@@ -78,6 +79,7 @@ int gmos_menu_state(const struct gm_menu *m, int what) {
   const struct gm_game *g = gm_selected(m);
   return what == 0 ? (int)m->tab : what == 1 ? (int)m->pos[m->tab] : what == 2 ? (int)m->view : what == 3 ? (int)m->button : g ? (int)(g - m->games) : -1;
 }
+void gmos_scan_left(struct gm_menu *m, unsigned n) {m->scan_left = n;}
 void gmos_menu_message(struct gm_menu *m, const char *s) {unsigned k = 0; while (s[k] && k < GM_MESSAGE_MAX) {m->message[k] = s[k]; k++;} m->message[k] = 0;}
 void gmos_menu_pic(struct gm_menu *m, unsigned id, int pic) {m->games[id].pic = (int8_t)pic;}
 int gmos_tab_game(const struct gm_menu *m, unsigned tab, unsigned i) {const struct gm_game *g = gm_tab_game(m, tab, i); return g ? (int)(g - m->games) : -1;}

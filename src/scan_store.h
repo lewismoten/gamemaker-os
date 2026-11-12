@@ -140,13 +140,19 @@ static void cache_source_put(const char *path,const void *key,unsigned kn,const 
 static uint32_t cache_pending; /* bytes of the fresh cache still to persist: cache_flush writes them */
 /* The scan is done: close the fresh cache in memory. Writing it (an fsync and a rename can block for half a second)
    waits for cache_flush, which GMOS calls once the games list is on screen. */
-static void cache_end(void) {
+static int cache_wait; /* the Archive ZIPs are still being read: seal once they are (cache_seal) */
+static void cache_seal(void) {
  cache_pending=0;
  if(!cache_enabled)return;
  uint32_t n=gc_finish(&scan_cache);
  if(!n){say("GMOS cache capacity exceeded; live scan retained");return;}
  if(scan_cache.valid&&n==scan_cache.oldbytes&&cache_equal(cache_new,cache_old,n))return; /* no warm writes */
  cache_pending=n;
+}
+static void cache_end(unsigned archive_left) {if(archive_left&&cache_enabled){cache_pending=0;cache_wait=1;return;}cache_seal();}
+/* An Archive ZIP's record joins the cache only while it fits (one that overflows would drop the whole cache). */
+static int cache_room(unsigned path_bytes,unsigned value_bytes) {
+ return !scan_cache.overflow&&(unsigned)(cache_new[8]|cache_new[9]<<8)<1000u&&scan_cache.used+8u+path_bytes+16u+value_bytes+64u<scan_cache.capacity;
 }
 /* Persist the fresh cache: write temp file, fsync, rename (power-cut safe). Each step's time is logged once. */
 static void cache_flush(void) {

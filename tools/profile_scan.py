@@ -98,10 +98,10 @@ int32_t sbx_rename(const char*a,uint32_t an,const char*b,uint32_t bn){char ap[40
 int32_t sbx_log(uint64_t h,const char*b,uint32_t n){(void)h;(void)b;logs++;log_bytes+=n;return 0;}
 int32_t sbx_health(uint32_t g,uint64_t s){(void)g;(void)s;healths++;return 0;}
 static void jstr(const char*s){putchar('"');for(;*s;s++){unsigned char c=*s;if(c=='"'||c=='\\')printf("\\%c",c);else if(c<32||c>=127)printf("\\u%04x",c);else putchar(c);}putchar('"');}
-int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;i++)handles[i].f=-1;abi_minor=getenv("GMOS_SCAN_CACHE")?5:3;if(getenv("GMOS_SCAN_ABI"))abi_minor=(unsigned)atoi(getenv("GMOS_SCAN_ABI"));sp_set_abi(1,abi_minor);uint64_t t=ns();find_games();cache_flush();t=ns()-t;
+int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;i++)handles[i].f=-1;abi_minor=getenv("GMOS_SCAN_CACHE")?5:3;if(getenv("GMOS_SCAN_ABI"))abi_minor=(unsigned)atoi(getenv("GMOS_SCAN_ABI"));sp_set_abi(1,abi_minor);uint64_t t=ns();find_games();unsigned arch_left=arch_n-arch_next,left_shown=menu.scan_left,arch_steps=0;while(getenv("GMOS_SCAN_ARCH")&&arch_next<arch_n){arch_step();arch_steps++;}cache_flush();t=ns()-t;
  printf("{\"elapsed_ns\":%llu,\"games\":%u,\"menu_crc\":%u,\"where_crc\":%u",(unsigned long long)t,menu.count,__real_gm_crc32(0,(const uint8_t*)&menu,sizeof menu),__real_gm_crc32(0,(const uint8_t*)where,sizeof where));
  #define FIELD(x) printf(",\"" #x "\":%llu",(unsigned long long)x)
- FIELD(opens);FIELD(dir_opens);FIELD(file_opens);FIELD(read_calls);FIELD(read_bytes);FIELD(dent_calls);FIELD(dent_entries);FIELD(logs);FIELD(log_bytes);FIELD(healths);FIELD(seeks);FIELD(io_ns);FIELD(crc_ns);FIELD(crc_calls);FIELD(crc_bytes);FIELD(lib_ns);FIELD(lib_calls);
+ FIELD(arch_left);FIELD(left_shown);FIELD(arch_steps);FIELD(opens);FIELD(dir_opens);FIELD(file_opens);FIELD(read_calls);FIELD(read_bytes);FIELD(dent_calls);FIELD(dent_entries);FIELD(logs);FIELD(log_bytes);FIELD(healths);FIELD(seeks);FIELD(io_ns);FIELD(crc_ns);FIELD(crc_calls);FIELD(crc_bytes);FIELD(lib_ns);FIELD(lib_calls);
  printf(",\"inclusive_phase_ns\":[");for(unsigned i=0;i<5;i++)printf("%s%llu",i?",":"",(unsigned long long)phase_ns[i]);printf("],\"phase_calls\":[");for(unsigned i=0;i<5;i++)printf("%s%llu",i?",":"",(unsigned long long)phase_calls[i]);printf("],\"list\":[");
  for(unsigned j=0;j<menu.count;j++){
   unsigned i=menu.order[j];const struct gm_game*g=&menu.games[i];

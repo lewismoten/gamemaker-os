@@ -165,7 +165,7 @@ static const char *const TAB_LINE[GM_CATS] = {
 };
 extern const uint16_t ha_pal[4];
 extern const uint8_t ha_bits[256];
-static void header(void) {
+static void header(const struct gm_menu *m) {
   fill(0, 0, GM_W, HEADER_H, C_HEADER);
   for (int32_t j = 0; j < 32; j++) for (int32_t i = 0; i < 32; i++) {
     unsigned v = (ha_bits[(j * 32 + i) / 4] >> (6 - 2 * ((j * 32 + i) & 3))) & 3u;
@@ -176,6 +176,10 @@ static void header(void) {
   text0(F5, 48, 26, "SANDBOX EDITION", 0xf8d450u);
   const char *nav = "Games";
   int32_t nw = width(F8, nav, len(nav), 1);
+  if (m->scan_left) { /* the one place a scan in progress shows: calm, no counts climbing elsewhere */
+    char note[40], *q = put(note, "Scanning games... "); q = num(q, m->scan_left); put(q, " left");
+    text0(F5, (int32_t)GM_W - 40 - nw - width(F5, note, len(note), 1), 18, note, C_MUTED);
+  }
   text0(F8, (int32_t)GM_W - 16 - nw, 16, nav, C_GOLD);
   fill((int32_t)GM_W - 16 - nw, 27, nw, 2, C_GOLD);
 }
@@ -187,7 +191,7 @@ static void tabs(const struct gm_menu *m) {
   int32_t slot = (int32_t)(GM_W - 40) / (int32_t)n, k = 0;
   for (unsigned t = 0; t < GM_CATS; t++) {
     if (!m->tab_count[t] && !(m->count && t>=GM_CAT_SEARCH)) continue;
-    char count[8]; num(count, m->tab_count[t]);
+    char count[8]; if (m->scan_left && (t == GM_CAT_ARCHIVE || t == GM_CAT_SEARCH)) put(count, "..."); else num(count, m->tab_count[t]);
     int32_t lw = width(F8, TAB_NAME[t], len(TAB_NAME[t]), 1), cw = width(F5, count, len(count), 1) + 10;
     int32_t cx = 20 + slot * k++ + slot / 2, x = cx - (lw + 6 + cw) / 2;
     int on = t == m->tab;
@@ -387,7 +391,7 @@ static void details(const struct gm_menu *m, const uint8_t *big, const uint8_t *
 void gm_draw(uint16_t *px, uint32_t stride, const struct gm_menu *m, const uint8_t *big, const uint8_t *big_pal) {
   P = px; S = stride;
   fill(0, 0, GM_W, GM_H, C_PAGE);
-  header();
+  header(m);
   if (m->view == GM_DETAILS) details(m, big, big_pal);
   else {tabs(m); grid(m);}
   if(m->open_keyboard) {

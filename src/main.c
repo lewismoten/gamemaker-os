@@ -265,7 +265,7 @@ static int add_zip_at(const char *path,uint32_t size,const uint8_t *key,int keye
     if(have>=0&&gm_gam_title(gamfile,(uint32_t)have,source.title)>=0){source.valid=1;source.crc=gm_crc32(0,gamfile,(uint32_t)have);put(source.gam,z->gam);}
     sz_close();if(errors!=sz_io_errors)cache_enabled=0;
   }
-  if(keyed)cache_source_put(path,key,16,&source,0);
+  if(keyed&&(!archive||cache_room(length(path),34+length(source.gam))))cache_source_put(path,key,16,&source,0);
   if(!source.valid||(archive&&length(source.gam)>=ARCH_GAM)){scan_say("GMOS skipped archive: unsupported, damaged, or no game");return 0;}
   for(unsigned i=0;i<menu.count;i++)if(menu.games[i].crc==source.crc)return 0;
   const char *base=path;for(const char *p=path;*p;p++)if(*p=='/')base=p+1;
@@ -281,7 +281,7 @@ static void add_zip(unsigned id) {add_zip_at(zip_candidates[id].path,zip_candida
 /* /sd/ARCHIVE: the old user-made games (hundreds of ZIPs). The scan only lists the names, quickly; the
    list is up first and the Archive tab fills one ZIP at a time while the keys are idle (arch_step). */
 #define ARCH_NAME 40u
-static struct {char name[ARCH_NAME];uint32_t size;} arch_q[GM_MAX_ARCHIVE];
+static struct {char name[ARCH_NAME];uint32_t size;uint8_t key[16];} arch_q[GM_MAX_ARCHIVE];
 static unsigned arch_n,arch_next;
 static const char *w_path(unsigned i){
   static char buf[64];if(!is_arch(i))return where[i].path;
@@ -300,7 +300,9 @@ static void arch_list(void) {
       unsigned n=length(name);char ext[5]={0};
       if(n>4)for(unsigned k=0;k<4;k++){char c=name[n-4+k];ext[k]=c>='a'&&c<='z'?(char)(c-32):c;}
       if(e->type==SBX_DT_FILE&&n>4&&n<ARCH_NAME&&!gz_noise(name)&&!gz_path(name,clean,0)&&cache_same(name,clean)&&(cache_same(ext,".ZIP")||cache_same(ext,".EXE"))){
-        if(arch_n<GM_MAX_ARCHIVE){put(arch_q[arch_n].name,name);arch_q[arch_n].size=e->size;arch_n++;}
+        if(arch_n<GM_MAX_ARCHIVE){put(arch_q[arch_n].name,name);arch_q[arch_n].size=e->size;
+          if(abi_minor>=4)cache_copy(arch_q[arch_n].key,&e->size,16);else for(unsigned k=0;k<16;k++)arch_q[arch_n].key[k]=0;
+          arch_n++;}
         else {scan_say("GMOS archive full; remaining files skipped");}
       }
       at+=e->length;heartbeat();
@@ -310,11 +312,25 @@ static void arch_list(void) {
   char line[64],*p=put(line,"GMOS archive: ");p=num(p,arch_n);put(p,arch_n==1?" file":" files");scan_say(line);
 }
 /* One archive file (one ZIP opened, read and closed): 1 when a game joined the tab. Never more than one per call. */
+static int arch_one(void) {
+  char path[64],*p=put(path,"/sd/ARCHIVE/");unsigned q=arch_next++;put(p,arch_q[q].name);
+  return add_zip_at(path,arch_q[q].size,arch_q[q].key,cache_enabled&&abi_minor>=4,q+1);
+}
+/* True when the cache already knows ZIP q (its name, size and dates are the key): reading it costs no SD access. */
+static int arch_known(unsigned q) {
+  char path[64],*p=put(path,"/sd/ARCHIVE/");put(p,arch_q[q].name);uint32_t n;
+  return cache_enabled&&abi_minor>=4&&gc_get(&scan_cache,path,arch_q[q].key,16,&n)!=0;
+}
+/* One pass of the idle loop: one unknown ZIP is opened, and every ZIP the cache knows after it joins free of charge. */
 static int arch_step(void) {
   if(arch_next>=arch_n)return 0;
-  char path[64],*p=put(path,"/sd/ARCHIVE/");unsigned q=arch_next++;put(p,arch_q[q].name);
-  return add_zip_at(path,arch_q[q].size,0,0,q+1);
+  int added=arch_one();
+  while(arch_next<arch_n&&arch_known(arch_next))added|=arch_one();
+  if(arch_next>=arch_n&&cache_wait){cache_wait=0;cache_seal();}
+  return added;
 }
+/* At startup: the known ZIPs, from the cache, before the list's first draw, so a warm card shows its final counts at once. */
+static void arch_prefill(void) {while(arch_next<arch_n&&arch_known(arch_next))arch_one();}
 static void find_games(void) {
   scan_detail_count = 0;zip_count=0;
   cache_begin();sp_beat = heartbeat;sz_beat=heartbeat;
@@ -326,11 +342,12 @@ static void find_games(void) {
   arch_list();
   scan_summary();
   heartbeat(); read_index(); heartbeat(); /* a checkpoint either side of each slow step */
+  arch_prefill(); /* after the index, so its words never reach an Archive game */
   gm_finish(&menu);
   /* Use the complete scan path, including pack/ZIP names, for library identity. */
   for (unsigned i=0;i<menu.count;i++) if(!is_arch(i)) gm_game_key(&menu.games[i],where[i].path,where[i].gam);
   gm_refresh(&menu); heartbeat();
-  cache_end();
+  cache_end(arch_n-arch_next);
 }
 static void open_input(void) {
   sbx_input_info info; sbx_input_state st;
@@ -1057,7 +1074,7 @@ static int gmos_main(const sbx_startup *start) {
   ba_splash(px, GM_W); sbx_fb_present(fb_fd, 0, 0, GM_W, GM_H); say("GMOS boot splash"); /* until the list is ready */
   ge_init(start->major, start->minor);
   splash_px = px; sbx_clock_ns(&splash_t0); splash_last = splash_call = splash_t0; beat_hook = splash_tick;
-  find_games();
+  find_games(); menu.scan_left = arch_n - arch_next;
   if (abi_minor>=7) {
     int e=gm_list_load(&menu.favorites,&save_sbx_ops,0);
     if(e) say("GMOS Favorites read failed; using an empty list");
@@ -1110,8 +1127,10 @@ static int gmos_main(const sbx_startup *start) {
       else if (arch_next < arch_n) { /* one ZIP per pass, so keys are read between; the heartbeat in its reads pumps the music, which plays from its own buffer and shares no reader */
         doing = "archive"; arch_dirty |= arch_step();
         uint64_t now = clock_ns();
-        if (arch_dirty && (arch_next >= arch_n || now - arch_shown >= 400000000ull)) {arch_dirty = 0; arch_shown = now; doing = "list"; show_list(px);}
-        if (arch_next >= arch_n) {char l[64], *q = put(l, "GMOS archive tab: "); q = num(q, menu.archive_count); put(q, menu.archive_count == 1 ? " game" : " games"); say(l);}
+        menu.scan_left = arch_n - arch_next;
+        /* The list redraws every few seconds while scanning, and once more when it ends (then with the final counts). */
+        if (!menu.scan_left || now - arch_shown >= 3000000000ull) {arch_dirty = 0; arch_shown = now; doing = "list"; show_list(px);}
+        if (arch_next >= arch_n) {char l[64], *q = put(l, "GMOS archive tab: "); q = num(q, menu.archive_count); put(q, menu.archive_count == 1 ? " game" : " games"); say(l); cache_flush();}
       } else {
         doing = "list";
         const struct gm_game *g = gm_selected(&menu);
