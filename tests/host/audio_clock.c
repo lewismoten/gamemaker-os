@@ -135,8 +135,8 @@ static int overloaded(void) {
   au_init(&ring.audio, ring.music, sizeof ring.music);
   au_set_playing(&ring.audio, 1);
   service(&ring);
-  uint64_t limit = AU_BATCH;
-  if (ring.failed || ring.audio.frames != limit || ring.queued >= AU_PLAY_FILL_FRAMES) {
+  /* a slow synth: one call stops rendering once it has spent AU_PUMP_RENDER_NS (here after 3 slices of 12 ms) */
+  if (ring.failed || ring.audio.frames > AU_BATCH_MAX || ring.audio.total_ns > AU_PUMP_RENDER_NS + ring.fixed_cost || ring.queued >= AU_PLAY_FILL_FRAMES) {
     puts("overloaded synth did not respect refill budget");
     return 1;
   }

@@ -10,6 +10,10 @@ static unsigned lines, presents;
 static int present_error, aud_on;
 static char output[64][320];
 static uint64_t clock_ns(void) {return now;}
+static uint32_t abi_minor = 0; /* the card log is off in this fixture */
+static void gl_add(const char *l, uint64_t t) {(void)l; (void)t;}
+static int gl_flush(const void *o, uint64_t t, int f) {(void)o; (void)t; (void)f; return 0;}
+static const int save_sbx_ops = 0;
 static void say(const char *s) {assert(lines < 64); snprintf(output[lines++], 320, "%s", s);}
 static void audio_poll(void) {}
 static void audio_log(const char *s) {(void)s; say("audio");}

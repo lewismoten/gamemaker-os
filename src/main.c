@@ -15,6 +15,7 @@
 #include "gam.h"
 #include "input.h"
 #include "hiscreen.h"
+#include "gmoslog.h"
 #include "hisload.h"
 #include "menu.h"
 #include "sdpack.h"
@@ -479,7 +480,7 @@ static void audio_log(const char *what) { /* the kernel's counters, and what the
   p = put(p, ", beeps "); p = num(p, aud.beeps); p = put(p, ", vocs "); p = num(p, aud.vocs); p = put(p, "/"); p = num(p, aud.voc_refused); p = put(p, ", synth CPU "); p = num(p, t > au_prev_t ? (uint32_t)((aud.total_ns - au_prev_ns) * 1000u / (t - au_prev_t)) : 0);
   p = put(p, " per mille, longest pump gap "); p = num(p, (uint32_t)(aud.gap_max_ns / 1000u)); p = put(p, " us, longest sound read "); p = num(p, (uint32_t)(aud.svc_max_ns / 1000u));
   p = put(p, " us, low water "); p = num(p, aud.low_frames);
-  put(p, " frames; since the last line"); say(line); aud.gap_max_ns = aud.svc_max_ns = 0;
+  put(p, " frames; since the last line"); say(line); if (what[0] == 'g') gl_add(line, t); aud.gap_max_ns = aud.svc_max_ns = 0;
   au_prev_ns = aud.total_ns; au_prev_t = t;
 }
 static void audio_open(void) {
@@ -540,6 +541,7 @@ static void bg_return(const char *why) {
   aud.music_muted = 0; aud.want_music[0] = 0;
   au_set_playing(&aud, 0); au_silence(&aud); aud.music = bgm_buf; aud.music_cap = sizeof bgm_buf; bg_state = 0; bg_next = clock_ns() + 800000000ull; doing = "list";
   audio_log(why);
+  if (abi_minor >= 7) gl_flush(&save_sbx_ops, clock_ns(), 1); /* the game is over: the list has no frame to hitch */
 }
 static void bg_leave(void) {
   if (aud_on && bg_state && aud.cmf.playing) {
@@ -681,10 +683,11 @@ struct play_report {
 static void report_frame(struct play_report *q) {
   if (!q->left) return;
   unsigned row = --q->left;
-  if (row == PF_COUNT + 2) say(q->header);
-  else if (row == PF_COUNT + 1) say(q->steps);
+  if (row == PF_COUNT + 2) {say(q->header); gl_add(q->header, clock_ns());}
+  else if (row == PF_COUNT + 1) {say(q->steps); gl_add(q->steps, clock_ns());}
   else if (row == PF_COUNT) {if (aud_on) audio_log("game 5 s");}
   else perf_line(q->shot, row);
+  if (!row && abi_minor >= 7) gl_flush(&save_sbx_ops, clock_ns(), 0); /* a card write from the foreground, at most every 30 s */
 }
 static void report_snapshot(struct play_report *q, const struct play_perf *perf,
                             uint32_t frames, uint32_t ticks, uint32_t step_max,

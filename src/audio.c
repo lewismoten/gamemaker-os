@@ -18,6 +18,12 @@ void au_silence(struct au *a) {
   a->music_pending = 0; a->beep_pending = 0; a->voc_pending = 0; a->hold_len = 0; vp_stop(&a->vp);
   cmf_stop(&a->cmf); pc_stop(&a->pc); a->vol = a->vol_target = 0;
 }
+void au_hush(struct au *a) {
+  for (unsigned i = 0; i < 9; i++) opl_write(&a->opl, 0xb0 + i, opl_read(&a->opl, 0xb0 + i) & ~0x20u);
+  for (unsigned r = 0x80; r < 0x96; r++) opl_write(&a->opl, r, 0xff); /* sustain level 15, release rate 15, every operator */
+  opl_write(&a->opl, 0xbd, 0xc0);
+  a->cmf.playing = 0; a->cmf.off = 0; a->hush_left = AU_HUSH_FRAMES;
+}
 int au_play_loaded(struct au *a, uint32_t n) {
   if (cmf_load(&a->cmf, a->music, n)) {cmf_stop(&a->cmf); return -1;}
   a->until_q16 = 0; a->music_loads++; a->vol_target = AU_VOL_ONE; return 0;
@@ -27,7 +33,8 @@ int au_service(struct au *a, int32_t (*read)(void *, const char *, uint8_t *, ui
   int started = 0;
   if (a->music_pending) {
     a->music_pending = 0;
-    if (a->cmf.playing && a->vol) {a->vol_target = 0; a->music_pending = 1; return 0;} /* fade out first; the switch is at silence */
+    if (a->cmf.playing && a->vol && a->want_music[0]) {a->vol_target = 0; a->music_pending = 1; return 0;} /* fade out first; the switch is at silence */
+    if (!a->want_music[0] && a->cmf.playing) {au_hush(a); return 0;} /* a stop: keyed off at once, the chip reset in 200 ms */
     cmf_stop(&a->cmf); /* the buffer is about to change under the pump (the read calls the heartbeat) */
     if (a->want_music[0]) {
       int32_t n = read ? read(user, a->want_music, a->music, a->music_cap) : -1;
@@ -69,7 +76,10 @@ void au_render(struct au *a, int16_t *out, unsigned n) {
     if (run > n - i) run = n - i;
     opl_render(&a->opl, acc + i, run);
     a->until_q16 -= run << 16; i += run;
-  } else opl_render(&a->opl, acc, n); /* a stopped song's last notes ring out their release */
+  } else {
+    opl_render(&a->opl, acc, n); /* a stopped song's last notes ring out their release */
+    if (a->hush_left) {if (a->hush_left <= n) {a->hush_left = 0; cmf_stop(&a->cmf);} else a->hush_left -= n;}
+  }
   if (a->music_muted) for (unsigned k = 0; k < n; k++) acc[k] = 0;
   if (a->pc.active) {
     pc_render(&a->pc, sp, n);
@@ -96,6 +106,7 @@ int au_pump(struct au *a, const struct au_sink *s) {
   uint64_t t = s->now(s->user);
   if (a->last_pump_ns) {
     uint64_t gap = t - a->last_pump_ns;
+    a->pump_gap_ns = gap;
     if (gap > a->gap_max_ns) a->gap_max_ns = gap;
     if (gap > a->gap_peak_ns) a->gap_peak_ns = gap;
   }
@@ -109,7 +120,10 @@ int au_pump(struct au *a, const struct au_sink *s) {
   if (fill > cap) fill = cap;
   a->low_frames = low;
   if (queued >= low) return 0;
-  uint32_t budget = AU_BATCH; uint64_t io_ns = 0; /* time in the device's write and query: the render's own time is bounded by the budget */
+  /* Frames can be slow: render by elapsed time (what the ring played since the last pump, plus a quarter), and more when it is low. */
+  uint32_t budget = AU_BATCH; uint64_t io_ns = 0, render_ns = 0;
+  if (a->pump_gap_ns) {uint64_t ef = a->pump_gap_ns * 48000u / 1000000000ull; ef += ef / 4; if (ef > budget) budget = ef < AU_BATCH_MAX ? (uint32_t)ef : AU_BATCH_MAX;}
+  if (queued < low / 2 && budget < AU_BATCH_MAX) budget = AU_BATCH_MAX; /* time in the device's write and query: the render's own time is bounded by the budget */
   while (queued < fill) {
     if (io_ns > AU_PUMP_IO_NS) break; /* a flapping device: give up for this frame, the rest is kept for the next pump */
     uint32_t want = fill - queued;
@@ -120,10 +134,10 @@ int au_pump(struct au *a, const struct au_sink *s) {
       uint64_t t0 = s->now(s->user);
       au_render(a, a->hold, n);
       uint64_t elapsed = s->now(s->user) - t0;
-      a->total_ns += elapsed;
+      a->total_ns += elapsed; render_ns += elapsed;
       if (elapsed > a->slice_peak_ns) a->slice_peak_ns = elapsed;
       a->hold_len = n * 4u; a->hold_off = 0;
-      budget -= n;
+      budget = render_ns > AU_PUMP_RENDER_NS ? 0 : budget - n;
     }
     uint32_t bytes = a->hold_len;
     if (bytes > want * 4u) bytes = want * 4u;

@@ -17,6 +17,9 @@
 #define AU_PLAY_LOW_FRAMES AU_LOW_FRAMES
 #define AU_CHUNK 480u        /* frames per synthesis slice (10 ms); pcspeaker.h's limit is 1920 */
 #define AU_BATCH (AU_CHUNK * 4u)
+#define AU_BATCH_MAX (AU_CHUNK * 20u) /* 200 ms of audio: what one call renders to catch up after a slow frame */
+#define AU_PUMP_RENDER_NS 25000000ull /* the most synthesis time one call spends, whatever the catch-up asks */
+#define AU_HUSH_FRAMES 9600u /* after a hush the chip is reset once this many frames (200 ms) have been rendered */
 #define AU_REFILL_MARGIN 48u
 #define AU_SLEEP_NS 10000000ull
 #define AU_WAIT_MAX_NS 20000000ull /* the longest one au_wait_until holds a caller */
@@ -45,6 +48,8 @@ struct au {
   /* Requests from the session, served by au_service (which reads files). */
   char want_music[AU_NAME_MAX + 1]; uint8_t music_pending;
   char want_snd[AU_NAME_MAX + 1]; int want_tune; uint8_t beep_pending;
+  uint64_t pump_gap_ns;        /* the last gap between two pumps */
+  uint32_t hush_left;          /* frames until a hushed chip is reset (0: none) */
   uint8_t music_muted;         /* advances the song silently; effects keep playing */
   uint8_t playing;             /* gameplay mode; both modes retain stall headroom */
   uint64_t last_pump_ns, gap_max_ns, svc_max_ns; /* interval maxima, in every mode */
@@ -66,6 +71,8 @@ void au_stop(struct au *a);
 int au_ui(struct au *a, int cue);
 /* At once, no fade: the song, the speaker and any request stop, the chip is reset and the volume is 0 (what the ring already holds still plays). */
 void au_silence(struct au *a);
+/* A soft stop of the song: every FM channel keyed off with the fastest release (a note that never releases cannot hang), the chip reset 200 ms later. */
+void au_hush(struct au *a);
 /* Starts the song already read into the music buffer (n bytes) and fades it in; 0, or -1 when it is refused. */
 int au_play_loaded(struct au *a, uint32_t n);
 /* A fade to this volume (0..AU_VOL_MAX; AU_VOL_ONE = unity) begins. */

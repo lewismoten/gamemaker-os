@@ -82,6 +82,30 @@ static void fades(void) {
   render(&a, out, 9600); int held_peak = peak(out, 9600); cmf_stop(&a.cmf); render(&a, out, 2400);
   CHECK(held_peak > 100 && peak(out, 2400) == 0, "a note with release rate 0 rings after the stop (peak %d)", peak(out, 2400));
 }
+/* A song stopped mid-note, even with a note that never releases (the stop to the Top Ten entry): silent within 200 ms. */
+static void hush(void) {
+  static struct au a; static int16_t out[AU_CHUNK * 2 * 40];
+  FILE *f = fopen("tests/data/syn.cmf", "rb"); if (!f) {CHECK(0, "no syn.cmf"); return;}
+  cmf_len = (uint32_t)fread(cmf_file, 1, sizeof cmf_file, f); fclose(f);
+  for (unsigned i = 0; i < 16; i++) cmf_file[40 + i * 16 + 6] = cmf_file[40 + i * 16 + 7] = 0xf0; /* release rate 0 */
+  for (int path = 0; path < 3; path++) {
+    au_init(&a, music_buf, sizeof music_buf);
+    au_music(&a, "S.CMF"); au_service(&a, reader, 0); render(&a, out, 9600);
+    CHECK(peak(out, 9600) > 100, "the held song is silent");
+    if (path == 0) au_stop(&a);
+    else if (path == 1) au_music(&a, "");
+    else {au_stop(&a); au_stop(&a);}
+    au_service(&a, reader, 0); /* the stop is served: keyed off, release 15 */
+    for (unsigned i = 0; i < 40; i++) au_render(&a, out + 0, AU_CHUNK); /* 400 ms in all; the last pass is checked below */
+    render(&a, out, 480 * 20); CHECK(peak(out, 480 * 20) == 0, "path %d: a note still sounds 400 ms after the stop (peak %d)", path, peak(out, 480 * 20));
+    CHECK(!a.cmf.playing, "path %d: the song still plays after the stop", path);
+  }
+  au_init(&a, music_buf, sizeof music_buf);
+  au_music(&a, "S.CMF"); au_service(&a, reader, 0); render(&a, out, 9600);
+  au_stop(&a); au_service(&a, reader, 0);
+  static int16_t tail[AU_CHUNK * 2 * 20]; render(&a, tail, 480 * 20); /* the 200 ms after the stop */
+  CHECK(peak(tail + 2 * 480 * 19, 480) == 0, "the last 10 ms of the 200 ms after a stop are not silent (peak %d)", peak(tail + 2 * 480 * 19, 480));
+}
 static void ticks(void) {
   static struct au a; static int16_t out[AU_CHUNK * 2];
   FILE *f = fopen("tests/data/syn.cmf", "rb"); CHECK(f != 0, "no tests/data/syn.cmf"); if (!f) return;
@@ -135,6 +159,26 @@ static void feeding(void) {
   int total = 0; for (int i = 0; i < 12 && total < 480; i++) {full.queued = 0; int w = au_pump(&c, &fs); total += w > 0 ? w : 0;}
   CHECK(total == 480 || total > 480, "partial writes lost frames: %d", total);
   printf("fed %u frames (%d reported) in %d pumps; %d quiet\n", r.gotn, wrote, pumps, quiet_pumps);
+}
+/* Slow frames: the main loop pumps once per 100 ms and the ring plays 4800 frames between pumps; the ring never runs dry. */
+static void slow_frames(void) {
+  static struct au a; static int16_t got[200000 * 2];
+  for (unsigned gap_ms = 40; gap_ms <= 150; gap_ms += 55) {
+    struct ring r = {16384, 0, 4000, 0, 0, got, 0, 0}; struct au_sink sink = {&r, rq, rw, rn};
+    au_init(&a, music_buf, sizeof music_buf); au_set_playing(&a, 1);
+    FILE *f = fopen("tests/data/syn.cmf", "rb"); uint32_t n = f ? (uint32_t)fread(music_buf, 1, sizeof music_buf, f) : 0; if (f) fclose(f);
+    cmf_load(&a.cmf, music_buf, n);
+    unsigned dry = 0; uint32_t lo = 16384, drain = gap_ms * 48;
+    for (unsigned t = 0; t < 6000; t += gap_ms) {
+      r.t += (uint64_t)gap_ms * 1000000ull; /* the clock: the fake sink adds 1 us a call on top */
+      if (au_pump(&a, &sink) < 0) CHECK(0, "pump failed");
+      if (t > 1000 && r.queued < lo) lo = r.queued;
+      if (r.queued < drain) dry++;
+      r.queued = r.queued > drain ? r.queued - drain : 0;
+      r.gotn = 0;
+    }
+    CHECK(!dry, "frames of %u ms: the ring ran dry %u times (lowest %u queued)", gap_ms, dry, lo);
+  }
 }
 /* SFX latency: a beep event at the main loop's 10 ms wake; the time from it to the beep's first sample reaching the play head,
    with the long queue (library) and the small one (a game playing). Also: no gap, and the switch repeats no sample. */
@@ -234,4 +278,4 @@ static void stalled_drain(void) {
   for (unsigned i = 0; i < 50; i++) { stall_calls = 0; int w = au_pump(&a, &s); CHECK(w == 0 && stall_calls == 1, "EAGAIN pump wrote %d times, returned %d", stall_calls, w); }
   CHECK(a.eagain == 50 && a.hold_len == AU_CHUNK * 4, "samples not held for the next frame");
 }
-int main(void) {speaker(); ticks(); fades(); feeding(); latency(); capacities(); retries(); stalled_drain(); volumes(); if (!fails) puts("audio ok"); return fails != 0;}
+int main(void) {speaker(); ticks(); fades(); hush(); slow_frames(); feeding(); latency(); capacities(); retries(); stalled_drain(); volumes(); if (!fails) puts("audio ok"); return fails != 0;}

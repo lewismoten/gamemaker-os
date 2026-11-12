@@ -14,6 +14,8 @@
 #include "ostune.h"
 
 static uint32_t abi_minor = 8;
+static void gl_add(const char *l, uint64_t t) {(void)l; (void)t;}
+static int gl_flush(const void *o, uint64_t t, int f) {(void)o; (void)t; (void)f; return 0;}
 static uint64_t now = 1000000000ull;
 static struct gs_session game;
 static struct gm_menu menu;
