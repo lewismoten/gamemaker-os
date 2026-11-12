@@ -106,7 +106,7 @@ int main(int argc,char**argv){if(argc!=2)return 2;root=argv[1];for(int i=0;i<64;
  for(unsigned j=0;j<menu.count;j++){
   unsigned i=menu.order[j];const struct gm_game*g=&menu.games[i];
   printf("%s{\"dir\":",j?",":"");jstr(g->dir);printf(",\"gam\":");jstr(g->gam);
-  printf(",\"title\":");jstr(g->title);printf(",\"company\":");jstr(g->company);printf(",\"blurb\":");jstr(g->blurb);
+  printf(",\"title\":");jstr(g->title);printf(",\"company\":");jstr(gm_company(&menu,g));printf(",\"blurb\":");jstr(gm_blurb(&menu,g));
   printf(",\"storage\":%u,\"crc\":%u,\"cat\":%u,\"course\":%d,\"year\":%d,\"packed\":%u",i,g->crc,g->cat,g->course,g->year,where[i].packed);
   printf(",\"source_path\":");jstr(where[i].path);printf(",\"source_gam\":");jstr(where[i].gam);
   if(where[i].packed==1){const struct sp_pack*p=&where[i].pack;printf(",\"pack_folder\":%u,\"pack_base\":",p->folder);jstr(p->base);printf(",\"volume_sizes\":[");for(unsigned v=0;v<p->volumes;v++)printf("%s%u",v?",":"",p->size[v]);printf("]");}

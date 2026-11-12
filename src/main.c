@@ -36,7 +36,14 @@ static int have_input;
 static struct gm_menu menu;
 /* Menu labels remain DOS-sized; exact UTF-8 locations are separate. Kind 0
  * is a loose folder, 1 a GMP volume set, 2 an in-place ZIP (including SFX). */
-static struct {uint8_t packed; struct sp_pack pack; char path[256],gam[256];uint32_t size;} where[GM_MAX_ALL];
+static struct {uint8_t packed; struct sp_pack pack; char path[256],gam[256];uint32_t size;} where[GM_MAX_GAMES];
+/* An Archive game keeps only what opening it needs: its .GAM name inside the ZIP, the ZIP's size and its place in
+   arch_q (whose name gives the path). Games 0..GM_MAX_GAMES-1 are the main tabs'; the Archive's are the list's tail. */
+#define ARCH_GAM 40u
+static struct {char gam[ARCH_GAM];uint32_t size;uint16_t q;} where_a[GM_MAX_ARCHIVE];
+_Static_assert(sizeof where_a + GM_MAX_ARCHIVE * (sizeof(struct gm_game) + sizeof(uint16_t) + 44u /* arch_q */) < 100u * 1024u, "the 512 Archive entries must stay under 100 KiB");
+static unsigned arch_slot(unsigned i){return i-(menu.count-menu.archive_count);}
+static int is_arch(unsigned i){return menu.games[i].cat==GM_CAT_ARCHIVE;}
 static struct sp_pack packs[GM_MAX_GAMES];
 static uint8_t gamfile[64 * 1024], index_text[256 * 1024];
 static uint8_t pic_px[GP_W * GP_H], pic_pal[768], big_px[GP_W * GP_H], big_pal[768];
@@ -232,7 +239,7 @@ static void scan_tree(const char *relative,unsigned depth) {
   sbx_close(fd);
 }
 /* One ZIP/SFX as a game: a main-tab game, or (archive) a card of the Archive tab, whose own room never crowds the others. */
-static int add_zip_at(const char *path,uint32_t size,const uint8_t *key,int keyed,int archive) {
+static int add_zip_at(const char *path,uint32_t size,const uint8_t *key,int keyed,unsigned archive) { /* archive: 0 for a main-tab game, else the arch_q number + 1 */
   struct cache_source source={0};
   if(!(keyed&&cache_source_get(path,key,16,&source))){
     uint32_t errors=sz_io_errors;struct gz_zip *z=sz_open(path,size,abi_minor);
@@ -241,11 +248,14 @@ static int add_zip_at(const char *path,uint32_t size,const uint8_t *key,int keye
     sz_close();if(errors!=sz_io_errors)cache_enabled=0;
   }
   if(keyed)cache_source_put(path,key,16,&source,0);
-  if(!source.valid){scan_say("GMOS skipped archive: unsupported, damaged, or no game");return 0;}
+  if(!source.valid||(archive&&length(source.gam)>=ARCH_GAM)){scan_say("GMOS skipped archive: unsupported, damaged, or no game");return 0;}
   for(unsigned i=0;i<menu.count;i++)if(menu.games[i].crc==source.crc)return 0;
   const char *base=path;for(const char *p=path;*p;p++)if(*p=='/')base=p+1;
   if(archive?gm_add_archive(&menu,base,source.gam,source.title,source.crc):gm_add(&menu,base,source.gam,source.title,source.crc)){
-    unsigned i=menu.count-1;where[i].packed=2;where[i].size=size;put(where[i].path,path);put(where[i].gam,source.gam);return 1;
+    unsigned i=menu.count-1;
+    if(archive){unsigned a=arch_slot(i);where_a[a].size=size;where_a[a].q=(uint16_t)(archive-1);put(where_a[a].gam,source.gam);}
+    else{where[i].packed=2;where[i].size=size;put(where[i].path,path);put(where[i].gam,source.gam);}
+    return 1;
   }
   return 0;
 }
@@ -255,6 +265,10 @@ static void add_zip(unsigned id) {add_zip_at(zip_candidates[id].path,zip_candida
 #define ARCH_NAME 40u
 static struct {char name[ARCH_NAME];uint32_t size;} arch_q[GM_MAX_ARCHIVE];
 static unsigned arch_n,arch_next;
+static const char *w_path(unsigned i){
+  static char buf[64];if(!is_arch(i))return where[i].path;
+  char *p=put(buf,"/sd/ARCHIVE/");put(p,arch_q[where_a[arch_slot(i)].q].name);return buf;}
+static const char *w_gam(unsigned i){return is_arch(i)?where_a[arch_slot(i)].gam:where[i].gam;}
 static void arch_list(void) {
   uint64_t fd,got;_Alignas(8) uint8_t list[2048];
   arch_n=arch_next=0;
@@ -280,8 +294,8 @@ static void arch_list(void) {
 /* One archive file (one ZIP opened, read and closed): 1 when a game joined the tab. Never more than one per call. */
 static int arch_step(void) {
   if(arch_next>=arch_n)return 0;
-  char path[64],*p=put(path,"/sd/ARCHIVE/");put(p,arch_q[arch_next].name);
-  return add_zip_at(path,arch_q[arch_next++].size,0,0,1);
+  char path[64],*p=put(path,"/sd/ARCHIVE/");unsigned q=arch_next++;put(p,arch_q[q].name);
+  return add_zip_at(path,arch_q[q].size,0,0,q+1);
 }
 static void find_games(void) {
   scan_detail_count = 0;zip_count=0;
@@ -342,6 +356,7 @@ static int32_t sd_read(void *user, const char *name, uint8_t *buf, uint32_t cap)
 static gp_read_fn reader(const struct gm_game *g, void **user) {
   unsigned i = (unsigned)(g - menu.games);
   sz_close();
+  if (is_arch(i)) {*user=sz_open(w_path(i),where_a[arch_slot(i)].size,abi_minor);return *user?gz_read:0;}
   if (!where[i].packed) {*user = (void *)where[i].path; return sd_read;}
   if(where[i].packed==2){*user=sz_open(where[i].path,where[i].size,abi_minor);return *user?gz_read:0;}
   *user = sp_open(&where[i].pack);
@@ -497,7 +512,7 @@ static void bg_tick(void) {
     bg_seed = bg_seed * 1103515245u + 12345u;
     const char *name = 0; int32_t n = -1; unsigned idx = menu.count ? (bg_seed >> 8) % menu.count : 0;
     if (bg_picks % 3 && menu.count) {
-      const struct gm_game *g = &menu.games[idx]; void *user; gp_read_fn read = reader(g, &user); const char *gam = where[idx].gam;
+      const struct gm_game *g = &menu.games[idx]; void *user; gp_read_fn read = reader(g, &user); const char *gam = w_gam(idx);
       if (read && gam[0] && gp_open(read, user, gam) >= 0) {
         name = gp_song(GP_SONG_LEVEL, 0); if (!name[0]) name = gp_song(GP_SONG_TITLE, 0);
         if (name[0]) n = read(user, name, bgm_buf, sizeof bgm_buf);
@@ -538,9 +553,9 @@ static struct hs_screen hsc;
    game's own .HIS (read only); a new name is written back there. */
 static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int open) {
   char line[96], stem[9], key[9], *p; void *user; gp_read_fn read = reader(g, &user);
-  const char *gam = where[g - menu.games].gam;
+  const char *gam = w_gam((unsigned)(g - menu.games));
   if (!gam[0] || !read || hl_stem(gam, stem)) {say("GMOS no Top Ten for this game"); return;}
-  hl_key(stem, where[g - menu.games].path, gam, key);
+  hl_key(stem, w_path((unsigned)(g - menu.games)), gam, key);
   struct his_table t; int seeded = 0, can_write = abi_minor >= 7;
   int e = hl_load(&save_sbx_ops, key, stem, read, user, &t, &seeded);
   /* a card read that failed for any reason but "no file" must not be saved over by the seed */
@@ -592,7 +607,7 @@ static void top_ten(uint32_t *px, const struct gm_game *g, int32_t score, int op
    view's hash (the Pocket Player host test's), each game key the tick it lands
    before, and every 5 s the timing: the host tests replay those lines. */
 static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in the game's 640x480x32 */
-  char *p, line[320];const char *gamname=where[g-menu.games].gam;
+  char *p, line[320];const char *gamname=w_gam((unsigned)(g-menu.games));
   void *user; gp_read_fn read = reader(g, &user);
 
   if (abi_minor < 1) {say("GMOS playing needs the kernel's clock (ABI 1.1)"); return;}
@@ -608,7 +623,7 @@ static void play(uint32_t *px, const struct gm_game *g) { /* px: the surface, in
   uint64_t since = clock_ns();
   int r = GS_DRAW, started = 0, sp_on = 0, sp_draw = 0;
   static struct sp_menu sp; char sp_stem[9], sp_key[9]; int sp_ok = !hl_stem(gamname, sp_stem);
-  if (sp_ok) hl_key(sp_stem, where[g - menu.games].path, gamname, sp_key);
+  if (sp_ok) hl_key(sp_stem, w_path((unsigned)(g - menu.games)), gamname, sp_key);
   for (;;) {
     heartbeat();
     ge_poll();
@@ -716,10 +731,10 @@ static void demo_stop(const char *why) {
 static void demo_start(uint16_t *px, const struct gm_game *g) {
   char line[96], *p; void *user; gp_read_fn read = reader(g, &user);
   demo_none = (int)(g - menu.games);
-  if (!read || !where[demo_none].gam[0]) return;
+  if (!read || !w_gam((unsigned)demo_none)[0]) return;
   game.say = say;
   audio_take(); /* the tune fades out first; the preview's own sound replaces it */
-  if (gs_demo_start(&game, read, user, where[demo_none].gam, clock_ns())) {bg_return("no demo"); return;} /* no demo */
+  if (gs_demo_start(&game, read, user, w_gam((unsigned)demo_none), clock_ns())) {bg_return("no demo"); return;} /* no demo */
   demo_none = -1; demo_on = 1; doing = "demo";
   if (aud_on) au_music(&aud, gp_song(GP_SONG_TITLE, 0)); /* DOS: the menu song plays under the demo */
   p = put(line, "GMOS demo start "); p = put(p, g->dir); p = put(p, ", "); p = num(p, game.demo_n); put(p, " keys"); say(line);
@@ -740,7 +755,7 @@ static int demo_run(uint16_t *px) {
 /* The title screen of a game (thumb.h), read from its folder; -1 when it has none. */
 static int title_picture(const struct gm_game *g, uint8_t *px, uint8_t *pal) {
   void *user; gp_read_fn read = reader(g, &user);
-  return read ? gm_title_picture(read, user, where[g-menu.games].gam, px, pal) : -1;
+  return read ? gm_title_picture(read, user, w_gam((unsigned)(g-menu.games)), px, pal) : -1;
 }
 /* The next card on the page whose title screen is not drawn yet: reads it. 1 when one was read. */
 static int load_next_thumb(void) {

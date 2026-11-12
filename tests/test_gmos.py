@@ -251,6 +251,19 @@ class ArchiveTab(unittest.TestCase):
         c().gm_tab_game.restype = C.c_void_p; c().gm_tab_game.argtypes = [C.c_void_p, C.c_uint, C.c_uint]
         c().gm_tab_size.argtypes = [C.c_void_p, C.c_uint]
         return [C.string_at(c().gm_tab_game(p.m, tab, i), 9).split(b'\0')[0] for i in range(c().gm_tab_size(p.m, tab))]
+    def test_512_archive_entries_stay_compact(self):
+        # The loaded image has 8 MiB; an Archive entry is a short record (no company or blurb), not a full game slot.
+        # Main tabs: 256 full slots (one struct gm_game and one 672-byte text each). Archive: at most 112 bytes a game
+        # and 2 in order[]. (main.c's _Static_assert budgets the rest, the where_a table, at under 100 KiB in all.)
+        main = 256 * (112 + 672) + 256 * 2
+        extra = c().gm_menu_bytes() - main
+        self.assertLess(extra, 512 * (112 + 2) + 4096)
+        self.assertLess(extra, 100 * 1024)
+    def test_archive_entries_have_no_index_words(self):
+        p = self.build(n=3)
+        self.assertEqual(p.index('{"schema":"gmp-library","title":"Words","company":"Acme","blurb":"Text","category":["sandbox"],"locator":"A001"}'), 1)
+        p.finish()
+        self.assertEqual(c().gm_tab_size(p.m, ARCHIVE), 3)   # still in the Archive tab, never moved
     def test_365_archive_games_leave_the_main_tabs_alone(self):
         p = self.build()
         c().gm_tab_size.argtypes = [C.c_void_p, C.c_uint]

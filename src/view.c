@@ -218,7 +218,7 @@ static void card(const struct gm_menu *m, const struct gm_game *g, unsigned i, i
   fill(x + 1, y + 1 + (int32_t)GM_THUMB_H, (int32_t)GM_THUMB_W, 1, C_LINE2);
   int32_t ty = y + 1 + (int32_t)GM_THUMB_H + 9;
   unsigned lines = wrap(F8, x + 9, ty, w - 18, g->title, 2, 11, 0xffffffu, 1);
-  text0(F5, x + 9, ty + (int32_t)lines * 11 + 2, g->company[0] ? g->company : g->dir, C_DIM);
+  text0(F5, x + 9, ty + (int32_t)lines * 11 + 2, gm_company(m, g)[0] ? gm_company(m, g) : g->dir, C_DIM);
 }
 static void keycap(int32_t *x, int32_t y, const char *key, const char *label) {
   int32_t kw = width(F5, key, len(key), 1) + 10;
@@ -299,16 +299,16 @@ static void details(const struct gm_menu *m, const uint8_t *big, const uint8_t *
   for (int32_t dy = -2; dy <= 2; dy += 2) for (int32_t dx = -2; dx <= 2; dx += 2) if (dx || dy) wrap(F8, x + dx, y + dy, w, g->title, 3, 20, C_OUTLINE, 2);
   wrap(F8, x, y, w, g->title, 3, 20, C_TITLE, 2);
   y += (int32_t)lines * 20 + 6;
-  int32_t bx = text0(F5, x, y, g->company[0] ? g->company : g->dir, C_TEXT);
+  int32_t bx = text0(F5, x, y, gm_company(m, g)[0] ? gm_company(m, g) : g->dir, C_TEXT);
   if (g->year > 0) {
     char yr[12]; num(yr, (uint32_t)g->year);
-    if (g->company[0]) {fill(bx + 3, y + 3, 2, 2, C_TEXT); bx += 9;}
+    if (gm_company(m, g)[0]) {fill(bx + 3, y + 3, 2, 2, C_TEXT); bx += 9;}
     text0(F5, bx, y, yr, C_TEXT);
   }
   y += 22;
   button(x, y, 112, "Play", 1, m->button == GM_BTN_PLAY);
   button(x + 124, y, 88, "Back", 0, m->button == GM_BTN_BACK);
-  const char *blurb = g->blurb[0] ? g->blurb : "This game has no entry in the library index, so there is no description to show.";
+  const char *blurb = gm_blurb(m, g)[0] ? gm_blurb(m, g) : "This game has no entry in the library index, so there is no description to show.";
   y += 50;
   wrap(F5, x, y, w, blurb, (unsigned)((440 - y) / 13), 13, C_TEXT, 1);
   char where[40], *q = put(where, "/sd/GAMES/"); q = put(q, g->dir); q = put(q, "/"); put(q, g->gam);

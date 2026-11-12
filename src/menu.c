@@ -16,6 +16,7 @@ static int before(const struct gm_game *a, const struct gm_game *b);
 static void fill(struct gm_game *g, const char *dir, const char *gam, const char *title, uint32_t crc);
 bool gm_add(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc) {
   if (m->count - m->archive_count >= GM_MAX_GAMES || m->archive_count) return false; /* main games come first: the Archive tab is the list's tail */
+  m->text[m->count].company[0] = m->text[m->count].blurb[0] = 0;
   fill(&m->games[m->count++], dir, gam, title, crc);
   return true;
 }
@@ -32,7 +33,7 @@ static void fill(struct gm_game *g, const char *dir, const char *gam, const char
     while (base[n] && base+n!=end && n<GM_LIB_TITLE) {g->title[n]=base[n];n++;}
     g->title[n]=0;
   }
-  g->company[0] = g->blurb[0] = 0; g->year = g->course = 0; g->crc = crc; g->cat = GM_CAT_OTHER; g->pic = 0;
+  g->year = g->course = 0; g->crc = crc; g->cat = GM_CAT_OTHER; g->pic = 0;
 }
 bool gm_add_archive(struct gm_menu *m, const char *dir, const char *gam, const char *title, uint32_t crc) {
   if (m->archive_count >= GM_MAX_ARCHIVE) return false;
@@ -66,7 +67,8 @@ int gm_library_line(struct gm_menu *m, const char *line, uint32_t n) {
   for (unsigned i = 0; i < m->count && !hit; i++) if (r.locator[0] && compare(r.locator, m->games[i].dir, true) == 0) hit = &m->games[i];
   for (unsigned i = 0; i < m->count && !hit; i++) if (r.dos[0] && same_dos(r.dos, m->games[i].gam)) hit = &m->games[i];
   if (!hit) return 0;
-  copy(hit->title, r.title, GM_LIB_TITLE); copy(hit->company, r.company, GM_LIB_COMPANY); copy(hit->blurb, r.blurb, GM_LIB_BLURB);
+  copy(hit->title, r.title, GM_LIB_TITLE);
+  if (hit->cat != GM_CAT_ARCHIVE) {struct gm_text *t = &m->text[hit - m->games]; copy(t->company, r.company, GM_LIB_COMPANY); copy(t->blurb, r.blurb, GM_LIB_BLURB);}
   hit->year = r.year; hit->course = r.course;
   if (hit->cat != GM_CAT_ARCHIVE) hit->cat = category(&r); /* /sd/ARCHIVE stays there: the index fills in words, never moves it */
   return 1;

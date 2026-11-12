@@ -20,12 +20,14 @@ enum {GM_BTN_PLAY, GM_BTN_BACK, GM_BUTTONS}; /* the details view's buttons */
 struct gm_game {
   char dir[9], gam[13];             /* folder and its .GAM file */
   char title[GM_LIB_TITLE + 1];     /* the index's title, else the .GAM's, else the folder */
-  char company[GM_LIB_COMPANY + 1], blurb[GM_LIB_BLURB + 1];
   uint32_t crc; int32_t year, course;
   uint8_t cat; int8_t pic;          /* pic: 0 not looked for yet, 1 found, -1 none */
 };
+/* The index's words, only for the main tabs' games (slot = the game's number): an Archive entry is compact and has none. */
+struct gm_text {char company[GM_LIB_COMPANY + 1], blurb[GM_LIB_BLURB + 1];};
 struct gm_menu {
   struct gm_game games[GM_MAX_ALL];
+  struct gm_text text[GM_MAX_GAMES];
   unsigned count, archive_count;    /* count holds both; archive_count of them are the Archive tab's */
   uint16_t order[GM_MAX_ALL];      /* games by tab, then by course and title */
   unsigned tab_first[GM_CATS], tab_count[GM_CATS];
@@ -36,6 +38,11 @@ struct gm_menu {
   int shift;                        /* a Shift key is held (Shift+Tab) */
   char message[GM_MESSAGE_MAX + 1]; /* footer line; empty shows the key help */
 };
+/* Size budget: the 512 Archive entries may cost under 100 KiB in all (a game here, its place in order[], main.c's where_a). */
+_Static_assert(sizeof(struct gm_game) <= 112, "struct gm_game grew: every Archive entry pays for it (512 of them)");
+/* The company and blurb of a game ("" for an Archive entry or a game the index does not name). */
+static inline const char *gm_company(const struct gm_menu *m, const struct gm_game *g) {return g->cat == GM_CAT_ARCHIVE ? "" : m->text[g - m->games].company;}
+static inline const char *gm_blurb(const struct gm_menu *m, const struct gm_game *g) {return g->cat == GM_CAT_ARCHIVE ? "" : m->text[g - m->games].blurb;}
 enum {GM_NONE, GM_MOVED, GM_CHOSEN, GM_QUIT, GM_RESYNC, GM_SCORES, GM_MUSIC}; /* GM_SCORES: H, the selected game's Top Ten */
 /* Add a game (dir is its folder's name, gam its .GAM file, title from that
    file, crc the .GAM's CRC-32); false when the list is full. */
