@@ -54,8 +54,12 @@ bool gm_add_archive(struct gm_menu *m, const char *dir, const char *gam, const c
   unsigned first = m->count - m->archive_count, j = m->count - 1; /* the Archive tab is the tail of order[] */
   while (j > first && before(g, &m->games[m->order[j - 1]])) {m->order[j] = m->order[j - 1]; j--;}
   m->order[j] = id;
-  if (m->tab == GM_CAT_ARCHIVE && m->view == GM_GRID && j - first <= m->pos[GM_CAT_ARCHIVE] && m->archive_count > 1) m->pos[GM_CAT_ARCHIVE]++; /* the selected card keeps its game */
+  int sel[GM_CATS]; /* every tab's selected game, so the list rebuilt below keeps it (not its position) */
+  for (unsigned t = 0; t < GM_CATS; t++) sel[t] = m->pos[t] < m->tab_count[t] ? (int)m->visible[t][m->pos[t]] : -1;
   gm_refresh(m); /* the tab lists (and the search tab) take the new game */
+  for (unsigned t = 0; t < GM_CATS; t++) if (sel[t] >= 0) for (unsigned k = 0; k < m->tab_count[t]; k++) if (m->visible[t][k] == sel[t]) {m->pos[t] = k; break;}
+  if (m->tab <= GM_CAT_ARCHIVE && !m->tab_count[m->tab]) /* an empty library that just became usable */
+    for (unsigned t = 0; t <= GM_CAT_ARCHIVE; t++) if (m->tab_count[t]) {m->tab = t; break;}
   return true;
 }
 static int same_dos(const char *dos, const char *gam) { /* "DICE" and "DICE.GAM" */

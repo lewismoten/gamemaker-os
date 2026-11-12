@@ -48,7 +48,9 @@ static struct {uint8_t packed; struct sp_pack pack; char path[256],gam[256];uint
    arch_q (whose name gives the path). Games 0..GM_MAX_GAMES-1 are the main tabs'; the Archive's are the list's tail. */
 #define ARCH_GAM 40u
 static struct {char gam[ARCH_GAM];uint32_t size;uint16_t q;} where_a[GM_MAX_ARCHIVE];
-_Static_assert(sizeof where_a + GM_MAX_ARCHIVE * (sizeof(struct gm_game) + sizeof(uint16_t) + 44u /* arch_q */) < 110u * 1024u, "the 512 Archive entries must stay under 110 KiB (100 KiB before games carried a saved-list key)");
+_Static_assert(sizeof where_a + GM_MAX_ARCHIVE * (sizeof(struct gm_game) + sizeof(uint16_t) + 44u /* arch_q */) +
+  (GM_CATS * GM_MAX_ALL - 8u * 256u) * sizeof(uint16_t) /* the tab lists grown for the Archive (was 8 x 256) */ < 120u * 1024u,
+  "the 512 Archive entries, their tables and the wider tab lists must stay under 120 KiB (about 113 KiB measured)");
 static unsigned arch_slot(unsigned i){return i-(menu.count-menu.archive_count);}
 static int is_arch(unsigned i){return menu.games[i].cat==GM_CAT_ARCHIVE;}
 static struct sp_pack packs[GM_MAX_GAMES];

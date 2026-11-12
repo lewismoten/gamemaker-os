@@ -257,11 +257,13 @@ class ArchiveTab(unittest.TestCase):
     def test_512_archive_entries_stay_compact(self):
         # The loaded image has 8 MiB; an Archive entry is a short record (no company or blurb), not a full game slot.
         # Main tabs: 256 full slots (one struct gm_game and one 672-byte text each). Archive: at most 112 bytes a game
-        # and 2 in order[]. (main.c's _Static_assert budgets the rest, the where_a table, at under 100 KiB in all.)
+        # and 2 in order[]. (main.c's _Static_assert budgets the whole feature, tables included, under 120 KiB.)
         main = 256 * (112 + 672) + 256 * 2
         extra = c().gm_menu_bytes() - main
         self.assertLess(extra, 512 * (112 + 2) + 4096 + 9 * 768 * 2)  # + the nine tab lists (visible[][]) now sized for the Archive
-        self.assertLess(extra, 100 * 1024)
+        # the whole feature: that growth, main.c's where_a (48 bytes) and arch_q (44 bytes) tables and the widened tab lists (9 x 768, was 8 x 256)
+        total = 512 * (112 + 2) + 512 * (48 + 44) + (9 * 768 - 8 * 256) * 2
+        self.assertLess(total, 120 * 1024)
     def test_archive_entries_have_no_index_words(self):
         p = self.build(n=3)
         self.assertEqual(p.index('{"schema":"gmp-library","title":"Words","company":"Acme","blurb":"Text","category":["sandbox"],"locator":"A001"}'), 1)
@@ -299,6 +301,21 @@ class ArchiveTab(unittest.TestCase):
         before = c().gm_selected(q.m)
         for i in range(30): q.add_archive(f'A{i:02d}', f'A {i}', crc=100 + i)
         self.assertEqual(c().gm_selected(q.m), before)
+    def _late_alpha(self):
+        p = Page(); p.add('M', 'Main', crc=1); p.add_archive('Z', 'Zebra', crc=2); p.finish()
+        return p
+    def test_idle_admission_keeps_the_selected_game_in_virtual_tabs(self):
+        for tab in (6, 7, 8):
+            p = self._late_alpha(); p.key('tab'); self.assertEqual((p.tab, p.selected), (ARCHIVE, 1))
+            self.assertEqual(p.key(33), 10); c().gm_played(p.m, 1)   # Zebra is a favorite and recent
+            while p.tab != tab: p.key('tab')
+            if tab == 6: p.key('right')   # Search lists Main, Zebra: Zebra is second
+            self.assertEqual(p.selected, 1, f'tab {tab} setup')
+            self.assertTrue(p.add_archive('A', 'Alpha', crc=3))
+            self.assertEqual(p.selected, 1, f'tab {tab}: Alpha arrived and moved the selection')
+    def test_archive_only_boot_selects_the_first_usable_tab(self):
+        p = Page().finish(); self.assertTrue(p.add_archive('A', 'Alpha', crc=3))
+        self.assertEqual((p.tab, p.selected), (ARCHIVE, 0))
     def test_one_insert_touches_only_the_archive_tab(self):
         p = self.build(after_finish=True); sand = [p.c.gmos_tab_game(p.m, SANDBOX, i) for i in range(40)]
         p.add_archive('A000', 'Old 000', crc=1); self.assertEqual([p.c.gmos_tab_game(p.m, SANDBOX, i) for i in range(40)], sand)
