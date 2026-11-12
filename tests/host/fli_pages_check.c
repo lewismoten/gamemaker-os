@@ -10,13 +10,15 @@
 static struct gs_session s;
 static uint64_t beat_at, beat_gap_max, beats;
 static uint64_t sim;
+static unsigned kept; static char kept_line[160];
+static void keep(const char *l, uint64_t t) {(void)t; kept++; snprintf(kept_line, sizeof kept_line, "%s", l);}
 static void beat(void) {if (sim - beat_at > beat_gap_max) beat_gap_max = sim - beat_at; beat_at = sim; beats++;}
 static uint64_t clk(void) {return sim;}
 static void quiet(const char *l) {(void)l;}
 int main(int argc, char **argv) {
   assert(argc == 2);
   memset(&s, 0, sizeof s);
-  s.beat = beat; s.clock_ns = clk; s.say = quiet;
+  s.beat = beat; s.keep = keep; s.clock_ns = clk; s.say = quiet;
   sim = 1000000000ull; beat_at = sim;
   assert(gs_start(&s, host_read, argv[1], "YEAR2000.GAM", sim) == 0);
   uint64_t worst_wake = 0, jumps = 0; uint32_t frames_seen = 0, worst_frames = 0, flis = 0;
@@ -41,6 +43,7 @@ int main(int argc, char **argv) {
   printf("pages: %u starts, %u frames, worst %u per step, longest wake %llu ms, heartbeat gap max %llu ms, %llu beats\n",
          flis, frames_seen, worst_frames, (unsigned long long)(worst_wake / 1000000), (unsigned long long)(beat_gap_max / 1000000), (unsigned long long)beats);
   assert(frames_seen >= 48);
+  assert(kept >= 1 && strstr(kept_line, "GMOS fli ") && strstr(kept_line, " frames in ") && strstr(kept_line, "(ideal ")); /* each animation leaves its timing line for the card log */
   assert(jumps && beat_gap_max <= 500000000ull);
   puts("fli pages: bounded steps, heartbeat hook, 100 ms wakes PASS");
   return 0;

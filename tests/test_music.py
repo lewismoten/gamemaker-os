@@ -17,6 +17,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class Music(unittest.TestCase):
+    def test_save_name_typing_never_toggles_the_mute(self):
+        """TV session 2026-11-12: an M typed in a save slot's name silently muted the song for the rest of the game
+        (rendering went on, nothing was heard). The toggle must not see keys while the save/load screen is up, and the
+        card's log must say when the mute flips and carry it in the 5 s audio line."""
+        source = (ROOT / 'src/main.c').read_text()
+        call = re.search(r'^\s*if \((.*)play_music_event\(&ev\[i\]\)\) continue;', source, re.M)
+        self.assertIsNotNone(call)
+        self.assertIn('!sp_on &&', call.group(1))
+        self.assertIn('"GMOS music off (M)"', source)
+        self.assertIn('"GMOS audio game: mute "', source)
+
     def test_keyboards_and_device_failures(self):
         source = (ROOT / 'src/main.c').read_text()
         sdk = (ROOT / 'sdk/include/sandbox/syscall.h').read_text()

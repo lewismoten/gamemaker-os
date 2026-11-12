@@ -163,6 +163,7 @@ static int begin_card(struct gs_session *s, const struct gs_card *c, uint64_t no
     return GS_DRAW;
   }
   if (fli) {
+    s->fli_ask_ns = s->clock_ns ? s->clock_ns() : 0;
     int32_t n = s->read(s->user, c->name, file, sizeof file);
     if (s->beat) s->beat();
     if (n < 0 || gp_fli_open(&s->fli, file, (uint32_t)n)) {say2(s, "page not an animation: ", c->name); next_from(s, now); return r;}
@@ -173,6 +174,7 @@ static int begin_card(struct gs_session *s, const struct gs_card *c, uint64_t no
     say2(s, "page ", line);
     /* DOS starts the animation's retraces once the file is loaded: a slow read must not leave every frame owed at once. */
     if (s->clock_ns) {uint64_t c0 = s->clock_ns(); if (c0 > now) now = c0;}
+    s->fli_go_ns = now; s->fli_first_ns = 0;
     s->stage = GS_FLI; s->t = now; s->fli_frame = 0; s->pause = pause; s->showing_card = 1;
     return r;
   }
@@ -259,9 +261,17 @@ static int fli_step(struct gs_session *s, uint64_t now) {
     uint32_t w = s->fli.w < GP_W ? s->fli.w : GP_W, h = s->fli.h < GP_H ? s->fli.h : GP_H;
     for (uint32_t y = 0; y < h; y++) copy(s->px + y * GP_W, canvas + y * s->fli.w, w);
     s->fli_frame++; r = GS_DRAW;
+    if (s->fli_frame == 1 && s->clock_ns) s->fli_first_ns = s->clock_ns();
   }
   uint64_t end = s->t + retrace((uint64_t)s->fli.frames * s->fli.speed);
   if (s->fli_frame >= s->fli.frames && now >= end) {
+    if (s->clock_ns && s->keep && s->fli_go_ns) { /* the card's log: how long the animation took against its own clock, and what the file read cost (TV session 2026-11-12: "FLIs slow at the start") */
+      char line[160], *q = put(line, "GMOS fli "); q = put(q, s->now_card->name); q = put(q, ": read "); q = num(q, (int32_t)((s->fli_go_ns - s->fli_ask_ns) / 1000000u));
+      uint64_t done = s->clock_ns(), ideal = retrace((uint64_t)s->fli.frames * s->fli.speed);
+      q = put(q, " ms, first frame +"); q = num(q, (int32_t)(s->fli_first_ns > s->fli_go_ns ? (s->fli_first_ns - s->fli_go_ns) / 1000000u : 0));
+      q = put(q, " ms, "); q = num(q, (int32_t)s->fli.frames); q = put(q, " frames in "); q = num(q, (int32_t)((done - s->fli_go_ns) / 1000000u));
+      q = put(q, " ms (ideal "); q = num(q, (int32_t)(ideal / 1000000u)); put(q, " ms)"); s->keep(line, done); s->fli_go_ns = 0;
+    }
     if (s->now_card->list) copy(s->listpal, s->pal, 768); /* GetAllPal(NewCols) */
     s->shown++;
     pause_from(s, s->pause, end);
