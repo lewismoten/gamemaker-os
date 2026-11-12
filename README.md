@@ -16,7 +16,7 @@ Leave a game on its details view for 3 seconds and its demo plays in the picture
 
 The game player shares the play core with [Game-Maker Pocket](https://github.com/lewismoten/gamemaker-pocket), the Pocket Player in Game-Maker: Sandbox Edition: `third_party/gmcore` is a copy pinned by commit (see [docs/play.md](docs/play.md)).
 
-The first target is a Raspberry Pi Zero W v1.1 with a Waveshare 2.13 inch e-Paper HAT (V4) as a status display, connected to a computer by USB for development. Optional [e-ink status](docs/build.md#optional-e-ink-status-abi-19) is linked into `GMOS.ELF`: a loading page, library count, game title and F5 `SAVING` status (ABI 1.9+; **hardware-untested**).
+The first target is a Raspberry Pi Zero W v1.1 with a Waveshare 2.13 inch e-Paper HAT (V4) as a status display, connected to a computer by USB for development. Boards, displays, hubs and keyboards tried so far are in [tested hardware](docs/tested-hardware.md). Optional [e-ink status](docs/build.md#optional-e-ink-status-abi-19) is linked into `GMOS.ELF`: a loading page, library count, game title and F5 `SAVING` status (ABI 1.9+; **hardware-untested**).
 
 Press H on the grid or details view for [Top Ten](docs/saves.md). During a level, F5 opens Save Game and F6 opens Load Game, with ten named slots under `/OS/SAVES`; see [save/load controls and limits](docs/game-save.md). Saving needs ABI 1.7+. High scores and live save/load are linked; real-card writes and DOS runtime interchange remain **hardware-untested**.
 
