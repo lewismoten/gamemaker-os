@@ -91,6 +91,13 @@ int main(void) {
   assert(menu.settings.screen_off == 1 && menu.settings.power_saving == 1);
   stored_n = 3;
   assert(gm_settings_load(&menu.settings, &ops) == SAVE_EINVAL);
+  /* UI sounds: saved with the others; a file from before the setting (11 bytes) loads with sounds on. */
+  memcpy(stored, "GMOS 1\n1 1\n", 11); stored_n = 11;
+  boot(1, 11); menu.settings.ui_sounds = 0; assert(!gm_settings_save(&menu.settings, &ops) && stored_n == 13);
+  boot(1, 11); assert(menu.settings.ui_sounds == 0);
+  memcpy(stored, "GMOS 1\n2 0\n", 11); stored_n = 11;
+  assert(!gm_settings_load(&menu.settings, &ops) && menu.settings.ui_sounds == 1 && menu.settings.screen_off == 2);
+  puts("UI sounds setting persists; an older file loads with sounds on PASS");
   puts("atomic save failure and invalid settings defaults PASS");
   return 0;
 }

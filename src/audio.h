@@ -8,6 +8,7 @@
 #include "cmf.h"
 #include "pcspeaker.h"
 #include "vocplay.h"
+#include "uisound.h"
 #define AU_LOW_FRAMES 12000u  /* 250 ms floor: 150 ms stall + one 55 ms tick + 45 ms synth/scheduling margin */
 #define AU_FILL_FRAMES 15000u /* and top up to this many (312 ms; the kernel ring holds 16384, an older one 4096) */
 #define AU_VOL_MAX 65535u     /* full uint16 gain range, Q15; saturated after mixing */
@@ -30,7 +31,7 @@ struct au_sink {
   uint64_t (*now)(void *user); /* monotonic ns, for the CPU figures */
 };
 struct au {
-  struct opl opl; struct cmf cmf; struct pcspeaker pc; struct vp vp;
+  struct opl opl; struct cmf cmf; struct pcspeaker pc; struct vp vp; struct ui_voice ui; /* the menu blips: after the master volume, so a silent library still clicks */
   /* Opens a clip of the game that is playing: fills io (a pread over its file, or its bytes in memory) and returns 0, or -1. Set by the host. */
   int (*voc_open)(const char *name, struct vp_io *io);
   char want_voc[AU_NAME_MAX + 1]; uint8_t voc_pending;
@@ -60,6 +61,8 @@ void au_beep(struct au *a, const char *snd, int tune);
 void au_voc(struct au *a, const char *voc);
 /* A song change or stop fades the playing song out first (au_service does the switch at silence), then fades the new one in. */
 void au_stop(struct au *a);
+/* A menu blip (GM_CUE_*, uisound.h): starts at once or is dropped; never waits, never touches the song or a clip. 1 when it started. */
+int au_ui(struct au *a, int cue);
 /* At once, no fade: the song, the speaker and any request stop, the chip is reset and the volume is 0 (what the ring already holds still plays). */
 void au_silence(struct au *a);
 /* Starts the song already read into the music buffer (n bytes) and fades it in; 0, or -1 when it is refused. */

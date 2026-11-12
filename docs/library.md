@@ -32,7 +32,7 @@ metadata already in memory; typing never opens game assets.
   tabs. **PgUp/PgDn**, Home and End still work.
 - **Back/Esc** on cards opens **Options**, including with an empty library.
   Up from tabs also opens it. Choose **Quit** to exit; **Q** remains a shortcut.
-  Options also exposes Favorite, High scores, Music, Open by folder name and
+  Options also exposes Favorite, High scores, Music, Open by folder name, UI sounds and
   saved [Screen off after / Power saving](power.md) controls.
 
 The existing development command is unchanged: **/**, exact folder alias, **Enter**
@@ -56,7 +56,7 @@ including the separate JS picker and sample apps. CEC delivery still needs a Pi 
 | Games/category tabs | Up from the current page's top row, Left/Right tab, OK/Down enter; arrows cross page boundaries; Back on cards or Up from tabs opens Options | Tab/Shift+Tab, brackets, Home/End, PgUp/PgDn; Q quits |
 | Search | Enter tab to show keyboard; arrows choose letters/digits/Space/Delete/Clear/Done, OK types and filters live; Done browses results, OK opens Details; Back clears then returns to tabs | Physical typing hides keyboard, Backspace edits; slash opens exact folder alias |
 | Favorites/Recent | Same tabs, cards and paging, including empty tabs; Details retains game identity after unstarring | F favorites, Recent updates on actual play/load |
-| Options | Arrows select Back/Favorite/High scores/Music/Open by folder name/Quit/Screen off after/Power saving; OK activates, Back cancels | Shortcuts on cards: F/H/M/Q and slash |
+| Options | Arrows select Back/Favorite/High scores/Music/Open by folder name/Quit/UI sounds/Screen off after/Power saving; OK activates, Back cancels | Shortcuts on cards: F/H/M/Q and slash |
 | Open by folder name | Options opens the shared keyboard; Done opens details for an exact DOS alias (up to eight characters); Back cancels | Slash, type alias, Enter; Shift+Enter also plays |
 | Details | Arrows select Play/Back/Favorite/High scores/Music, OK presses; Back returns to cards | F/H/M, Space, Tab/Shift+Tab |
 | Top Ten list | OK or Back returns; existing 30-second timeout remains | Any key dismisses |

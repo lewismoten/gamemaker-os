@@ -250,7 +250,7 @@ static int search_event(struct gm_menu *m, uint16_t code, int32_t value) {
   }
   m->pos[GM_CAT_SEARCH]=0;gm_refresh(m);return GM_MOVED;
 }
-int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
+static int event_plain(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
   if (type == 0 && code == 3) {m->options_active = m->open_keyboard = m->open_active = m->search_active = m->tabs_focus = m->search_keyboard = 0; m->message[0] = 0; return GM_RESYNC;}  /* EV_SYN, SYN_DROPPED */
   if (type != 1) return GM_NONE;
   if (code == 42 || code == 54) {m->shift = value != 0; return GM_NONE;} /* KEY_LEFTSHIFT, KEY_RIGHTSHIFT */
@@ -275,6 +275,7 @@ int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
     if(option==GM_OPT_SCORES)return gm_selected(m)?GM_SCORES:GM_MOVED;
     if(option==GM_OPT_MUSIC) {m->background_music=!m->background_music;return GM_MUSIC;}
     if(option==GM_OPT_QUIT)return GM_QUIT;
+    if(option==GM_OPT_SOUNDS) {m->options_active=1;m->settings.ui_sounds=!m->settings.ui_sounds;return GM_SETTINGS;}
     if(option==GM_OPT_OPEN) {
       m->search_active=m->tabs_focus=m->search_keyboard=0;
       m->open_active=m->open_keyboard=1;m->keyboard_pos=0;m->open_dir[0]=m->message[0]=0;
@@ -328,4 +329,44 @@ int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
   if(code==1) {m->options_active=1;m->option=0;return GM_MOVED;}
   if (code == 16) return GM_QUIT;   /* Q quits; Back/Esc opens Options. */
   return GM_NONE;
+}
+
+/* What a keypress did, as a UI sound: a state snapshot before and after, so every path through event_plain is covered. */
+struct snap {unsigned tab, view, button, option, pos, kpos; int opts, open, search, tabs, kbd;};
+static struct snap snap_of(const struct gm_menu *m) {
+  struct snap s = {m->tab, m->view, m->button, m->option, m->pos[m->tab], m->keyboard_pos, m->options_active, m->open_active,
+                   m->search_active, m->tabs_focus, m->search_keyboard || m->open_keyboard};
+  return s;
+}
+static int full_msg(const char *t) {const char *k = "Favorites are full"; while (*k && *t == *k) {t++; k++;} return !*k;}
+static int arrow(uint16_t code) {return code == 103 || code == 105 || code == 106 || code == 108;}
+static int cue_of(const struct gm_menu *m, const struct snap *a, int r, uint16_t code, int32_t value) {
+  struct snap b = snap_of(m);
+  if (code == 50 || r == GM_QUIT || r == GM_RESYNC) return GM_CUE_NONE;        /* M only toggles music */
+  if (r == GM_OPEN_MISSING) return GM_CUE_CANT;
+  if (r == GM_SETTINGS || r == GM_CHOSEN || r == GM_SCORES || r == GM_FAVORITE || r == GM_MUSIC || r == GM_OPEN_FOUND || r == GM_OPEN_PLAY)
+    return GM_CUE_SELECT;
+  if (r == GM_MOVED) {
+    if (value == 1 && full_msg(m->message)) return GM_CUE_CANT;
+    if (value == 1 && code == 28 && a->opts && !b.opts && !gm_selected(m) && (a->option == GM_OPT_FAVORITE || a->option == GM_OPT_SCORES)) return GM_CUE_CANT;
+    if (b.tab != a->tab) return GM_CUE_TAB;
+    if (a->view == GM_DETAILS && b.view == GM_GRID) return GM_CUE_BACK;
+    if (a->view == GM_GRID && b.view == GM_DETAILS) return GM_CUE_SELECT;
+    if (a->opts && !b.opts) return code == 28 && a->option == GM_OPT_OPEN ? GM_CUE_SELECT : GM_CUE_BACK;
+    if (!a->opts && b.opts) return GM_CUE_SELECT;
+    if (code == 1 && ((a->open && !b.open) || (a->search && (!b.search || a->kbd)))) return GM_CUE_BACK;
+    if (code == 28 && a->kbd) return GM_CUE_SELECT;                              /* a key or Done on the on-screen keyboard */
+    if (b.option != a->option || b.button != a->button || b.pos != a->pos || b.kpos != a->kpos || b.tabs != a->tabs) return GM_CUE_MOVE;
+    return GM_CUE_NONE;                                                           /* typing: no sound */
+  }
+  if (r == GM_NONE && value == 1 && arrow(code) && !a->opts) {
+    if (b.pos == a->pos && b.button == a->button && b.tabs == a->tabs && b.kpos == a->kpos && b.tab == a->tab) return GM_CUE_CANT;
+  }
+  return GM_CUE_NONE;
+}
+int gm_event(struct gm_menu *m, uint16_t type, uint16_t code, int32_t value) {
+  struct snap a = snap_of(m);
+  int r = event_plain(m, type, code, value);
+  m->cue = type == 1 && m->settings.ui_sounds ? cue_of(m, &a, r, code, value) : GM_CUE_NONE;
+  return r;
 }

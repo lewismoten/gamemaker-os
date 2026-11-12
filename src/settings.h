@@ -4,6 +4,7 @@
 struct gm_settings {
   unsigned screen_off; /* 0: 5 min, 1: 10 min, 2: 30 min, 3: Never */
   unsigned power_saving;
+  unsigned ui_sounds;  /* 0 off, 1 on (default): the menu blips (uisound.h) */
 };
 void gm_settings_defaults(struct gm_settings *s);
 int gm_settings_load(struct gm_settings *s, const struct save_ops *o);

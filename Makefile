@@ -25,7 +25,7 @@ PFLAGS := $(ARCH) $(C_WARNINGS) -DGMOS_SCAN_VERBOSE=$(SCAN_VERBOSE) -std=c11 -Is
 # System includes keep vendor header diagnostics out of the project warning policy.
 PXXFLAGS := $(ARCH) $(CXX_WARNINGS) -std=c++17 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -Isrc -isystem third_party/gmcore
 LFLAGS := -nostdlib -Tsdk/lib/sandbox.ld -Wl,-z,noexecstack -Wl,--build-id=none -Wl,-z,max-page-size=4096
-CORE := src/eink_page.c src/einkart_data.c src/opl.c src/opl_tables.c src/cmf.c src/audio.c src/vocplay.c src/pcspeaker.c src/ostune_data.c src/asset_scratch.c src/zip.c src/gam.c src/menu.c src/collections.c src/settings.c src/library.c src/scan_cache.c src/thumb.c src/view.c src/font_data.c src/gif.c src/fli.c src/text.c src/font8_data.c src/session.c src/dosmenu.c src/sound.c src/hiscore.c src/savefile.c src/hiscreen.c src/hisload.c src/saveplay.c src/bootart.c src/bootart_data.c src/headart_data.c
+CORE := src/eink_page.c src/einkart_data.c src/opl.c src/opl_tables.c src/cmf.c src/audio.c src/uisound.c src/vocplay.c src/pcspeaker.c src/ostune_data.c src/asset_scratch.c src/zip.c src/gam.c src/menu.c src/collections.c src/settings.c src/library.c src/scan_cache.c src/thumb.c src/view.c src/font_data.c src/gif.c src/fli.c src/text.c src/font8_data.c src/session.c src/dosmenu.c src/sound.c src/hiscore.c src/savefile.c src/hiscreen.c src/hisload.c src/saveplay.c src/bootart.c src/bootart_data.c src/headart_data.c
 PLAYCORE := src/game.cpp
 GMPCORE := src/gmp.cpp src/asset_scratch.h third_party/gmcore/gmsmall.h third_party/puff/puff.h
 GMCORE := third_party/gmcore/gmcore.h third_party/gmcore/gmmon.h
@@ -152,6 +152,11 @@ $(HOSTDIR)/awake_check: src/awake.c src/awake.h src/session.h tests/host/awake_c
 host: $(HOSTDIR)/settings_check
 $(HOSTDIR)/settings_check: src/awake.c tests/host/settings_check.c $(HOSTDIR)/libgmos.so $(wildcard src/*.h) $(wildcard sdk/include/sandbox/*.h) Makefile | $(HOSTDIR)
 	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -DHOST_TEST -Isdk/include -Isrc src/awake.c tests/host/settings_check.c $(HOSTDIR)/libgmos.so -o $@
+
+# Menu UI sounds: cues per action, the off switch, burst bounds.
+host: $(HOSTDIR)/uisound_check
+$(HOSTDIR)/uisound_check: tests/host/uisound_check.c $(HOSTDIR)/libgmos.so $(wildcard src/*.h) Makefile | $(HOSTDIR)
+	$(HOSTCC) $(HOSTFLAGS) -std=c11 $(C_WARNINGS) -Isrc tests/host/uisound_check.c $(HOSTDIR)/libgmos.so -o $@
 
 # Production input reader with a fake event device; no display or audio.
 host: $(HOSTDIR)/input_check

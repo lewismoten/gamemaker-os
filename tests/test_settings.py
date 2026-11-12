@@ -13,4 +13,4 @@ class Settings(unittest.TestCase):
         host = ROOT / os.environ.get('GMOS_HOST', 'build/host')
         result = subprocess.run([str(host / 'settings_check')],
                                 capture_output=True, text=True, check=True)
-        self.assertEqual(result.stdout.count('PASS'), 3, result.stdout)
+        self.assertEqual(result.stdout.count('PASS'), 4, result.stdout)

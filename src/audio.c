@@ -11,6 +11,7 @@ void au_init(struct au *a, uint8_t *music, uint32_t music_cap) {
 void au_music(struct au *a, const char *cmf) {copy(a->want_music, cmf); a->music_pending = 1;}
 void au_beep(struct au *a, const char *snd, int tune) {copy(a->want_snd, snd); a->want_tune = tune; a->beep_pending = 1;}
 void au_voc(struct au *a, const char *voc) {vp_stop(&a->vp); copy(a->want_voc, voc); a->voc_pending = a->want_voc[0] != 0;}
+int au_ui(struct au *a, int cue) {return ui_start(&a->ui, cue);}
 void au_stop(struct au *a) {a->want_music[0] = 0; a->music_pending = 1; a->beep_pending = 0; pc_stop(&a->pc); vp_stop(&a->vp); a->voc_pending = 0;}
 void au_volume(struct au *a, uint32_t target) {a->vol_target = target > AU_VOL_MAX ? AU_VOL_MAX : target;}
 void au_silence(struct au *a) {
@@ -75,10 +76,13 @@ void au_render(struct au *a, int16_t *out, unsigned n) {
     for (unsigned k = 0; k < n; k++) acc[k] += sp[k * 2];
   }
   vp_mix(&a->vp, acc, n);
+  int32_t ub[AU_CHUNK];
+  for (unsigned k = 0; k < n; k++) ub[k] = 0;
+  ui_mix(&a->ui, ub, n);
   for (unsigned k = 0; k < n; k++) {
     int32_t v = acc[k];
     if (a->vol != a->vol_target) a->vol = a->vol < a->vol_target ? a->vol + 1 : a->vol - 1;
-    v = (int32_t)((int64_t)v * a->vol >> 15);
+    v = (int32_t)((int64_t)v * a->vol >> 15) + ub[k];
     if (v > 32767) v = 32767;
     if (v < -32768) v = -32768;
     out[k * 2] = out[k * 2 + 1] = (int16_t)v;

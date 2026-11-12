@@ -407,7 +407,7 @@ static void audio_poll(void) {
   if (aud_on && !aud_busy) {
     /* Leave the newly opened device unstarted while the library is silent.
        Once started, keep feeding silence between sounds: the kernel counts every short drain. */
-    if (!aud.frames && !aud.cmf.playing && !aud.pc.active && aud.vp.state != VP_PLAYING) return;
+    if (!aud.frames && !aud.cmf.playing && !aud.pc.active && aud.vp.state != VP_PLAYING && !aud.ui.active) return;
     aud_busy = 1;
     if (au_pump(&aud, &au_sink) < 0) audio_disable();
     aud_busy = 0;
@@ -1041,6 +1041,7 @@ static int gmos_main(const sbx_startup *start) {
     for (uint32_t i = 0; i < count; i++) {
       if (!gi_accept(&list_keys, &ev[i], clock_ns())) continue;
       int a = gm_event(&menu, ev[i].type, ev[i].code, ev[i].value);
+      if (menu.cue && aud_on && !demo_on) au_ui(&aud, menu.cue); /* library, details, Options only: a game has its own loop */
       if (a == GM_OPEN_FOUND || a == GM_OPEN_MISSING || a == GM_OPEN_PLAY) {
         p = put(line, "GMOS open "); p = put(p, menu.open_dir);
         put(p, a == GM_OPEN_MISSING ? ": not found" : ": found"); say(line);

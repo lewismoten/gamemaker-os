@@ -10,6 +10,7 @@
 #include "library.h"
 #include "collections.h"
 #include "settings.h"
+#include "uisound.h"
 #define GM_MAX_GAMES 256u
 #define GM_COLS 4u
 #define GM_PAGE 8u /* cards on a page: four across, two down */
@@ -26,7 +27,7 @@ struct gm_game {
   uint32_t crc; int32_t year, course;
   uint8_t cat; int8_t pic;          /* pic: 0 not looked for yet, 1 found, -1 none */
 };
-enum {GM_OPT_BACK, GM_OPT_FAVORITE, GM_OPT_SCORES, GM_OPT_MUSIC, GM_OPT_OPEN, GM_OPT_QUIT, GM_OPT_SCREEN, GM_OPT_POWER, GM_OPTIONS};
+enum {GM_OPT_BACK, GM_OPT_FAVORITE, GM_OPT_SCORES, GM_OPT_MUSIC, GM_OPT_OPEN, GM_OPT_QUIT, GM_OPT_SOUNDS, GM_OPT_SCREEN, GM_OPT_POWER, GM_OPTIONS};
 struct gm_menu {
   struct gm_game games[GM_MAX_GAMES];
   unsigned count;
@@ -46,6 +47,7 @@ struct gm_menu {
   int options_active, open_keyboard; unsigned option;
   int open_active;                  /* slash starts a folder-name request */
   char open_dir[10];                /* ninth character makes an overlong name fail */
+  int cue;                          /* the last gm_event's UI sound (GM_CUE_*, uisound.h); GM_CUE_NONE when UI sounds are off */
   char message[GM_MESSAGE_MAX + 1]; /* footer line; empty shows the key help */
 };
 enum {GM_NONE, GM_MOVED, GM_CHOSEN, GM_QUIT, GM_RESYNC, GM_SCORES, GM_MUSIC, GM_OPEN_FOUND, GM_OPEN_MISSING, GM_OPEN_PLAY, GM_FAVORITE, GM_SETTINGS}; /* GM_SCORES: H, the selected game's Top Ten */
