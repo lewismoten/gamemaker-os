@@ -341,4 +341,31 @@ static void slice_limit(void) {
   au_init(&a, music_buf, sizeof music_buf); sl_calls = 0; sl_t = 0; sl_frames = 0; au_pump(&a, &sink);
   CHECK(sl_frames == 2 * AU_CHUNK, "synthesis passed the limit: %u frames rendered", sl_frames);
 }
-int main(void) {speaker(); ticks(); fades(); hush(); double_stop(); huge_gap(); slice_limit(); slow_frames(); feeding(); latency(); capacities(); retries(); archive_with_music(); stalled_drain(); volumes(); if (!fails) puts("audio ok"); return fails != 0;}
+/* A song loaded inside a hush's 200 ms window ends that hush: a later stop is a real stop, not ignored behind a stale release. */
+static void stale_hush(void) {
+  static struct au a; static int16_t out[AU_CHUNK * 2];
+  FILE *f = fopen("tests/data/syn.cmf", "rb"); if (!f) {CHECK(0, "no syn.cmf"); return;}
+  cmf_len = (uint32_t)fread(cmf_file, 1, sizeof cmf_file, f); fclose(f);
+  au_init(&a, music_buf, sizeof music_buf);
+  au_music(&a, "S.CMF"); au_service(&a, reader, 0); for (unsigned i = 0; i < 10; i++) au_render(&a, out, AU_CHUNK);
+  au_music(&a, ""); au_service(&a, reader, 0); CHECK(a.hush_left > 0 && !a.cmf.playing, "no hush");
+  au_music(&a, "S.CMF"); au_service(&a, reader, 0); CHECK(a.cmf.playing && !a.hush_left, "a song inside the window keeps hush_left %u", a.hush_left);
+  au_music(&a, ""); au_service(&a, reader, 0); CHECK(!a.cmf.playing && a.hush_left > 0, "the second stop was ignored");
+}
+/* The 5 s log's peaks tell a silent game from a quiet one: the song's own peak is 0 when muted or at gain 0 while the counters run. */
+static void peaks(void) {
+  static struct au a; static int16_t out[AU_CHUNK * 2 * 20];
+  FILE *f = fopen("tests/data/syn.cmf", "rb"); if (!f) {CHECK(0, "no syn.cmf"); return;}
+  cmf_len = (uint32_t)fread(cmf_file, 1, sizeof cmf_file, f); fclose(f);
+  au_init(&a, music_buf, sizeof music_buf);
+  au_music(&a, "S.CMF"); au_service(&a, reader, 0);
+  for (unsigned i = 0; i < 20; i++) au_render(&a, out + i * AU_CHUNK * 2, AU_CHUNK);
+  CHECK(a.music_peak > 100 && a.peak >= a.music_peak, "song peak %u / %u", a.music_peak, a.peak);
+  a.peak = a.music_peak = 0; a.music_muted = 1;
+  for (unsigned i = 0; i < 20; i++) au_render(&a, out + i * AU_CHUNK * 2, AU_CHUNK);
+  CHECK(a.cmf.playing && a.music_peak == 0 && a.peak == 0, "a muted song reports a peak %u/%u", a.music_peak, a.peak);
+  a.music_muted = 0; a.vol = a.vol_target = 0;
+  for (unsigned i = 0; i < 20; i++) au_render(&a, out + i * AU_CHUNK * 2, AU_CHUNK);
+  CHECK(a.cmf.playing && a.music_peak == 0 && a.peak == 0, "a song at gain 0 reports a peak %u/%u", a.music_peak, a.peak);
+}
+int main(void) {stale_hush(); peaks(); speaker(); ticks(); fades(); hush(); double_stop(); huge_gap(); slice_limit(); slow_frames(); feeding(); latency(); capacities(); retries(); archive_with_music(); stalled_drain(); volumes(); if (!fails) puts("audio ok"); return fails != 0;}
