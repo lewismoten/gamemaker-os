@@ -34,6 +34,13 @@ int main(void) {
   assert(written_frames - wrote <= AU_FILL_FRAMES);
   for (int i = 0; i < 100; i++) {au_pump(&au, &sink); tick(10000000ull);}
   assert(au.vol == AU_VOL_ONE && au.cmf.playing);                                /* back at full volume within a second */
+  /* a key wakes the sounds first: a menu sound asked right after au_sleep(0) is heard, one asked while asleep is not */
+  au_sleep(&au, 1); au_sleep(&au, 0);
+  uint64_t before = written_frames; au_ui(&au, 1);
+  for (int i = 0; i < 5; i++) {assert(au_pump(&au, &sink) >= 0); tick(10000000ull);}
+  assert(written_frames > before);
+  /* the song's clocks stand still for the dark time: a deadline moves later by exactly that, and 0 stays unset */
+  assert(au_shift_dark(1000, 200, 700) == 1500 && au_shift_dark(0, 200, 700) == 0 && au_shift_dark(1000, 700, 200) == 1000);
   puts("sleep stops the synth and wake resumes it PASS");
   return 0;
 }

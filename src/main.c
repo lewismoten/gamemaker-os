@@ -547,7 +547,7 @@ static void audio_log(const char *what) { /* the kernel's counters, and what the
   p = put(p, " us, low water "); p = num(p, aud.low_frames);
   put(p, " frames; since the last line"); say(line);
   if (what[0] == 'g') { /* the card's copy is cut at 160 bytes, so it carries the fields that explain a silent game first: the mute flag, the song's state and the volume */
-    char brief[160], *b = put(brief, "GMOS audio game: mute "); b = num(b, aud.music_muted); b = put(b, " song "); b = num(b, aud.cmf.playing);
+    char brief[192], *b = put(brief, "GMOS audio game: mute "); b = num(b, aud.music_muted); b = put(b, " song "); b = num(b, aud.cmf.playing);
     b = put(b, " vol "); b = num(b, aud.vol >> 8); b = put(b, "/"); b = num(b, aud.vol_target >> 8); b = put(b, " songs "); b = num(b, aud.music_loads); b = put(b, " vocs "); b = num(b, aud.vocs);
     b = put(b, " peak "); b = num(b, aud.peak); b = put(b, "/"); b = num(b, aud.music_peak); b = put(b, " q "); b = num(b, (uint32_t)i.queued_frames); b = put(b, " under "); b = num(b, (uint32_t)i.underruns); b = put(b, " gap "); b = num(b, (uint32_t)(aud.gap_max_ns / 1000u));
     b = put(b, " read "); b = num(b, (uint32_t)(aud.svc_max_ns / 1000u)); b = put(b, " low "); b = num(b, aud.low_frames); put(b, " us"); gl_add(brief, t);
@@ -610,7 +610,7 @@ static void audio_take(void) {
   bg_leave(); aud.asleep = 0; aud.want_music[0] = 0; aud.music_muted = 0; aud.vol = aud.vol_target = AU_VOL_ONE; aud.music = pic_px; aud.music_cap = sizeof pic_px;
 }
 /* Back to the list: hard stop (every channel keyed off, chip reset), the tune buffer back, the cycle restarts after a pause. */
-static int bg_state; static uint64_t bg_t0, bg_next; static uint32_t bg_fail, bg_loops0, bg_picks, bg_seed = 12345u;
+static int bg_state; static uint64_t bg_t0, bg_next, dark_since; static uint32_t bg_fail, bg_loops0, bg_picks, bg_seed = 12345u;
 static void bg_return(const char *why) {
   aud.music_muted = 0; aud.want_music[0] = 0;
   au_set_playing(&aud, 0); au_silence(&aud); aud.music = bgm_buf; aud.music_cap = sizeof bgm_buf; bg_state = 0; bg_next = clock_ns() + 800000000ull; doing = "list";
@@ -626,6 +626,11 @@ static void bg_leave(void) {
 }
 /* The cycle: the OS's own tune every third pick, else a random game's first level song (its menu song if the level has none).
    One try a call, so the list stays responsive; the library index holds no secret game. */
+/* Awake again (the screen lit, or a key arrived while dark): menu sounds work at once, and the cycle's clocks stand still for the dark time. */
+static void bg_undark(void) {
+  au_sleep(&aud, 0);
+  if (dark_since) {uint64_t now = clock_ns(); bg_t0 = au_shift_dark(bg_t0, dark_since, now); bg_next = au_shift_dark(bg_next, dark_since, now); dark_since = 0;}
+}
 static void bg_tick(void) {
   if (!aud_on || demo_on || !menu.background_music) return;
   uint64_t now = clock_ns();
@@ -1082,7 +1087,8 @@ static int gmos_main(const sbx_startup *start) {
     heartbeat();
     if (audio_note_tick()) show_list(px);
     /* The screen is blanked (power saving): the music and menu sounds stop with it, no synthesis runs, and they pick up again on any key. */
-    int dark = awake_screen_dark(); au_sleep(&aud, dark);
+    int dark = awake_screen_dark();
+    if (dark) {if (!dark_since) dark_since = clock_ns(); au_sleep(&aud, 1);} else bg_undark();
     if (aud_on && !dark) {
       audio_service(demo_on ? game.read : 0, game.user); if (!demo_on) bg_tick();
       if (clock_ns() - list_log >= 10000000000ull) {list_log = clock_ns(); audio_log(demo_on ? "demo 10 s" : "list 10 s");}
@@ -1115,7 +1121,7 @@ static int gmos_main(const sbx_startup *start) {
       continue;
     }
     if (s) {sbx_close(in_fd); have_input = 0; gi_reset(&list_keys); menu.shift = 0; say(s == -SBX_ENODEV ? "GMOS input removed" : "GMOS input error"); continue;}
-    demo_idle = clock_ns();
+    demo_idle = clock_ns(); bg_undark(); /* a key wakes the sounds before any modal the key opens */
     {int stopped = 0; for (uint32_t i = 0; i < count; i++) if (demo_on && gs_demo_stops(ev[i].type, ev[i].value)) {demo_stop("a key"); stopped = 1; break;} if (stopped) show_list(px);}
     int redraw = 0, action = GM_NONE, save_favorite = 0, music_changed = 0;
     for (uint32_t i = 0; i < count; i++) {
