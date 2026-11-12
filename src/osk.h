@@ -18,6 +18,13 @@ static inline const char *osk_label(unsigned k, char letter[2]) {
   if(k>=36)return actions[k-36];
   letter[0]=OSK_KEYS[k];letter[1]=0;return letter;
 }
+/* The key a typed character lands on (letters in either case, Space, - and _), or -1: a physical keyboard highlights it. */
+static inline int osk_find(int c) {
+  if(c>='a' && c<='z')c-=32;
+  for(unsigned k=0;k<36;k++)if(OSK_KEYS[k]==c)return (int)k;
+  return c==' '?36:c=='-'?40:c=='_'?41:-1;
+}
+static inline void osk_select(unsigned *pos, int c) {int k=osk_find(c);if(k>=0)*pos=(unsigned)k;}
 static inline void osk_edit(char *text, unsigned cap, int c) {
   unsigned n=0;while(text[n])n++;
   if(c==8) {if(n)text[n-1]=0;}

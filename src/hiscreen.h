@@ -15,7 +15,7 @@ enum {HS_NAME, HS_TABLE};
 enum {HS_DRAW = 1, HS_COMMIT = 2, HS_DONE = 4};
 struct hs_screen {
   int stage, place, shift, ctrl, cur_on;
-  int keyboard; unsigned keyboard_pos;
+  int keyboard, typed; unsigned keyboard_pos; /* typed: the last key was a physical one, so Enter accepts (the on-screen keyboard stays up) */
   struct his_table t;
   int32_t score;                  /* the game's score, or -1 when opened from the menu */
   char name[HIS_NAME_MAX + 1];

@@ -91,9 +91,13 @@ int main(int argc, char **argv) {
   hs_draw(&h, px, pal, 0, 0); ppm(out, "name-empty", px, pal);
   type(&h, "Doc Leo"); assert(!strcmp(h.name, "Doc Leo"));
   key(&h, 14); key(&h, 14); assert(!strcmp(h.name, "Doc L")); /* Backspace */
-  key(&h, 105); assert(!strcmp(h.name, "Doc ")); /* Left erases too, as GGet */
-  type(&h, "Leo"); key(&h, 106); /* Right does nothing */
-  assert(!strcmp(h.name, "Doc Leo") && h.stage == HS_NAME);
+  key(&h, 14); assert(!strcmp(h.name, "Doc ")); /* Left/Right now move the on-screen keyboard (it stays up while typing) */
+  assert(h.keyboard && h.typed); /* Backspace keeps it up */
+  type(&h, "Leo");
+  assert(!strcmp(h.name, "Doc Leo") && h.stage == HS_NAME && h.keyboard && h.keyboard_pos == 14 && h.typed); /* O */
+  hs_draw(&h, px, pal, 0, 0); ppm(out, "name-typing-keyboard", px, pal);
+  key(&h, 106); assert(!h.typed && h.keyboard_pos == 15 && !strcmp(h.name, "Doc Leo")); /* an arrow gives the keyboard back to the remote */
+  type(&h, "o"); key(&h, 14); assert(h.typed && h.keyboard_pos == 14 && !strcmp(h.name, "Doc Leo"));
   hs_draw(&h, px, pal, 0, 0); ppm(out, "name-typing", px, pal);
   int a = key(&h, 28);
   assert((a & HS_COMMIT) && h.stage == HS_TABLE && !(a & HS_DONE));
@@ -123,10 +127,10 @@ int main(int argc, char **argv) {
   for (unsigned i = 0; i < 256; i++) {bpal[3 * i] = (uint8_t)(i / 6); bpal[3 * i + 1] = (uint8_t)(i / 8); bpal[3 * i + 2] = (uint8_t)(20 + i / 8);}
   bpal[3 * 1] = 63; bpal[3 * 1 + 1] = 10; bpal[3 * 1 + 2] = 10; bpal[3 * 2] = 10; bpal[3 * 2 + 1] = 10; bpal[3 * 2 + 2] = 63;
   table(&t); hs_start(&h, &t, 5000, now); key(&h, 1); hs_draw(&h, px, pal, back, bpal); ppm(out, "top-ten-picture", px, pal);
-  /* GGet's cursor keys: Right never moves (ans[ctr] is always 0), Left erases, extra Rights change nothing */
+  /* the arrows move the on-screen keyboard now (it stays up while typing; GGet's Left-erases is Backspace here) and never change the name */
   table(&t); hs_start(&h, &t, 5000, now); key(&h, 106); assert(h.len == 0); type(&h, "ab");
-  key(&h, 106); key(&h, 106); assert(!strcmp(h.name, "ab") && h.len == 2); key(&h, 105); key(&h, 106); type(&h, "c");
-  assert(!strcmp(h.name, "ac")); key(&h, 105); key(&h, 105); key(&h, 105); assert(h.len == 0 && h.stage == HS_NAME);
+  key(&h, 106); key(&h, 106); assert(!strcmp(h.name, "ab") && h.len == 2); key(&h, 105); key(&h, 106); assert(!strcmp(h.name, "ab")); type(&h, "c");
+  assert(!strcmp(h.name, "abc")); key(&h, 14); key(&h, 14); key(&h, 14); assert(h.len == 0 && h.stage == HS_NAME);
   /* the accepted set: Tab and Ctrl bytes are typed, 0/8/13/27 never are */
   hs_start(&h, &t, 5000, now); key(&h, 15); assert(h.len == 1 && h.name[0] == 9);
   hs_event(&h, 1, 29, 1, now); key(&h, 30); hs_event(&h, 1, 29, 0, now); assert(h.len == 2 && h.name[1] == 1);
